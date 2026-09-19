@@ -1,0 +1,40 @@
+# Rust
+target/
+**/target/
+
+# Node
+node_modules/
+
+# Circom and snarkjs generated artifacts
+*.r1cs
+*.wtns
+*.sym
+*.zkey
+*.ptau
+*.wasm
+verification_key.json
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Wallet and database state
+*.db
+*.sqlite
+*.sqlite3
+wallet*/
+
+# Logs and temporary proof output
+*.log
+proofs/
+build/
+.tmp/
+tmp/
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
