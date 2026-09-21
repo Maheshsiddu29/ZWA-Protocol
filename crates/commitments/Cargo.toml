@@ -1,0 +1,19 @@
+[package]
+name = "zwa-commitments"
+description = "Canonical ZWA AssetBase/receiver encodings and the frozen TradeCommitmentV1 Poseidon commitment engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+ark-bn254.workspace = true
+ark-ff.workspace = true
+light-poseidon.workspace = true
+zwa-protocol.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true
