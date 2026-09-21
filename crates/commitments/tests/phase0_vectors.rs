@@ -18,9 +18,9 @@ use zwa_commitments::{
 };
 use zwa_protocol::error::ProtocolError;
 use zwa_protocol::{
-    AssetBaseBytes, MatcherFee, OrchardReceiverBytes, PolicyRoot, RecipientCommitment,
-    SubjectSecret, TradeAmount, TradeCommitment, TradeExpiry, TradeIntent, TradeNonce,
-    ZatoshiAmount,
+    AssetBaseBytes, FieldElement, MatcherFee, OrchardReceiverBytes, PolicyRoot,
+    RecipientCommitment, SubjectSecret, TradeAmount, TradeCommitment, TradeExpiry, TradeIntent,
+    TradeNonce, ZatoshiAmount,
 };
 
 /// Mandatory Phase 0F provenance reference `TradeCommitmentV1`.
@@ -323,4 +323,104 @@ fn commitment_verification_detects_a_substituted_commitment() {
             actual: PHASE_0G_GOLDEN_TRADE_COMMITMENT.to_owned(),
         })
     );
+}
+
+fn phase0g_golden_intent() -> TradeIntent {
+    let fixture = phase_0g();
+    let trade = &fixture["trade"];
+    intent_from(
+        trade,
+        RecipientCommitment::from_decimal_str(&text(trade, "recipientCommitment")).unwrap(),
+        "matcherFeeAmount",
+    )
+}
+
+fn flip_first_asset_byte(asset: AssetBaseBytes) -> AssetBaseBytes {
+    let mut bytes = *asset.as_bytes();
+    bytes[0] ^= 1;
+    AssetBaseBytes::new(bytes)
+}
+
+/// Commitment-level compatibility tests for the Phase 0G golden trade
+/// (`eligible-reference-trade-v1.json`). These do not replace the Phase 0 ZK
+/// negative tests; they only assert that each frozen committed field is bound
+/// into `TradeCommitmentV1`.
+#[test]
+fn phase0g_golden_trade_field_mutations_change_the_commitment() {
+    let original = phase0g_golden_intent();
+    let original_commitment = trade_commitment_v1(&original);
+    assert_eq!(
+        original_commitment.to_string(),
+        PHASE_0G_GOLDEN_TRADE_COMMITMENT
+    );
+
+    let mutated_recipient = RecipientCommitment::new(FieldElement::from_u64(1));
+    let mutated_fee_recipient = RecipientCommitment::new(FieldElement::from_u64(2));
+    let mutated_policy = PolicyRoot::new(FieldElement::from_u64(1));
+
+    let cases: [(&str, TradeIntent); 10] = [
+        ("offered amount 10 → 11", {
+            let mut intent = original;
+            intent.offered_amount = TradeAmount::new(11);
+            intent
+        }),
+        ("requested amount 6 → 7", {
+            let mut intent = original;
+            intent.requested_amount = TradeAmount::new(7);
+            intent
+        }),
+        ("matcher fee 5 → 6", {
+            let mut intent = original;
+            intent.matcher_fee.amount = ZatoshiAmount::new(6);
+            intent
+        }),
+        ("recipient commitment mutation", {
+            let mut intent = original;
+            intent.recipient_commitment = mutated_recipient;
+            intent
+        }),
+        ("matcher fee recipient mutation", {
+            let mut intent = original;
+            intent.matcher_fee.recipient_commitment = mutated_fee_recipient;
+            intent
+        }),
+        ("policy root mutation", {
+            let mut intent = original;
+            intent.policy_root = mutated_policy;
+            intent
+        }),
+        ("nonce mutation", {
+            let mut intent = original;
+            intent.nonce = TradeNonce::new(7002);
+            intent
+        }),
+        ("expiry mutation", {
+            let mut intent = original;
+            intent.expiry = TradeExpiry::new(2_000_000_001);
+            intent
+        }),
+        ("offered AssetBase mutation", {
+            let mut intent = original;
+            intent.offered_asset = flip_first_asset_byte(original.offered_asset);
+            intent
+        }),
+        ("requested AssetBase mutation", {
+            let mut intent = original;
+            intent.requested_asset = flip_first_asset_byte(original.requested_asset);
+            intent
+        }),
+    ];
+
+    for (label, mutated) in cases {
+        let commitment = trade_commitment_v1(&mutated);
+        assert_ne!(
+            commitment, original_commitment,
+            "{label} must change TradeCommitmentV1"
+        );
+        assert_ne!(
+            commitment.to_string(),
+            PHASE_0G_GOLDEN_TRADE_COMMITMENT,
+            "{label} must not reproduce the Phase 0G golden vector"
+        );
+    }
 }
