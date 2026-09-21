@@ -22,7 +22,7 @@ The Zcash/ZSA layer owns shielded value movement and transaction atomicity. Two 
 
 ## Current status
 
-Phase 0 demonstrated the experimental ZSA lifecycle, an atomic ZSA-to-ZSA swap, a shielded ZEC matcher payment in that transaction, authorized issuance provenance, exact trade binding, and recipient-specific private eligibility. The migrated sources are a reviewed feasibility baseline. The matcher, RFQ workflow, root authentication, recipient-control mechanism, settlement adapter, and UI have not been implemented in this repository.
+Phase 0 demonstrated the experimental ZSA lifecycle, an atomic ZSA-to-ZSA swap, a shielded ZEC matcher payment in that transaction, authorized issuance provenance, exact trade binding, and recipient-specific private eligibility. The protocol-core crates provide canonical types, encodings, `TradeCommitmentV1`, signed-root envelope payloads, proof interfaces, and in-memory replay state. The matcher, RFQ workflow, root-signature verification, recipient-control mechanism, settlement adapter, and UI have not been implemented in this repository.
 
 > The ZIP-227/ZIP-228 and ZSA capabilities used here are experimental QEDIT branches. They are not generally available production Zcash mainnet features, and this project is not production ready.
 
@@ -33,7 +33,7 @@ The demo will use one RWA class, one issuer, one credential authority, and one a
 ## Repository structure
 
 - `circuits/`: migrated provenance and eligibility circuits plus attributed ZK-ORIGIN helpers
-- `crates/`: reserved boundaries for protocol, commitment, credential, and Zcash adapter libraries
+- `crates/`: `zwa-protocol`, `zwa-commitments`, and `zwa-credentials` libraries; `zcash-adapter` remains a reserved settlement boundary
 - `matcher/`: compliant matcher boundary
 - `rfq/`: private RFQ and order-intent boundary
 - `frontend/`: demo application boundary
@@ -42,7 +42,15 @@ The demo will use one RWA class, one issuer, one credential authority, and one a
 
 ## Setup and build
 
-Phase 0H freezes structure and source semantics only. Reproducible product build commands and local development setup belong to Phase 1. Current JavaScript schema tests use the pinned dependencies in `package.json`; circuits require Circom 2.2.2 and must emit generated artifacts outside the repository or into ignored paths.
+Protocol core:
+
+```sh
+cargo fmt --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+```
+
+JavaScript schema tests for the migrated circuits use the pinned dependencies in `package.json`. Circuits require Circom 2.2.2 and must emit generated artifacts outside the repository or into ignored paths.
 
 ## Roadmap
 
