@@ -16,7 +16,8 @@
 //! issuer/credential envelopes in `zwa-credentials` carry opaque signature
 //! material only: no concrete root signature algorithm has been approved yet,
 //! so nothing here authenticates a root. Structural validation is not
-//! cryptographic authentication.
+//! cryptographic authentication. Replay state is an in-memory deterministic
+//! model only.
 
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 
@@ -25,8 +26,10 @@ pub mod envelope;
 pub mod error;
 pub mod field;
 pub mod intent;
+pub mod lifecycle;
 pub mod numbers;
 pub mod proof;
+pub mod replay;
 pub mod values;
 
 pub use bytes::{AssetBaseBytes, OrchardReceiverBytes};
@@ -36,11 +39,13 @@ pub use envelope::{
 pub use error::{ProtocolError, Result};
 pub use field::FieldElement;
 pub use intent::TradeIntent;
+pub use lifecycle::{FailureReason, LifecycleEvent, SettlementTxId, TradeLifecycleState};
 pub use numbers::{RootVersion, TradeAmount, TradeExpiry, TradeNonce, UnixSeconds, ZatoshiAmount};
 pub use proof::{
     EligibilityPublicInputs, EligibilityVerifier, OpaqueProof, ProvenancePublicInputs,
     ProvenanceVerifier, VerificationProblem, VerificationResult,
 };
+pub use replay::{ReplayStore, TradeRecord, DEFAULT_MAX_RETRIES};
 pub use values::{
     ActiveCredentialRoot, AssetCommitment, AuthorizedIssuanceRoot, FeeCommitment, MatcherFee,
     PolicyRoot, ReceiverCommitment, RecipientCommitment, SubjectCommitment, SubjectSecret,

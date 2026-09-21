@@ -102,6 +102,36 @@ pub enum ProtocolError {
         /// Why the proof container was rejected.
         reason: ProofProblem,
     },
+
+    /// A matcher-side lifecycle transition is not in the allowed set.
+    #[error("illegal trade lifecycle transition from {from} via {attempted}")]
+    InvalidStateTransition {
+        /// State the record was in.
+        from: crate::lifecycle::TradeLifecycleState,
+        /// Transition that was attempted.
+        attempted: crate::lifecycle::LifecycleEvent,
+    },
+
+    /// A `TradeCommitment` in the `CONSUMED` state was presented again.
+    #[error("trade commitment is already consumed and cannot be used again")]
+    AlreadyConsumed,
+
+    /// No lifecycle record exists for the supplied `TradeCommitment`.
+    #[error("no lifecycle record for the supplied trade commitment")]
+    UnknownTrade,
+
+    /// A retry was requested without acknowledging the prior submitted txid.
+    #[error("retry requires acknowledging the prior settlement txid")]
+    UnreconciledPriorSubmission,
+
+    /// The bounded retry policy has no remaining attempts.
+    #[error("retry budget exhausted ({attempts} of {max})")]
+    RetryBudgetExhausted {
+        /// Successful retries already consumed.
+        attempts: u32,
+        /// Configured maximum retries.
+        max: u32,
+    },
 }
 
 /// Why a canonical field encoding was rejected.
