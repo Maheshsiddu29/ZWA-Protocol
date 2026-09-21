@@ -5,9 +5,9 @@
 //! identifier, an overflow-safe validity window, opaque signature material, and
 //! the [`StructurallyValid`] marker.
 //!
-//! None of this authenticates a root. A future matcher milestone will verify a
-//! signature against configured approved keys; no signature algorithm is
-//! selected here.
+//! None of this authenticates a root. The matcher must verify signatures
+//! against configured approved keys. This crate does not select a signature
+//! algorithm.
 
 use crate::error::{ProtocolError, Result, RootEnvelopeProblem, TimestampProblem};
 use crate::numbers::{RootVersion, UnixSeconds};
@@ -228,21 +228,22 @@ impl OpaqueSignature {
     }
 }
 
-/// Marker that non-cryptographic structural and freshness checks passed.
+/// Wrapper used to label a structurally validated value.
 ///
-/// This is not cryptographic authentication. A later matcher milestone will
-/// verify the opaque signature against configured approved keys.
+/// This is not cryptographic authentication. The public constructor relies on
+/// its caller to perform the checks required for `T`; envelope validation
+/// methods provide that checked path for root envelopes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StructurallyValid<T> {
     inner: T,
 }
 
 impl<T> StructurallyValid<T> {
-    /// Wraps a value that has already passed structural validation.
+    /// Labels a value that the caller has structurally validated.
     ///
-    /// Envelope types call this only after version, window, identifier, and
-    /// container checks succeed. The constructor itself does not authenticate
-    /// a signature.
+    /// This constructor performs no checks and does not authenticate a
+    /// signature. Prefer the envelope-specific validation methods when
+    /// validating root envelopes.
     #[must_use]
     pub const fn new(inner: T) -> Self {
         Self { inner }

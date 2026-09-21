@@ -1,8 +1,9 @@
-//! Stable proof-verification interfaces for future matcher integration.
+//! Proof-verification interfaces for matcher integration.
 //!
 //! Both traits take the exact [`TradeCommitment`] as a required public input.
-//! Phase 1 does not invoke a proving system, spawn `snarkjs`, or duplicate
-//! circuit logic. A later matcher milestone supplies the concrete verifier.
+//! This crate provides no proving system or SNARK-verification backend. A trait
+//! implementation is responsible for parsing and verifying the proof against
+//! both supplied public inputs.
 
 use crate::error::{ProofProblem, ProtocolError, Result};
 use crate::values::{ActiveCredentialRoot, AuthorizedIssuanceRoot, TradeCommitment};
@@ -104,9 +105,10 @@ pub struct EligibilityPublicInputs {
 
 /// Verifies an authorized-issuance provenance proof.
 ///
-/// The matcher must pass the same [`TradeCommitment`] it recomputes from the
-/// canonical intent. Implementations must not accept a proof that binds a
-/// different commitment.
+/// The matcher supplies its authenticated issuance root and the same
+/// [`TradeCommitment`] it recomputed from the canonical intent. Implementations
+/// must verify both values as public inputs; implementing this trait does not
+/// itself establish proof validity.
 pub trait ProvenanceVerifier {
     /// Verifies `proof` against the authorized issuance root and the exact
     /// trade commitment.
@@ -120,8 +122,10 @@ pub trait ProvenanceVerifier {
 
 /// Verifies a private recipient-eligibility proof.
 ///
-/// The matcher must pass the same [`TradeCommitment`] it recomputes from the
-/// canonical intent and that the provenance proof exposed.
+/// The matcher supplies its authenticated active-credential root and the same
+/// [`TradeCommitment`] used for provenance. Implementations must verify both
+/// values as public inputs; implementing this trait does not itself establish
+/// proof validity.
 pub trait EligibilityVerifier {
     /// Verifies `proof` against the active credential root and the exact
     /// trade commitment.

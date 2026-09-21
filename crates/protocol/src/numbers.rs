@@ -33,7 +33,10 @@ pub struct ZatoshiAmount(u64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TradeNonce(u64);
 
-/// A monotonic version counter for a signed-root envelope.
+/// A positive monotonic version counter for a signed-root envelope.
+///
+/// Version zero is unsupported. Version ordering and selection of the current
+/// root are matcher responsibilities.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct RootVersion(u64);
 

@@ -2,9 +2,9 @@
 //!
 //! The frozen Phase 0 circuits hash with `circomlib`'s `Poseidon(t)` and the
 //! Phase 0 fixtures were produced by `circomlibjs` 0.1.7. `light-poseidon`'s
-//! `new_circom` constructor uses those same BN254 parameters; the equality is
-//! not assumed, it is asserted against Phase 0 vectors in
-//! `tests/poseidon_compat.rs` for every arity the circuits use.
+//! `new_circom` constructor uses those same BN254 parameters. Compatibility is
+//! pinned by `tests/poseidon_compat.rs` for every arity the circuits use. Any
+//! replacement must reproduce those vectors exactly.
 
 use ark_bn254::Fr;
 use ark_ff::{BigInteger, PrimeField};

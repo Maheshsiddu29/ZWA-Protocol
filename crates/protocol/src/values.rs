@@ -117,10 +117,12 @@ field_newtype! {
 }
 
 field_newtype! {
-    /// `TradeCommitmentV1 = H(TRADE_V1, TradePartA, TradePartB, TradeMeta)`.
+    /// The frozen version-1 trade commitment.
     ///
-    /// This is the single public value both compliance proofs expose and the
-    /// key the matcher's replay state is recorded against.
+    /// `TradeCommitmentV1 = H(TRADE_V1, TradePartA, TradePartB, TradeMeta)`.
+    /// Both compliance proofs expose this exact public value, and matcher
+    /// replay state is keyed by it. Field order and domain separation are ZWA
+    /// protocol invariants defined by `zwa-commitments`.
     TradeCommitment
 }
 

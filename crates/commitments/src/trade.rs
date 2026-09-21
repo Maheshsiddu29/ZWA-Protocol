@@ -1,9 +1,10 @@
-//! The frozen ZWA commitment schemas.
+//! Frozen ZWA commitment schemas.
 //!
-//! The Poseidon staging below is copied from the Phase 0F/0G source of truth
+//! Field order, domain separators, and hash arity are protocol compatibility
+//! requirements. The staging below matches the Phase 0F/0G source of truth
 //! (`circuits/provenance/rwa_trade_provenance_v1.circom`,
 //! `circuits/eligibility/rwa_investor_eligibility_v1.circom`, and
-//! `circuits/shared/*.js`) and must never diverge from it:
+//! (`circuits/shared/*.js`):
 //!
 //! ```text
 //! OfferedAssetCommitment   = H(ASSETV1, offeredAssetHi, offeredAssetLo)
@@ -45,6 +46,8 @@ const CANONICAL_BYTE_CHUNK: usize = 16;
 #[must_use]
 pub fn asset_commitment(asset: &AssetBaseBytes) -> AssetCommitment {
     let limbs = encode_asset_base(asset);
+    // COMPATIBILITY: bytes split into low then high halves, but the circuit
+    // hashes the high limb before the low limb.
     AssetCommitment::new(hash([
         Domain::ASSET_V1.as_field(),
         FieldElement::from_u128(limbs.hi),
@@ -190,8 +193,10 @@ pub struct TradeCommitmentParts {
 
 /// Computes every stage of `TradeCommitmentV1` for a canonical intent.
 ///
-/// This is a pure total function of the intent: identical intents always
-/// produce identical commitments, and no other component may reimplement it.
+/// Version 1 is frozen. Reordering a field, changing a domain separator, or
+/// changing a Poseidon arity breaks compatibility with both compliance
+/// circuits. Matcher and RFQ implementations must call this function rather
+/// than reproduce the staging.
 #[must_use]
 pub fn trade_commitment_parts(intent: &TradeIntent) -> TradeCommitmentParts {
     let offered_asset_commitment = asset_commitment(&intent.offered_asset);

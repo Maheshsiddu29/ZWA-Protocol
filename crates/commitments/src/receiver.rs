@@ -1,4 +1,4 @@
-//! The frozen Phase 0G raw Orchard receiver limb encoding.
+//! Frozen raw Orchard receiver limb encoding used by recipient binding.
 //!
 //! The protocol primitive is the canonical 43-byte
 //! `orchard::Address::to_raw_address_bytes()` output — an 11-byte diversifier
@@ -15,7 +15,8 @@
 //! ```
 //!
 //! The eligibility circuit range-constrains them with `Num2Bits(128)`,
-//! `Num2Bits(128)`, and `Num2Bits(88)`.
+//! `Num2Bits(128)`, and `Num2Bits(88)`. The third limb must fit in 88 bits so
+//! decoding cannot discard non-zero bytes beyond the 43-byte representation.
 
 use zwa_protocol::bytes::ORCHARD_RECEIVER_LEN;
 use zwa_protocol::error::{LimbKind, ProtocolError, Result};
@@ -146,7 +147,7 @@ mod tests {
     }
 
     #[test]
-    fn limbs_reassemble_the_exact_43_original_bytes() {
+    fn receiver_round_trip_preserves_exact_raw_bytes() {
         for hex in [INSTITUTION_A, INSTITUTION_B] {
             let receiver = OrchardReceiverBytes::from_hex(hex).unwrap();
             let round_tripped = decode_receiver(&encode_receiver(&receiver));
@@ -156,7 +157,7 @@ mod tests {
     }
 
     #[test]
-    fn the_diversifier_and_transmission_key_survive_the_round_trip() {
+    fn receiver_round_trip_preserves_diversifier_and_transmission_key() {
         let receiver = OrchardReceiverBytes::from_hex(INSTITUTION_A).unwrap();
         let round_tripped = decode_receiver(&encode_receiver(&receiver));
         assert_eq!(round_tripped.diversifier(), receiver.diversifier());

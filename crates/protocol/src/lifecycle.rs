@@ -13,6 +13,9 @@ pub enum TradeLifecycleState {
     /// The trade exists but has not passed current matcher verification.
     Created,
     /// All required current matcher verification has passed.
+    ///
+    /// This includes root authentication and freshness, recipient control,
+    /// expiry, both proofs, and their common trade commitment.
     Verified,
     /// A transaction candidate exists; the commitment is locked against
     /// concurrent construction.
@@ -25,7 +28,10 @@ pub enum TradeLifecycleState {
     Consumed,
     /// Terminal policy rejection after expiry.
     Expired,
-    /// A failed attempt that may be eligible to restart from `CREATED`.
+    /// A failed verification or settlement attempt.
+    ///
+    /// If retry requirements pass, the trade returns to `CREATED`; retry never
+    /// restores `VERIFIED`.
     Failed,
 }
 

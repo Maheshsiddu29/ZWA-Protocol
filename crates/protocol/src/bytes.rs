@@ -1,7 +1,8 @@
-//! Fixed-size canonical byte encodings.
+//! Fixed-size byte representations used by the protocol.
 //!
-//! The protocol never accepts a bare `Vec<u8>` or an address string where a
-//! fixed-size canonical representation exists.
+//! These types enforce protocol lengths and keep text encodings out of
+//! commitment inputs. They do not parse Orchard points or addresses; callers
+//! must obtain the bytes from the canonical Orchard APIs.
 
 use crate::error::{ProtocolError, Result};
 
@@ -18,10 +19,11 @@ pub const ORCHARD_DIVERSIFIER_LEN: usize = 11;
 /// address.
 pub const ORCHARD_TRANSMISSION_KEY_LEN: usize = 32;
 
-/// The canonical 32-byte `orchard::note::AssetBase` encoding of a ZSA.
+/// Canonical 32-byte representation of an Orchard `AssetBase`.
 ///
 /// This is the compressed Pallas point produced by `pallas::Point::to_bytes()`,
-/// not a ZIP-227 asset id.
+/// not a ZIP-227 asset id. Construction enforces the byte length; it does not
+/// decode the point.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AssetBaseBytes([u8; ASSET_BASE_LEN]);
 
@@ -76,6 +78,7 @@ impl AssetBaseBytes {
 /// The layout is an 11-byte diversifier followed by a 32-byte diversified
 /// transmission key. The protocol primitive is these raw bytes; the
 /// human-readable unified-address text encoding is never the protocol value.
+/// Construction enforces the byte length; it does not parse the address.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct OrchardReceiverBytes([u8; ORCHARD_RECEIVER_LEN]);
 

@@ -1,13 +1,26 @@
 //! Canonical issuer and credential root envelopes.
 //!
-//! Each envelope is the application-layer signed-root object the matcher will
-//! later authenticate. The unsigned payload has a deterministic byte encoding
+//! Each envelope is an application-layer signed-root object the matcher must
+//! authenticate. The unsigned payload has a deterministic byte encoding
 //! that is the data-to-be-signed. Signature material is an opaque, validated
-//! byte container: no signature algorithm is selected in Phase 1.
+//! byte container; this crate does not select or verify a signature algorithm.
 //!
 //! Passing [`validate_structure_at`](IssuerRootEnvelope::validate_structure_at)
 //! produces [`StructurallyValid`]. It does not produce cryptographic
 //! authentication.
+//!
+//! Both payload kinds use this canonical data-to-be-signed layout:
+//!
+//! ```text
+//! "ZWA1ROOT"  8 bytes
+//! kind         1 byte
+//! version      8 bytes, big-endian
+//! valid_from   8 bytes, big-endian Unix seconds
+//! expires_at   8 bytes, big-endian Unix seconds
+//! id_len       1 byte
+//! id           id_len bytes
+//! root         32 bytes, big-endian BN254 scalar
+//! ```
 
 use zwa_protocol::error::Result;
 use zwa_protocol::{
@@ -35,7 +48,7 @@ pub struct IssuerRootPayload {
 }
 
 impl IssuerRootPayload {
-    /// Builds a payload from already-validated components.
+    /// Builds a payload and validates its version and validity window.
     ///
     /// # Errors
     ///
@@ -72,10 +85,9 @@ impl IssuerRootPayload {
         self.metadata
     }
 
-    /// Deterministic serialization of the data-to-be-signed.
+    /// Canonical data-to-be-signed for an issuer root.
     ///
-    /// Encoding, big-endian integers:
-    /// `ZWA1ROOT || kind=1 || version || valid_from || expires_at || id_len || id || root`.
+    /// Uses kind byte `1` and the issuer identifier.
     #[must_use]
     pub fn canonical_bytes(&self) -> Vec<u8> {
         encode_payload(
@@ -88,12 +100,13 @@ impl IssuerRootPayload {
         )
     }
 
-    /// Non-cryptographic version, window, and identifier checks at `now`.
+    /// Checks that the already well-formed payload is current at `now`.
     ///
     /// # Errors
     ///
-    /// Returns an unsupported-version, inverted-window, not-yet-valid, or
-    /// expired error. Success is [`StructurallyValid`], not authentication.
+    /// Returns a not-yet-valid or expired error. Version, window ordering, and
+    /// identifier shape were checked when the payload components were built.
+    /// Success is [`StructurallyValid`], not authentication.
     pub fn validate_structure_at(&self, now: UnixSeconds) -> Result<StructurallyValid<&Self>> {
         self.metadata.ensure_current_at(now)?;
         Ok(StructurallyValid::new(self))
@@ -152,7 +165,7 @@ pub struct CredentialRootPayload {
 }
 
 impl CredentialRootPayload {
-    /// Builds a payload from already-validated components.
+    /// Builds a payload and validates its version and validity window.
     ///
     /// # Errors
     ///
@@ -189,10 +202,9 @@ impl CredentialRootPayload {
         self.metadata
     }
 
-    /// Deterministic serialization of the data-to-be-signed.
+    /// Canonical data-to-be-signed for a credential root.
     ///
-    /// Encoding, big-endian integers:
-    /// `ZWA1ROOT || kind=2 || version || valid_from || expires_at || id_len || id || root`.
+    /// Uses kind byte `2` and the credential-authority identifier.
     #[must_use]
     pub fn canonical_bytes(&self) -> Vec<u8> {
         encode_payload(
@@ -205,12 +217,13 @@ impl CredentialRootPayload {
         )
     }
 
-    /// Non-cryptographic version, window, and identifier checks at `now`.
+    /// Checks that the already well-formed payload is current at `now`.
     ///
     /// # Errors
     ///
-    /// Returns an unsupported-version, inverted-window, not-yet-valid, or
-    /// expired error. Success is [`StructurallyValid`], not authentication.
+    /// Returns a not-yet-valid or expired error. Version, window ordering, and
+    /// identifier shape were checked when the payload components were built.
+    /// Success is [`StructurallyValid`], not authentication.
     pub fn validate_structure_at(&self, now: UnixSeconds) -> Result<StructurallyValid<&Self>> {
         self.metadata.ensure_current_at(now)?;
         Ok(StructurallyValid::new(self))
@@ -268,7 +281,8 @@ fn encode_payload(
     identifier: &[u8],
     root: [u8; 32],
 ) -> Vec<u8> {
-    // Identifier length is already bounded to 64 by `KeyIdentifier`.
+    // COMPATIBILITY: Every field width and this order are part of the signed
+    // payload. `KeyIdentifier` bounds the one-byte length to at most 64.
     let id_len = identifier.len() as u8;
     let mut out = Vec::with_capacity(8 + 1 + 8 * 3 + 1 + identifier.len() + 32);
     out.extend_from_slice(PAYLOAD_MAGIC);

@@ -1,4 +1,4 @@
-//! The frozen Phase 0F `AssetBase` limb encoding.
+//! Frozen `AssetBase` limb encoding used by `TradeCommitmentV1`.
 //!
 //! A canonical 32-byte `orchard::note::AssetBase` becomes two unsigned 128-bit
 //! limbs:
@@ -29,6 +29,9 @@ pub struct AssetBaseLimbs {
 }
 
 /// Splits a canonical `AssetBase` into its two 128-bit circuit limbs.
+///
+/// Byte order and limb names differ from the later hash-input order: this
+/// function returns `(hi, lo)` fields after reading the low half first.
 #[must_use]
 pub fn encode_asset_base(asset: &AssetBaseBytes) -> AssetBaseLimbs {
     let bytes = asset.as_bytes();
@@ -95,7 +98,7 @@ mod tests {
     }
 
     #[test]
-    fn limbs_reassemble_the_exact_original_bytes() {
+    fn asset_base_round_trip_preserves_exact_bytes() {
         for hex in [OFFERED_ASSET_BASE, REQUESTED_ASSET_BASE] {
             let asset = AssetBaseBytes::from_hex(hex).unwrap();
             assert_eq!(decode_asset_base(&encode_asset_base(&asset)), asset);
@@ -147,8 +150,6 @@ mod tests {
 
     #[test]
     fn malformed_lengths_are_rejected_before_encoding() {
-        // Length validation lives in the canonical byte type, so no malformed
-        // input can reach the limb encoding at all.
         assert!(AssetBaseBytes::from_slice(&[0u8; 31]).is_err());
         assert!(AssetBaseBytes::from_slice(&[0u8; 33]).is_err());
         assert!(AssetBaseBytes::from_hex("4889ad").is_err());

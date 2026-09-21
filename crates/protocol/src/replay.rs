@@ -80,7 +80,8 @@ impl TradeRecord {
 ///
 /// Compare-and-set is sequential: the first `acquire_construction` call for a
 /// `VERIFIED` commitment succeeds and every subsequent call is rejected until
-/// the record leaves `SETTLEMENT_CONSTRUCTED`.
+/// the record leaves `SETTLEMENT_CONSTRUCTED`. This model defines transition
+/// semantics; it does not provide cross-thread or distributed synchronization.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReplayStore {
     records: BTreeMap<TradeCommitment, TradeRecord>,
@@ -154,14 +155,19 @@ impl ReplayStore {
         Ok(record)
     }
 
-    /// `CREATED` → `VERIFIED` if the trade is unexpired at `now`.
+    /// Records `CREATED` → `VERIFIED` after current matcher verification.
     ///
-    /// An expired trade is moved to `EXPIRED` and rejected.
+    /// SECURITY: The caller must first authenticate roots and recipient
+    /// control, verify both proofs against the same trade commitment, and
+    /// perform all other matcher policy checks. This method enforces only the
+    /// lifecycle state and committed expiry. An expired trade is moved to
+    /// `EXPIRED` and rejected.
     ///
     /// # Errors
     ///
     /// Returns [`ProtocolError::ExpiredTrade`] when the intent is expired,
-    /// [`ProtocolError::AlreadyConsumed`] when consumed, or
+    /// [`ProtocolError::AlreadyConsumed`] when consumed,
+    /// [`ProtocolError::UnknownTrade`] when no record exists, or
     /// [`ProtocolError::InvalidStateTransition`] for any other current state.
     pub fn verify(&mut self, commitment: TradeCommitment, now: UnixSeconds) -> Result<TradeRecord> {
         let record = self.record_mut(commitment)?;
@@ -188,7 +194,8 @@ impl ReplayStore {
     ///
     /// # Errors
     ///
-    /// Returns [`ProtocolError::AlreadyConsumed`] or
+    /// Returns [`ProtocolError::AlreadyConsumed`],
+    /// [`ProtocolError::UnknownTrade`], or
     /// [`ProtocolError::InvalidStateTransition`].
     pub fn acquire_construction(&mut self, commitment: TradeCommitment) -> Result<TradeRecord> {
         let record = self.record_mut(commitment)?;
@@ -204,7 +211,8 @@ impl ReplayStore {
     ///
     /// # Errors
     ///
-    /// Returns [`ProtocolError::AlreadyConsumed`] or
+    /// Returns [`ProtocolError::AlreadyConsumed`],
+    /// [`ProtocolError::UnknownTrade`], or
     /// [`ProtocolError::InvalidStateTransition`].
     pub fn submit(
         &mut self,
@@ -225,7 +233,8 @@ impl ReplayStore {
     ///
     /// # Errors
     ///
-    /// Returns [`ProtocolError::AlreadyConsumed`] or
+    /// Returns [`ProtocolError::AlreadyConsumed`],
+    /// [`ProtocolError::UnknownTrade`], or
     /// [`ProtocolError::InvalidStateTransition`].
     pub fn confirm(&mut self, commitment: TradeCommitment) -> Result<TradeRecord> {
         let record = self.record_mut(commitment)?;
@@ -244,7 +253,8 @@ impl ReplayStore {
     ///
     /// # Errors
     ///
-    /// Returns [`ProtocolError::AlreadyConsumed`] or
+    /// Returns [`ProtocolError::AlreadyConsumed`],
+    /// [`ProtocolError::UnknownTrade`], or
     /// [`ProtocolError::InvalidStateTransition`].
     pub fn consume(&mut self, commitment: TradeCommitment) -> Result<TradeRecord> {
         let record = self.record_mut(commitment)?;
@@ -264,7 +274,8 @@ impl ReplayStore {
     ///
     /// # Errors
     ///
-    /// Returns [`ProtocolError::AlreadyConsumed`] or
+    /// Returns [`ProtocolError::AlreadyConsumed`],
+    /// [`ProtocolError::UnknownTrade`], or
     /// [`ProtocolError::InvalidStateTransition`].
     pub fn fail(
         &mut self,
@@ -299,10 +310,10 @@ impl ReplayStore {
     ///
     /// # Errors
     ///
-    /// Returns [`ProtocolError::AlreadyConsumed`],
-    /// [`ProtocolError::InvalidStateTransition`], or
-    /// [`ProtocolError::ExpiredTrade`] is not used here: a not-yet-expired
-    /// trade cannot be expired.
+    /// Returns [`ProtocolError::AlreadyConsumed`] for a consumed trade,
+    /// [`ProtocolError::UnknownTrade`] when no record exists, or
+    /// [`ProtocolError::InvalidStateTransition`] when the state is ineligible
+    /// or `now` is not strictly after the committed expiry.
     pub fn expire(&mut self, commitment: TradeCommitment, now: UnixSeconds) -> Result<TradeRecord> {
         let record = self.record_mut(commitment)?;
         deny_consumed(record.state)?;
@@ -334,7 +345,8 @@ impl ReplayStore {
     /// Returns [`ProtocolError::AlreadyConsumed`],
     /// [`ProtocolError::ExpiredTrade`],
     /// [`ProtocolError::RetryBudgetExhausted`],
-    /// [`ProtocolError::UnreconciledPriorSubmission`], or
+    /// [`ProtocolError::UnreconciledPriorSubmission`],
+    /// [`ProtocolError::UnknownTrade`], or
     /// [`ProtocolError::InvalidStateTransition`].
     pub fn retry_after_failure(
         &mut self,
@@ -459,7 +471,7 @@ mod tests {
     }
 
     #[test]
-    fn happy_path_lifecycle_reaches_consumed() {
+    fn allowed_lifecycle_reaches_consumed() {
         let mut store = ReplayStore::new();
         let key = commitment(1);
         happy_path_to(&mut store, key, TradeLifecycleState::Consumed);

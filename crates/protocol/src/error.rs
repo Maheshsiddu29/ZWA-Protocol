@@ -54,7 +54,7 @@ pub enum ProtocolError {
         reason: TimestampProblem,
     },
 
-    /// A trade was used at or after its expiry.
+    /// A trade was used strictly after its committed expiry second.
     #[error("trade expired at {expiry} and cannot be used at {now}")]
     ExpiredTrade {
         /// Committed expiry, in Unix seconds.
@@ -72,7 +72,8 @@ pub enum ProtocolError {
         actual: String,
     },
 
-    /// Poseidon was asked for an arity the frozen circuits never use.
+    /// Poseidon was asked for an arity unsupported by the Circom-compatible
+    /// implementation.
     #[error("unsupported Poseidon arity {arity}")]
     UnsupportedPoseidonArity {
         /// Arity that was requested.
