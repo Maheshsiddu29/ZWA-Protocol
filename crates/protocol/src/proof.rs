@@ -60,6 +60,12 @@ pub enum VerificationProblem {
 }
 
 /// Outcome of a provenance or eligibility verification.
+///
+/// Discarding this value silently treats an unverified — or actively rejected —
+/// proof as acceptable, so it is `#[must_use]`. Every other fallible protocol
+/// operation returns [`Result`](crate::error::Result), which carries the same
+/// obligation.
+#[must_use = "proof verification results must be checked"]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VerificationResult {
     /// The proof verified against the supplied public inputs.
@@ -249,6 +255,20 @@ mod tests {
                 reason: VerificationProblem::PublicInputMismatch
             }
         );
+    }
+
+    #[test]
+    fn verification_results_carry_a_must_use_obligation() {
+        // `#[must_use]` is enforced by the compiler, not at runtime, so this
+        // test pins the behaviour that makes the attribute meaningful: an
+        // Invalid outcome is a distinct value a caller has to branch on, never
+        // something that silently resembles success.
+        let rejected = VerificationResult::Invalid {
+            reason: VerificationProblem::ProofRejected,
+        };
+        assert!(!rejected.is_valid());
+        assert!(VerificationResult::Valid.is_valid());
+        assert_ne!(rejected, VerificationResult::Valid);
     }
 
     #[test]
