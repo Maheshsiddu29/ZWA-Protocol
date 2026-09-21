@@ -47,6 +47,16 @@ pub enum ProtocolError {
         field: AmountField,
     },
 
+    /// A credential policy code exceeded the bit width the frozen eligibility
+    /// circuit range-constrains it to.
+    #[error("{code} exceeds its {bits}-bit range constraint")]
+    CredentialCodeOutOfRange {
+        /// Which code was rejected.
+        code: CredentialCodeField,
+        /// Bit width the frozen circuit constrains the code to.
+        bits: u32,
+    },
+
     /// A timestamp was malformed or a validity window was inconsistent.
     #[error("invalid timestamp: {reason}")]
     InvalidTimestamp {
@@ -183,6 +193,28 @@ impl fmt::Display for LimbKind {
             Self::ReceiverLimb0 => "receiver limb 0",
             Self::ReceiverLimb1 => "receiver limb 1",
             Self::ReceiverLimb2 => "receiver limb 2",
+        };
+        f.write_str(text)
+    }
+}
+
+/// Which range-constrained credential policy code was rejected.
+///
+/// The eligibility circuit constrains these more tightly than the 64-bit
+/// commitment fields, so they have their own rejection reason.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CredentialCodeField {
+    /// Investor class, constrained by `Num2Bits(8)`.
+    InvestorClass,
+    /// Jurisdiction, constrained by `Num2Bits(16)`.
+    Jurisdiction,
+}
+
+impl fmt::Display for CredentialCodeField {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let text = match self {
+            Self::InvestorClass => "investor class",
+            Self::Jurisdiction => "jurisdiction",
         };
         f.write_str(text)
     }
