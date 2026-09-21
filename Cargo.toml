@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/protocol", "crates/commitments"]
+members = ["crates/protocol", "crates/commitments", "crates/credentials"]
 resolver = "2"
 
 [workspace.package]
@@ -10,6 +10,7 @@ repository = "https://github.com/Maheshsiddu29/ZWA-Protocol"
 
 [workspace.dependencies]
 zwa-protocol = { path = "crates/protocol", version = "0.1.0" }
+zwa-credentials = { path = "crates/credentials", version = "0.1.0" }
 
 ark-bn254 = { version = "0.5.0", default-features = false, features = ["scalar_field"] }
 ark-ff = { version = "0.5.0", default-features = false }

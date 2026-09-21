@@ -78,6 +78,30 @@ pub enum ProtocolError {
         /// Arity that was requested.
         arity: usize,
     },
+
+    /// A signed-root envelope failed non-cryptographic structural checks.
+    ///
+    /// Passing this check produces a structurally valid envelope, never a
+    /// cryptographically authenticated one.
+    #[error("invalid root envelope: {reason}")]
+    InvalidRootEnvelope {
+        /// Why the envelope was rejected.
+        reason: RootEnvelopeProblem,
+    },
+
+    /// A version field was outside the supported range.
+    #[error("unsupported version {got}")]
+    UnsupportedVersion {
+        /// Version that was supplied.
+        got: u64,
+    },
+
+    /// An opaque proof container was malformed.
+    #[error("invalid proof encoding: {reason}")]
+    InvalidProof {
+        /// Why the proof container was rejected.
+        reason: ProofProblem,
+    },
 }
 
 /// Why a canonical field encoding was rejected.
@@ -171,6 +195,95 @@ impl fmt::Display for TimestampProblem {
             Self::Overflow => "Unix-second arithmetic overflowed",
         };
         f.write_str(text)
+    }
+}
+
+/// Why a signed-root envelope failed structural validation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RootEnvelopeProblem {
+    /// The issuer or credential-authority identifier was empty.
+    MissingAuthorityIdentifier,
+    /// The identifier exceeded the container bound.
+    IdentifierTooLong {
+        /// Length that was supplied.
+        got: usize,
+        /// Maximum accepted length.
+        max: usize,
+    },
+    /// Signature material was empty.
+    SignatureMissing,
+    /// Signature material exceeded the container bound.
+    SignatureTooLong {
+        /// Length that was supplied.
+        got: usize,
+        /// Maximum accepted length.
+        max: usize,
+    },
+    /// Verification time is before `valid_from`.
+    NotYetValid {
+        /// Window start, in Unix seconds.
+        valid_from: u64,
+        /// Verification time, in Unix seconds.
+        now: u64,
+    },
+    /// Verification time is after `expires_at`.
+    Expired {
+        /// Window end, in Unix seconds.
+        expires_at: u64,
+        /// Verification time, in Unix seconds.
+        now: u64,
+    },
+}
+
+impl fmt::Display for RootEnvelopeProblem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MissingAuthorityIdentifier => {
+                f.write_str("issuer or credential-authority identifier is required")
+            }
+            Self::IdentifierTooLong { got, max } => {
+                write!(f, "authority identifier is {got} bytes, max {max}")
+            }
+            Self::SignatureMissing => f.write_str("signature material must be non-empty"),
+            Self::SignatureTooLong { got, max } => {
+                write!(f, "signature material is {got} bytes, max {max}")
+            }
+            Self::NotYetValid { valid_from, now } => {
+                write!(
+                    f,
+                    "envelope valid_from {valid_from} is after verification time {now}"
+                )
+            }
+            Self::Expired { expires_at, now } => {
+                write!(
+                    f,
+                    "envelope expired at {expires_at} and cannot be used at {now}"
+                )
+            }
+        }
+    }
+}
+
+/// Why an opaque proof container was rejected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProofProblem {
+    /// The container was empty.
+    Empty,
+    /// The container exceeded the size bound.
+    TooLarge {
+        /// Length that was supplied.
+        got: usize,
+        /// Maximum accepted length.
+        max: usize,
+    },
+}
+
+impl fmt::Display for ProofProblem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Empty => f.write_str("proof bytes must be non-empty"),
+            Self::TooLarge { got, max } => write!(f, "proof is {got} bytes, max {max}"),
+        }
     }
 }
 

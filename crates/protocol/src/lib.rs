@@ -11,24 +11,36 @@
 //! # Scope
 //!
 //! This crate contains no networking, no persistence, no transaction
-//! construction, and no root signature verification. Root envelopes carry
-//! opaque signature material only: no concrete root signature algorithm has
-//! been approved yet, so nothing here authenticates a root.
+//! construction, and no root signature verification. Envelope primitives here
+//! (`KeyIdentifier`, `RootMetadata`, `OpaqueSignature`) and the concrete
+//! issuer/credential envelopes in `zwa-credentials` carry opaque signature
+//! material only: no concrete root signature algorithm has been approved yet,
+//! so nothing here authenticates a root. Structural validation is not
+//! cryptographic authentication.
 
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 
 pub mod bytes;
+pub mod envelope;
 pub mod error;
 pub mod field;
 pub mod intent;
 pub mod numbers;
+pub mod proof;
 pub mod values;
 
 pub use bytes::{AssetBaseBytes, OrchardReceiverBytes};
+pub use envelope::{
+    KeyIdentifier, OpaqueSignature, RootMetadata, StructurallyValid, ValidityWindow,
+};
 pub use error::{ProtocolError, Result};
 pub use field::FieldElement;
 pub use intent::TradeIntent;
 pub use numbers::{RootVersion, TradeAmount, TradeExpiry, TradeNonce, UnixSeconds, ZatoshiAmount};
+pub use proof::{
+    EligibilityPublicInputs, EligibilityVerifier, OpaqueProof, ProvenancePublicInputs,
+    ProvenanceVerifier, VerificationProblem, VerificationResult,
+};
 pub use values::{
     ActiveCredentialRoot, AssetCommitment, AuthorizedIssuanceRoot, FeeCommitment, MatcherFee,
     PolicyRoot, ReceiverCommitment, RecipientCommitment, SubjectCommitment, SubjectSecret,

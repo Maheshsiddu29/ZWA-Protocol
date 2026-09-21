@@ -550,6 +550,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "zwa-credentials"
+version = "0.1.0"
+dependencies = [
+ "zwa-protocol",
+]
+
+[[package]]
 name = "zwa-protocol"
 version = "0.1.0"
 dependencies = [
