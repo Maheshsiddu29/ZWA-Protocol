@@ -10,9 +10,9 @@ use core::fmt;
 /// Frozen matcher-side lifecycle states for one `TradeCommitment`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum TradeLifecycleState {
-    /// Canonical intent stored; no settlement work may run concurrently.
+    /// The trade exists but has not passed current matcher verification.
     Created,
-    /// Roots, recipient control, expiry, and both proofs passed.
+    /// All required current matcher verification has passed.
     Verified,
     /// A transaction candidate exists; the commitment is locked against
     /// concurrent construction.
@@ -25,7 +25,7 @@ pub enum TradeLifecycleState {
     Consumed,
     /// Terminal policy rejection after expiry.
     Expired,
-    /// A failed or rejected attempt; may retry only under the documented rule.
+    /// A failed attempt that may be eligible to restart from `CREATED`.
     Failed,
 }
 
@@ -45,7 +45,7 @@ impl TradeLifecycleState {
     /// Reports whether settlement-active work may still run.
     ///
     /// `CONSUMED` and `EXPIRED` are never settlement-active. `FAILED` is not
-    /// active until a controlled retry returns it to `VERIFIED`.
+    /// active until a controlled retry returns it to `CREATED`.
     #[must_use]
     pub const fn is_settlement_active(self) -> bool {
         matches!(
@@ -94,7 +94,7 @@ pub enum LifecycleEvent {
     Fail,
     /// Terminal policy rejection after expiry.
     Expire,
-    /// Controlled `FAILED` → `VERIFIED` retry.
+    /// Controlled `FAILED` → `CREATED` retry.
     Retry,
 }
 

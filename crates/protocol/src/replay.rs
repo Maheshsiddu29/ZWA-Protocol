@@ -12,9 +12,9 @@
 //!
 //! `CONSUMED` is terminal success. A failed or rejected settlement attempt
 //! moves to `FAILED` and never to `CONSUMED` unless confirmation actually
-//! occurred. A controlled retry may move `FAILED` back to `VERIFIED` only
-//! while the trade is unexpired, after reconciling any prior txid, and under
-//! a bounded retry policy.
+//! occurred. A controlled retry moves `FAILED` back to `CREATED` while the
+//! trade is unexpired, after reconciling any prior txid, and under a bounded
+//! retry policy. The matcher must verify the trade again before settlement.
 
 use std::collections::BTreeMap;
 
@@ -322,10 +322,12 @@ impl ReplayStore {
         Ok(*record)
     }
 
-    /// Controlled `FAILED` → `VERIFIED` retry.
+    /// Controlled `FAILED` → `CREATED` retry.
     ///
     /// Requires the trade to be unexpired, remaining retry budget, and an
-    /// exact acknowledgement of any prior submitted txid.
+    /// exact acknowledgement of any prior submitted txid. The retry does not
+    /// restore prior verification; the matcher must perform a new explicit
+    /// `CREATED` → `VERIFIED` transition.
     ///
     /// # Errors
     ///
@@ -362,7 +364,7 @@ impl ReplayStore {
         if record.prior_txid != acknowledged_txid {
             return Err(ProtocolError::UnreconciledPriorSubmission);
         }
-        record.state = TradeLifecycleState::Verified;
+        record.state = TradeLifecycleState::Created;
         record.failure_reason = None;
         record.prior_txid = None;
         record.retry_count += 1;
@@ -571,7 +573,7 @@ mod tests {
     }
 
     #[test]
-    fn controlled_retry_after_submission_failure() {
+    fn submission_failure_retry_requires_txid_acknowledgement_and_reverification() {
         let mut store = ReplayStore::new();
         let key = commitment(6);
         happy_path_to(&mut store, key, TradeLifecycleState::Submitted);
@@ -595,16 +597,49 @@ mod tests {
         let retried = store
             .retry_after_failure(key, Some(txid(1)), now())
             .unwrap();
-        assert_eq!(retried.state(), TradeLifecycleState::Verified);
+        assert_eq!(retried.state(), TradeLifecycleState::Created);
         assert_eq!(retried.retry_count(), 1);
         assert_eq!(retried.prior_txid(), None);
         assert!(retried.failure_reason().is_none());
+        assert_eq!(
+            store.acquire_construction(key),
+            Err(ProtocolError::InvalidStateTransition {
+                from: TradeLifecycleState::Created,
+                attempted: LifecycleEvent::AcquireConstruction
+            })
+        );
+        store.verify(key, now()).unwrap();
+        assert_eq!(store.state(key), Some(TradeLifecycleState::Verified));
 
         // Construction failure never consumes the trade.
         store.acquire_construction(key).unwrap();
         store.fail(key, FailureReason::ConstructionFailed).unwrap();
         assert_ne!(store.state(key), Some(TradeLifecycleState::Consumed));
         store.retry_after_failure(key, None, now()).unwrap();
+        assert_eq!(store.state(key), Some(TradeLifecycleState::Created));
+    }
+
+    #[test]
+    fn verification_rejection_retry_returns_to_created() {
+        let mut store = ReplayStore::new();
+        let key = commitment(10);
+        store.create(key, intent(GOLDEN_EXPIRY)).unwrap();
+        store
+            .fail(key, FailureReason::VerificationRejected)
+            .unwrap();
+
+        let retried = store.retry_after_failure(key, None, now()).unwrap();
+        assert_eq!(retried.state(), TradeLifecycleState::Created);
+        assert_ne!(retried.state(), TradeLifecycleState::Verified);
+        assert_eq!(
+            store.acquire_construction(key),
+            Err(ProtocolError::InvalidStateTransition {
+                from: TradeLifecycleState::Created,
+                attempted: LifecycleEvent::AcquireConstruction
+            })
+        );
+
+        store.verify(key, now()).unwrap();
         assert_eq!(store.state(key), Some(TradeLifecycleState::Verified));
     }
 
@@ -637,6 +672,7 @@ mod tests {
             .fail(key, FailureReason::VerificationRejected)
             .unwrap();
         store.retry_after_failure(key, None, now()).unwrap();
+        assert_eq!(store.state(key), Some(TradeLifecycleState::Created));
         store
             .fail(key, FailureReason::VerificationRejected)
             .unwrap();

@@ -99,16 +99,16 @@ CREATED → VERIFIED → SETTLEMENT_CONSTRUCTED → SUBMITTED → CONFIRMED → 
    └───────────────────────────────────────────────→ EXPIRED
 ```
 
-- `CREATED`: canonical intent stored; no settlement work may run concurrently for the same key.
-- `VERIFIED`: roots, recipient control, expiry, and both proofs passed.
+- `CREATED`: the trade exists but has not passed current matcher verification.
+- `VERIFIED`: root authentication and freshness, recipient control, expiry, both proofs, and the common trade commitment have passed current matcher verification.
 - `SETTLEMENT_CONSTRUCTED`: a transaction candidate exists; the commitment is locked against concurrent construction.
 - `SUBMITTED`: one candidate was submitted; track its txid and outcome.
 - `CONFIRMED`: configured chain confirmation condition passed.
 - `CONSUMED`: terminal success; all future attempts are rejected.
 - `EXPIRED`: terminal policy rejection after expiry.
-- `FAILED`: records a failed or rejected attempt and reason.
+- `FAILED`: records a failed attempt and reason; an eligible retry restarts from `CREATED`.
 
-Reject `EXPIRED` and `CONSUMED`. Use an atomic compare-and-set or database transaction to prevent duplicate construction. Construction alone never consumes a trade. A controlled retry may move `FAILED` back to `VERIFIED` only while unexpired, after reconciling the prior txid and under a bounded retry policy. Mark `CONSUMED` only after configured confirmation.
+Reject `EXPIRED` and `CONSUMED`. Use an atomic compare-and-set or database transaction to prevent duplicate construction. Construction alone never consumes a trade. A controlled retry may move `FAILED` back to `CREATED` only while unexpired, after reconciling the prior txid and under a bounded retry policy. The matcher must repeat all verification before moving the trade to `VERIFIED`. Mark `CONSUMED` only after configured confirmation.
 
 ## 18. Recipient-control authentication
 
