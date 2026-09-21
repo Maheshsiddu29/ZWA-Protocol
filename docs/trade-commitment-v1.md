@@ -23,23 +23,53 @@ The resulting `tradeCommitment` is public. Phase 0 circuits also expose their re
 
 ## Domain separators
 
-| Name | Integer |
-|---|---:|
-| `ASSETV1` | 18387490596738609 |
-| `ISSMETA1` | 5283658379176460593 |
-| `ISSUEV1` | 20639290677876273 |
-| `FEEV1` | 301809882673 |
-| `TRDA_V1` | 23734351151715889 |
-| `TRDB_V1` | 23734351168493105 |
-| `TRDM_V1` | 23734351353042481 |
-| `TRADE_V1` | 6075990608753677873 |
-| `ZEC` | 5915971 |
-| `SUBJECT1` | 6004778564925477937 |
-| `RECEIVR1` | 5928218449365324337 |
-| `RCPBIND1` | 5927669780177634353 |
-| `CREDMETA` | 4851015908287927361 |
-| `CRED_V1` | 18949280892933681 |
-| `ELIGPOL1` | 4993446657485917233 |
+Every tag is its ASCII label read as a positive big-endian integer. The tables
+below are split by which component computes them, because the two groups have
+different sources of truth.
+
+### Implemented by the Phase 1 commitment engine
+
+These are exactly the separators defined by `Domain` in
+`crates/commitments/src/domain.rs`, and they cover the whole
+`TradeCommitmentV1` and recipient-binding path.
+
+| Label | Integer | Used by |
+|---|---:|---|
+| `ASSETV1` | 18387490596738609 | `AssetCommitment` for both assets |
+| `FEEV1` | 301809882673 | `FeeCommitment` |
+| `ZEC` | 5915971 | native-ZEC fee asset tag inside `FeeCommitment` |
+| `TRDA_V1` | 23734351151715889 | `TradePartA` |
+| `TRDB_V1` | 23734351168493105 | `TradePartB` |
+| `TRDM_V1` | 23734351353042481 | `TradeMeta` |
+| `TRADE_V1` | 6075990608753677873 | `TradeCommitmentV1` |
+| `SUBJECT1` | 6004778564925477937 | `SubjectCommitment` |
+| `RECEIVR1` | 5928218449365324337 | `ReceiverCommitment` |
+| `RCPBIND1` | 5927669780177634353 | Phase 0G `recipientCommitment` |
+| `FRCPTV1` | 19793697433736753 | `matcherFeeRecipientCommitment` |
+| `RCPTV1` | 90449063990833 | Phase 0F trade `recipientCommitment` |
+
+`ZEC` is a fee-asset tag, not an `AssetBase`.
+
+`FRCPTV1` and `RCPTV1` are canonical-byte commitments rather than limb
+commitments; see [Canonical-byte recipient commitments](#canonical-byte-recipient-commitments).
+`RCPTV1` is retained because the frozen Phase 0F reference vector depends on it;
+Phase 0G superseded it with `RCPBIND1`, which additionally binds the credential
+subject.
+
+### Circuit-side leaf separators
+
+These are used by the Circom circuits and `circuits/shared/*.js` to build
+issuance and credential leaves. The Phase 1 Rust `Domain` type deliberately does
+not define them, because Phase 1 does not recompute those leaves; they are
+listed here so the frozen constant table is complete.
+
+| Label | Integer | Used by |
+|---|---:|---|
+| `ISSMETA1` | 5283658379176460593 | issuance leaf metadata |
+| `ISSUEV1` | 20639290677876273 | issuance leaf |
+| `CREDMETA` | 4851015908287927361 | credential leaf metadata |
+| `CRED_V1` | 18949280892933681 | credential leaf |
+| `ELIGPOL1` | 4993446657485917233 | eligibility policy leaf |
 
 ## Exact Poseidon staging
 
@@ -68,9 +98,33 @@ ReceiverCommitment = H(RECEIVR1, receiverLimb0, receiverLimb1, receiverLimb2)
 recipientCommitment = H(RCPBIND1, SubjectCommitment, ReceiverCommitment)
 ```
 
+## Canonical-byte recipient commitments
+
+`matcherFeeRecipientCommitment` is an input to `FeeCommitment` above, so its
+derivation is part of the frozen contract. It commits to a raw canonical byte
+string of any length by absorbing 16-byte little-endian chunks, binding both the
+byte length and the chunk index so that no two distinct byte strings collide:
+
+```text
+state = H(domain, byteLength, limbCount)
+state = H(state, limb[i], i)          for each 16-byte little-endian chunk
+```
+
+| Value | Domain | Committed bytes |
+|---|---|---|
+| `matcherFeeRecipientCommitment` | `FRCPTV1` | matcher fee receiver, 43 raw bytes |
+| Phase 0F trade `recipientCommitment` | `RCPTV1` | Phase 0F trade recipient bytes |
+
+Phase 0G replaced the `RCPTV1` derivation for the *trade* recipient with the
+`RCPBIND1` binding described below. The matcher fee receiver still uses
+`FRCPTV1` in both Phase 0F and Phase 0G, and both reference fixtures record the
+same value.
+
 ## Nonce and expiry semantics
 
 The nonce is an application-assigned unsigned 64-bit value included to distinguish otherwise identical intents. Uniqueness and single-use are matcher responsibilities. Expiry is unsigned Unix time in seconds. The matcher rejects an expired trade; the eligibility circuit additionally requires `credentialExpiry >= trade expiry`.
+
+A trade is expired only once the current time is strictly greater than the committed expiry second, so the expiry second itself is still usable. The matcher applies that rule before verification, settlement construction, submission, and retry; see [architecture.md](architecture.md) §17 for which lifecycle transitions it gates.
 
 ## Privacy properties
 
