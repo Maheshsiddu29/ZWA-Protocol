@@ -1,0 +1,21 @@
+[workspace]
+members = ["crates/protocol"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/Maheshsiddu29/ZWA-Protocol"
+
+[workspace.dependencies]
+zwa-protocol = { path = "crates/protocol", version = "0.1.0" }
+
+thiserror = "2.0.20"
+
+[workspace.lints.rust]
+missing_docs = "warn"
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
