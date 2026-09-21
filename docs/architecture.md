@@ -110,6 +110,8 @@ CREATED → VERIFIED → SETTLEMENT_CONSTRUCTED → SUBMITTED → CONFIRMED → 
 
 Reject `EXPIRED` and `CONSUMED`. Use an atomic compare-and-set or database transaction to prevent duplicate construction. Construction alone never consumes a trade. A controlled retry may move `FAILED` back to `CREATED` only while unexpired, after reconciling the prior txid and under a bounded retry policy. The matcher must repeat all verification before moving the trade to `VERIFIED`. Mark `CONSUMED` only after configured confirmation.
 
+The committed expiry gates every transition that starts new work. Verification, construction, submission, and retry each re-check it against the current time, because time passes between these steps and a trade verified while live can expire before it is constructed or broadcast. An expired trade moves to the terminal `EXPIRED` state instead. Confirmation and consumption are deliberately not gated on expiry: a transaction validly submitted before expiry may confirm on chain afterwards, and refusing to acknowledge it would strand a settlement that already happened. A trade is expired only once the current time is strictly after the committed expiry second, so the expiry second itself remains usable.
+
 ## 18. Recipient-control authentication
 
 The investor supplies the intended receiver. The matcher returns a challenge containing a fresh nonce, application/session domain, and expiry. A supported wallet proves or signs control; the matcher verifies it before accepting the eligibility proof for that receiver. The exact compatible Zcash wallet mechanism remains an implementation task and must receive separate review.

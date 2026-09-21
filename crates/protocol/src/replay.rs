@@ -15,6 +15,25 @@
 //! occurred. A controlled retry moves `FAILED` back to `CREATED` while the
 //! trade is unexpired, after reconciling any prior txid, and under a bounded
 //! retry policy. The matcher must verify the trade again before settlement.
+//!
+//! # Expiry contract
+//!
+//! The committed expiry gates every transition that starts *new* work:
+//! `verify`, `acquire_construction`, `submit`, and `retry_after_failure` all
+//! take the current time and reject an expired trade, moving it to the terminal
+//! `EXPIRED` state.
+//!
+//! `confirm` and `consume` deliberately take no time and perform no expiry
+//! check. A transaction that was validly submitted before expiry may be
+//! confirmed on chain afterwards, and refusing to acknowledge it would strand a
+//! settlement that already happened. Expiry prevents new construction and new
+//! submission; it does not invalidate an in-flight transaction.
+//!
+//! A trade is expired only when `now` is *strictly* after the committed expiry
+//! second, so the expiry second itself is still usable. That rule lives in
+//! [`TradeExpiry::is_expired_at`] and is applied here through one helper.
+//!
+//! [`TradeExpiry::is_expired_at`]: crate::numbers::TradeExpiry::is_expired_at
 
 use std::collections::BTreeMap;
 
@@ -175,13 +194,7 @@ impl ReplayStore {
         if record.state != TradeLifecycleState::Created {
             return Err(reject(record.state, LifecycleEvent::Verify));
         }
-        if record.intent.is_expired_at(now) {
-            record.state = TradeLifecycleState::Expired;
-            return Err(ProtocolError::ExpiredTrade {
-                expiry: record.intent.expiry.get(),
-                now: now.get(),
-            });
-        }
+        expire_if_elapsed(record, now)?;
         record.state = TradeLifecycleState::Verified;
         record.failure_reason = None;
         Ok(*record)
@@ -192,38 +205,56 @@ impl ReplayStore {
     /// This is the compare-and-set lock: only one caller may hold the active
     /// construction state for a commitment.
     ///
+    /// SECURITY: verification may have happened arbitrarily long ago, so the
+    /// committed expiry is re-checked here. An expired trade is moved to
+    /// `EXPIRED` and rejected; it never enters `SETTLEMENT_CONSTRUCTED`.
+    ///
     /// # Errors
     ///
-    /// Returns [`ProtocolError::AlreadyConsumed`],
+    /// Returns [`ProtocolError::ExpiredTrade`] when the intent is expired,
+    /// [`ProtocolError::AlreadyConsumed`],
     /// [`ProtocolError::UnknownTrade`], or
     /// [`ProtocolError::InvalidStateTransition`].
-    pub fn acquire_construction(&mut self, commitment: TradeCommitment) -> Result<TradeRecord> {
+    pub fn acquire_construction(
+        &mut self,
+        commitment: TradeCommitment,
+        now: UnixSeconds,
+    ) -> Result<TradeRecord> {
         let record = self.record_mut(commitment)?;
         deny_consumed(record.state)?;
         if record.state != TradeLifecycleState::Verified {
             return Err(reject(record.state, LifecycleEvent::AcquireConstruction));
         }
+        expire_if_elapsed(record, now)?;
         record.state = TradeLifecycleState::SettlementConstructed;
         Ok(*record)
     }
 
     /// `SETTLEMENT_CONSTRUCTED` → `SUBMITTED`, recording `txid`.
     ///
+    /// SECURITY: time can pass between construction and broadcast, so the
+    /// committed expiry is re-checked here. A transaction is never newly
+    /// submitted for an expired trade; the record is moved to `EXPIRED`
+    /// instead, and no txid is recorded.
+    ///
     /// # Errors
     ///
-    /// Returns [`ProtocolError::AlreadyConsumed`],
+    /// Returns [`ProtocolError::ExpiredTrade`] when the intent is expired,
+    /// [`ProtocolError::AlreadyConsumed`],
     /// [`ProtocolError::UnknownTrade`], or
     /// [`ProtocolError::InvalidStateTransition`].
     pub fn submit(
         &mut self,
         commitment: TradeCommitment,
         txid: SettlementTxId,
+        now: UnixSeconds,
     ) -> Result<TradeRecord> {
         let record = self.record_mut(commitment)?;
         deny_consumed(record.state)?;
         if record.state != TradeLifecycleState::SettlementConstructed {
             return Err(reject(record.state, LifecycleEvent::Submit));
         }
+        expire_if_elapsed(record, now)?;
         record.state = TradeLifecycleState::Submitted;
         record.prior_txid = Some(txid);
         Ok(*record)
@@ -360,13 +391,7 @@ impl ReplayStore {
         if record.state != TradeLifecycleState::Failed {
             return Err(reject(record.state, LifecycleEvent::Retry));
         }
-        if record.intent.is_expired_at(now) {
-            record.state = TradeLifecycleState::Expired;
-            return Err(ProtocolError::ExpiredTrade {
-                expiry: record.intent.expiry.get(),
-                now: now.get(),
-            });
-        }
+        expire_if_elapsed(record, now)?;
         if record.retry_count >= max_retries {
             return Err(ProtocolError::RetryBudgetExhausted {
                 attempts: record.retry_count,
@@ -396,6 +421,26 @@ fn deny_consumed(state: TradeLifecycleState) -> Result<()> {
     } else {
         Ok(())
     }
+}
+
+/// Moves `record` to `EXPIRED` and rejects it when its committed expiry has
+/// elapsed at `now`.
+///
+/// This is the single expiry gate for every transition that must not run after
+/// the committed expiry. It delegates to [`TradeExpiry::is_expired_at`], so the
+/// boundary rule — expired only when `now` is *strictly* after the committed
+/// second — is defined in exactly one place.
+///
+/// [`TradeExpiry::is_expired_at`]: crate::numbers::TradeExpiry::is_expired_at
+fn expire_if_elapsed(record: &mut TradeRecord, now: UnixSeconds) -> Result<()> {
+    if record.intent.is_expired_at(now) {
+        record.state = TradeLifecycleState::Expired;
+        return Err(ProtocolError::ExpiredTrade {
+            expiry: record.intent.expiry.get(),
+            now: now.get(),
+        });
+    }
+    Ok(())
 }
 
 fn reject(from: TradeLifecycleState, attempted: LifecycleEvent) -> ProtocolError {
@@ -455,11 +500,11 @@ mod tests {
         if until == TradeLifecycleState::Verified {
             return;
         }
-        store.acquire_construction(key).unwrap();
+        store.acquire_construction(key, now()).unwrap();
         if until == TradeLifecycleState::SettlementConstructed {
             return;
         }
-        store.submit(key, txid(1)).unwrap();
+        store.submit(key, txid(1), now()).unwrap();
         if until == TradeLifecycleState::Submitted {
             return;
         }
@@ -507,7 +552,7 @@ mod tests {
         let key = commitment(3);
         store.create(key, intent(GOLDEN_EXPIRY)).unwrap();
         assert_eq!(
-            store.submit(key, txid(1)),
+            store.submit(key, txid(1), now()),
             Err(ProtocolError::InvalidStateTransition {
                 from: TradeLifecycleState::Created,
                 attempted: LifecycleEvent::Submit
@@ -539,11 +584,11 @@ mod tests {
             Err(ProtocolError::AlreadyConsumed)
         );
         assert_eq!(
-            store.acquire_construction(key),
+            store.acquire_construction(key, now()),
             Err(ProtocolError::AlreadyConsumed)
         );
         assert_eq!(
-            store.submit(key, txid(9)),
+            store.submit(key, txid(9), now()),
             Err(ProtocolError::AlreadyConsumed)
         );
         assert_eq!(store.confirm(key), Err(ProtocolError::AlreadyConsumed));
@@ -614,7 +659,7 @@ mod tests {
         assert_eq!(retried.prior_txid(), None);
         assert!(retried.failure_reason().is_none());
         assert_eq!(
-            store.acquire_construction(key),
+            store.acquire_construction(key, now()),
             Err(ProtocolError::InvalidStateTransition {
                 from: TradeLifecycleState::Created,
                 attempted: LifecycleEvent::AcquireConstruction
@@ -624,7 +669,7 @@ mod tests {
         assert_eq!(store.state(key), Some(TradeLifecycleState::Verified));
 
         // Construction failure never consumes the trade.
-        store.acquire_construction(key).unwrap();
+        store.acquire_construction(key, now()).unwrap();
         store.fail(key, FailureReason::ConstructionFailed).unwrap();
         assert_ne!(store.state(key), Some(TradeLifecycleState::Consumed));
         store.retry_after_failure(key, None, now()).unwrap();
@@ -644,7 +689,7 @@ mod tests {
         assert_eq!(retried.state(), TradeLifecycleState::Created);
         assert_ne!(retried.state(), TradeLifecycleState::Verified);
         assert_eq!(
-            store.acquire_construction(key),
+            store.acquire_construction(key, now()),
             Err(ProtocolError::InvalidStateTransition {
                 from: TradeLifecycleState::Created,
                 attempted: LifecycleEvent::AcquireConstruction
@@ -660,9 +705,9 @@ mod tests {
         let mut store = ReplayStore::new();
         let key = commitment(7);
         happy_path_to(&mut store, key, TradeLifecycleState::Verified);
-        assert!(store.acquire_construction(key).is_ok());
+        assert!(store.acquire_construction(key, now()).is_ok());
         assert_eq!(
-            store.acquire_construction(key),
+            store.acquire_construction(key, now()),
             Err(ProtocolError::InvalidStateTransition {
                 from: TradeLifecycleState::SettlementConstructed,
                 attempted: LifecycleEvent::AcquireConstruction
@@ -711,6 +756,215 @@ mod tests {
             })
         );
         assert_eq!(store.state(expired_key), Some(TradeLifecycleState::Expired));
+    }
+
+    /// Time strictly after the committed expiry.
+    fn after_expiry() -> UnixSeconds {
+        UnixSeconds::new(GOLDEN_EXPIRY + 1)
+    }
+
+    /// The committed expiry second itself, which is still usable.
+    fn at_expiry() -> UnixSeconds {
+        UnixSeconds::new(GOLDEN_EXPIRY)
+    }
+
+    fn expired_error() -> ProtocolError {
+        ProtocolError::ExpiredTrade {
+            expiry: GOLDEN_EXPIRY,
+            now: GOLDEN_EXPIRY + 1,
+        }
+    }
+
+    #[test]
+    fn construction_after_expiry_is_rejected_and_expires_the_trade() {
+        let mut store = ReplayStore::new();
+        let key = commitment(11);
+        store.create(key, intent(GOLDEN_EXPIRY)).unwrap();
+        store.verify(key, now()).unwrap();
+
+        // Verification passed while the trade was live, but the clock has since
+        // moved past the committed expiry.
+        assert_eq!(
+            store.acquire_construction(key, after_expiry()),
+            Err(expired_error())
+        );
+        assert_eq!(store.state(key), Some(TradeLifecycleState::Expired));
+    }
+
+    #[test]
+    fn submission_after_expiry_is_rejected_and_records_no_txid() {
+        let mut store = ReplayStore::new();
+        let key = commitment(12);
+        store.create(key, intent(GOLDEN_EXPIRY)).unwrap();
+        store.verify(key, now()).unwrap();
+        store.acquire_construction(key, now()).unwrap();
+
+        // Time passed between constructing the candidate and broadcasting it.
+        assert_eq!(
+            store.submit(key, txid(1), after_expiry()),
+            Err(expired_error())
+        );
+        assert_eq!(store.state(key), Some(TradeLifecycleState::Expired));
+        assert_eq!(
+            store.get(key).unwrap().prior_txid(),
+            None,
+            "a rejected submission must not record a txid"
+        );
+    }
+
+    #[test]
+    fn the_expiry_second_itself_is_still_usable() {
+        // The canonical predicate is `now > expiry`, so `now == expiry` is live.
+        let mut store = ReplayStore::new();
+        let key = commitment(13);
+        store.create(key, intent(GOLDEN_EXPIRY)).unwrap();
+        store.verify(key, at_expiry()).unwrap();
+        store.acquire_construction(key, at_expiry()).unwrap();
+        store.submit(key, txid(1), at_expiry()).unwrap();
+        assert_eq!(store.state(key), Some(TradeLifecycleState::Submitted));
+    }
+
+    #[test]
+    fn a_transaction_submitted_before_expiry_may_confirm_and_consume_after() {
+        // Chain confirmation can legitimately land after the committed expiry.
+        // Expiry blocks new construction and new submission, not the settlement
+        // of a transaction that was already broadcast in time.
+        let mut store = ReplayStore::new();
+        let key = commitment(14);
+        store.create(key, intent(GOLDEN_EXPIRY)).unwrap();
+        store.verify(key, now()).unwrap();
+        store.acquire_construction(key, now()).unwrap();
+        store.submit(key, txid(1), now()).unwrap();
+
+        // `confirm` and `consume` take no time and apply no expiry gate.
+        store.confirm(key).unwrap();
+        store.consume(key).unwrap();
+        assert_eq!(store.state(key), Some(TradeLifecycleState::Consumed));
+    }
+
+    #[test]
+    fn expire_is_accepted_from_every_permitted_source_state() {
+        for (tag, state) in [
+            (20, TradeLifecycleState::Created),
+            (21, TradeLifecycleState::Verified),
+            (22, TradeLifecycleState::SettlementConstructed),
+        ] {
+            let mut store = ReplayStore::new();
+            let key = commitment(tag);
+            happy_path_to(&mut store, key, state);
+            assert_eq!(store.state(key), Some(state));
+            let expired = store.expire(key, after_expiry()).unwrap();
+            assert_eq!(
+                expired.state(),
+                TradeLifecycleState::Expired,
+                "from {state}"
+            );
+        }
+
+        // FAILED is the fourth permitted source state.
+        let mut store = ReplayStore::new();
+        let key = commitment(23);
+        happy_path_to(&mut store, key, TradeLifecycleState::Verified);
+        store
+            .fail(key, FailureReason::VerificationRejected)
+            .unwrap();
+        store.expire(key, after_expiry()).unwrap();
+        assert_eq!(store.state(key), Some(TradeLifecycleState::Expired));
+    }
+
+    #[test]
+    fn expire_is_rejected_from_submitted_and_confirmed() {
+        // SUBMITTED and CONFIRMED carry an in-flight or landed txid. Expiring
+        // them would drop a settlement that may already have happened.
+        let mut store = ReplayStore::new();
+        let submitted = commitment(24);
+        happy_path_to(&mut store, submitted, TradeLifecycleState::Submitted);
+        assert_eq!(
+            store.expire(submitted, after_expiry()),
+            Err(ProtocolError::InvalidStateTransition {
+                from: TradeLifecycleState::Submitted,
+                attempted: LifecycleEvent::Expire
+            })
+        );
+        assert_eq!(store.state(submitted), Some(TradeLifecycleState::Submitted));
+
+        let confirmed = commitment(25);
+        happy_path_to(&mut store, confirmed, TradeLifecycleState::Confirmed);
+        assert_eq!(
+            store.expire(confirmed, after_expiry()),
+            Err(ProtocolError::InvalidStateTransition {
+                from: TradeLifecycleState::Confirmed,
+                attempted: LifecycleEvent::Expire
+            })
+        );
+        assert_eq!(store.state(confirmed), Some(TradeLifecycleState::Confirmed));
+    }
+
+    #[test]
+    fn expire_is_rejected_while_the_trade_is_still_live() {
+        let mut store = ReplayStore::new();
+        let key = commitment(26);
+        happy_path_to(&mut store, key, TradeLifecycleState::Verified);
+        // Not expired at `expiry - 1`, nor at the expiry second itself.
+        assert_eq!(
+            store.expire(key, now()),
+            Err(ProtocolError::InvalidStateTransition {
+                from: TradeLifecycleState::Verified,
+                attempted: LifecycleEvent::Expire
+            })
+        );
+        assert_eq!(
+            store.expire(key, at_expiry()),
+            Err(ProtocolError::InvalidStateTransition {
+                from: TradeLifecycleState::Verified,
+                attempted: LifecycleEvent::Expire
+            })
+        );
+        assert_eq!(store.state(key), Some(TradeLifecycleState::Verified));
+    }
+
+    #[test]
+    fn expired_is_terminal_for_every_transition() {
+        let mut store = ReplayStore::new();
+        let key = commitment(27);
+        happy_path_to(&mut store, key, TradeLifecycleState::Verified);
+        store.expire(key, after_expiry()).unwrap();
+        assert_eq!(store.state(key), Some(TradeLifecycleState::Expired));
+
+        let illegal = |attempted| {
+            Err(ProtocolError::InvalidStateTransition {
+                from: TradeLifecycleState::Expired,
+                attempted,
+            })
+        };
+        assert_eq!(store.verify(key, now()), illegal(LifecycleEvent::Verify));
+        assert_eq!(
+            store.acquire_construction(key, now()),
+            illegal(LifecycleEvent::AcquireConstruction)
+        );
+        assert_eq!(
+            store.submit(key, txid(1), now()),
+            illegal(LifecycleEvent::Submit)
+        );
+        assert_eq!(store.confirm(key), illegal(LifecycleEvent::Confirm));
+        assert_eq!(store.consume(key), illegal(LifecycleEvent::Consume));
+        assert_eq!(
+            store.fail(key, FailureReason::SubmissionFailed),
+            illegal(LifecycleEvent::Fail)
+        );
+        assert_eq!(
+            store.expire(key, after_expiry()),
+            illegal(LifecycleEvent::Expire)
+        );
+        assert_eq!(
+            store.retry_after_failure(key, None, now()),
+            illegal(LifecycleEvent::Retry)
+        );
+        assert_eq!(
+            store.create(key, intent(GOLDEN_EXPIRY)),
+            illegal(LifecycleEvent::Create)
+        );
+        assert_eq!(store.state(key), Some(TradeLifecycleState::Expired));
     }
 
     #[test]

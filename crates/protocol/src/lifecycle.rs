@@ -88,11 +88,15 @@ pub enum LifecycleEvent {
     Create,
     /// `CREATED` → `VERIFIED`.
     Verify,
-    /// `VERIFIED` → `SETTLEMENT_CONSTRUCTED` (compare-and-set lock).
+    /// `VERIFIED` → `SETTLEMENT_CONSTRUCTED` (compare-and-set lock, gated on
+    /// the committed expiry).
     AcquireConstruction,
-    /// `SETTLEMENT_CONSTRUCTED` → `SUBMITTED`.
+    /// `SETTLEMENT_CONSTRUCTED` → `SUBMITTED`, gated on the committed expiry.
     Submit,
     /// `SUBMITTED` → `CONFIRMED`.
+    ///
+    /// Not gated on expiry: a transaction submitted before expiry may confirm
+    /// on chain afterwards.
     Confirm,
     /// `CONFIRMED` → `CONSUMED`.
     Consume,
