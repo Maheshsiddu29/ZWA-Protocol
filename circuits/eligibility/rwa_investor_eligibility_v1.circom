@@ -16,13 +16,20 @@ function DOMAIN_TRADE_V1() { return 6075990608753677873; }
 function ZEC_ASSET_TAG() { return 5915971; }
 
 // Phase 0G domains: "SUBJECT1", "RECEIVR1", "RCPBIND1", "CREDMETA",
-// "CRED_V1", and "ELIGPOL1" encoded as positive big-endian integers.
+// and "ELIGPOL1" encoded as positive big-endian integers.
 function DOMAIN_SUBJECT_V1() { return 6004778564925477937; }
 function DOMAIN_RECEIVER_V1() { return 5928218449365324337; }
 function DOMAIN_RECIPIENT_BINDING_V1() { return 5927669780177634353; }
 function DOMAIN_CREDENTIAL_META_V1() { return 4851015908287927361; }
-function DOMAIN_CREDENTIAL_V1() { return 18949280892933681; }
 function DOMAIN_ELIGIBILITY_POLICY_V1() { return 4993446657485917233; }
+
+// Phase 1B credential leaf domain: "CRED_V2" as a positive big-endian integer.
+//
+// The V1 leaf (18949280892933681) committed to no receiver, so any receiver
+// satisfied any credential. The V2 leaf additionally commits to the
+// authority-approved receiver commitment. A distinct domain keeps the two leaf
+// statements unambiguous: a V1 leaf can never be read as a V2 leaf.
+function DOMAIN_CREDENTIAL_V2() { return 18949280892933682; }
 
 template RwaInvestorEligibilityV1(CREDENTIAL_DEPTH, POLICY_DEPTH) {
     // The only public values.
@@ -110,18 +117,31 @@ template RwaInvestorEligibilityV1(CREDENTIAL_DEPTH, POLICY_DEPTH) {
     subjectHasher.in[0] <== DOMAIN_SUBJECT_V1();
     subjectHasher.in[1] <== subjectSecret;
 
+    // SECURITY (Phase 1B): this single receiver commitment is consumed twice —
+    // once by the credential leaf as the authority-approved receiver, and once
+    // by the recipient binding that feeds TradeCommitmentV1. Because it is one
+    // signal rather than two, a prover cannot present a credential approving
+    // receiver A while settling to receiver B: substituting the receiver
+    // changes the recomputed leaf and credential Merkle membership fails.
+    component receiverHasher = PoseidonHash4();
+    receiverHasher.in[0] <== DOMAIN_RECEIVER_V1();
+    receiverHasher.in[1] <== receiverLimb0;
+    receiverHasher.in[2] <== receiverLimb1;
+    receiverHasher.in[3] <== receiverLimb2;
+
     component credentialMetaHasher = PoseidonHash4();
     credentialMetaHasher.in[0] <== DOMAIN_CREDENTIAL_META_V1();
     credentialMetaHasher.in[1] <== investorClass;
     credentialMetaHasher.in[2] <== jurisdiction;
     credentialMetaHasher.in[3] <== credentialExpiry;
 
-    component credentialLeafHasher = PoseidonHash5();
-    credentialLeafHasher.in[0] <== DOMAIN_CREDENTIAL_V1();
+    component credentialLeafHasher = PoseidonHash6();
+    credentialLeafHasher.in[0] <== DOMAIN_CREDENTIAL_V2();
     credentialLeafHasher.in[1] <== credentialAuthorityCommitment;
     credentialLeafHasher.in[2] <== subjectHasher.out;
     credentialLeafHasher.in[3] <== credentialMetaHasher.out;
     credentialLeafHasher.in[4] <== credentialNonce;
+    credentialLeafHasher.in[5] <== receiverHasher.out;
 
     component credentialMembership = MerkleProofVerifier(CREDENTIAL_DEPTH);
     credentialMembership.leaf <== credentialLeafHasher.out;
@@ -131,12 +151,6 @@ template RwaInvestorEligibilityV1(CREDENTIAL_DEPTH, POLICY_DEPTH) {
         credentialMembership.pathIndices[c] <== credentialMerklePathIndices[c];
     }
     credentialMembership.valid === 1;
-
-    component receiverHasher = PoseidonHash4();
-    receiverHasher.in[0] <== DOMAIN_RECEIVER_V1();
-    receiverHasher.in[1] <== receiverLimb0;
-    receiverHasher.in[2] <== receiverLimb1;
-    receiverHasher.in[3] <== receiverLimb2;
 
     component recipientHasher = PoseidonHash3();
     recipientHasher.in[0] <== DOMAIN_RECIPIENT_BINDING_V1();

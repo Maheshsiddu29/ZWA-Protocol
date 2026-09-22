@@ -553,6 +553,8 @@ dependencies = [
 name = "zwa-credentials"
 version = "0.1.0"
 dependencies = [
+ "serde_json",
+ "zwa-commitments",
  "zwa-protocol",
 ]
 

@@ -54,6 +54,17 @@ impl Domain {
     /// frozen Phase 0F reference vector depends on it.
     pub const RECIPIENT_V1: Self = Self(90_449_063_990_833);
 
+    /// `"CREDMETA"` — credential metadata inside an active credential leaf.
+    pub const CREDENTIAL_META_V1: Self = Self(4_851_015_908_287_927_361);
+
+    /// `"CRED_V2"` — Phase 1B active credential leaf.
+    ///
+    /// The Phase 0G leaf domain `"CRED_V1"` (18949280892933681) committed to no
+    /// receiver, so any receiver satisfied any credential. The V2 leaf also
+    /// commits to the authority-approved receiver commitment. A separate domain
+    /// keeps the two leaf statements unambiguous.
+    pub const CREDENTIAL_V2: Self = Self(18_949_280_892_933_682);
+
     /// Returns the domain separator as the integer the circuits hash.
     #[must_use]
     pub const fn tag(self) -> u64 {
@@ -87,6 +98,8 @@ mod tests {
         assert_eq!(Domain::RECIPIENT_BINDING_V1.tag(), 5927669780177634353);
         assert_eq!(Domain::FEE_RECIPIENT_V1.tag(), 19793697433736753);
         assert_eq!(Domain::RECIPIENT_V1.tag(), 90449063990833);
+        assert_eq!(Domain::CREDENTIAL_META_V1.tag(), 4851015908287927361);
+        assert_eq!(Domain::CREDENTIAL_V2.tag(), 18949280892933682);
     }
 
     #[test]
@@ -104,6 +117,8 @@ mod tests {
             ("RCPBIND1", Domain::RECIPIENT_BINDING_V1),
             ("FRCPTV1", Domain::FEE_RECIPIENT_V1),
             ("RCPTV1", Domain::RECIPIENT_V1),
+            ("CREDMETA", Domain::CREDENTIAL_META_V1),
+            ("CRED_V2", Domain::CREDENTIAL_V2),
         ] {
             let mut expected = 0u64;
             for byte in label.bytes() {

@@ -8,6 +8,7 @@ const DOMAINS_0G = Object.freeze({
   RECIPIENT_BINDING_V1: 5927669780177634353n,
   CREDENTIAL_META_V1: 4851015908287927361n,
   CREDENTIAL_V1: 18949280892933681n,
+  CREDENTIAL_V2: 18949280892933682n,
   ELIGIBILITY_POLICY_V1: 4993446657485917233n,
 });
 
@@ -65,7 +66,36 @@ function computeRecipientBinding(hash, subjectSecret, receiverHex) {
   return { subjectCommitment, receiverCommitment, recipientCommitment, receiverLimbs };
 }
 
+// Phase 1B: the active credential leaf commits to the receiver the credential
+// authority approved for this subject. `approvedReceiverCommitment` must be the
+// canonical ReceiverCommitment from `computeRecipientBinding`; never a second,
+// separately derived receiver hash.
 function computeCredential(hash, fields) {
+  const subjectCommitment = hash([
+    DOMAINS_0G.SUBJECT_V1,
+    phase0f.assertField(fields.subjectSecret, "subject secret"),
+  ]);
+  const credentialMeta = hash([
+    DOMAINS_0G.CREDENTIAL_META_V1,
+    phase0f.assertU64(fields.investorClass, "investor class"),
+    phase0f.assertU64(fields.jurisdiction, "jurisdiction"),
+    phase0f.assertU64(fields.credentialExpiry, "credential expiry"),
+  ]);
+  const credentialLeaf = hash([
+    DOMAINS_0G.CREDENTIAL_V2,
+    phase0f.assertField(fields.credentialAuthorityCommitment, "credential authority commitment"),
+    subjectCommitment,
+    credentialMeta,
+    phase0f.assertU64(fields.credentialNonce, "credential nonce"),
+    phase0f.assertField(fields.approvedReceiverCommitment, "approved receiver commitment"),
+  ]);
+  return { subjectCommitment, credentialMeta, credentialLeaf };
+}
+
+// The frozen Phase 0G credential leaf, retained only so migrated Phase 0G
+// evidence stays reproducible. It approves no receiver and must not be used to
+// build a new active credential root.
+function computeCredentialV1(hash, fields) {
   const subjectCommitment = hash([
     DOMAINS_0G.SUBJECT_V1,
     phase0f.assertField(fields.subjectSecret, "subject secret"),
@@ -102,5 +132,6 @@ module.exports = {
   limbsToReceiver,
   computeRecipientBinding,
   computeCredential,
+  computeCredentialV1,
   computePolicyLeaf,
 };

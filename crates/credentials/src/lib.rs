@@ -6,7 +6,9 @@
 //! - credential-authority active-root envelopes;
 //! - deterministic unsigned-payload serialization;
 //! - non-cryptographic structural and freshness validation;
-//! - credential and policy value types (`InvestorClass`, `Jurisdiction`, …).
+//! - credential and policy value types (`InvestorClass`, `Jurisdiction`, …);
+//! - Phase 1B active credential leaves, which bind the one Orchard receiver the
+//!   credential authority approved for a subject.
 //!
 //! Signature material is opaque. No root signature algorithm has been approved,
 //! so nothing here is cryptographically authenticated. Structural validation
@@ -17,10 +19,12 @@
 
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 
+pub mod credential;
 pub mod envelope;
 pub mod ids;
 pub mod values;
 
+pub use credential::{ActiveCredential, CredentialLeaf, CredentialMeta};
 pub use envelope::{
     CredentialRootEnvelope, CredentialRootPayload, IssuerRootEnvelope, IssuerRootPayload,
 };
