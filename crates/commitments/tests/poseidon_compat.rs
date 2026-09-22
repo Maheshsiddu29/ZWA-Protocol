@@ -89,9 +89,9 @@ fn poseidon5_matches_circomlibjs() {
         &["1", "2", "3", "4", "5"],
         "6183221330272524995739186171720101788151706631170188140075976616310159254464",
     );
-    // Phase 0G `credential.credentialLeaf`. The eligibility circuit hashes this
-    // arity through PoseidonHash5; ZWA Phase 1 does not recompute credential
-    // leaves, so this vector exists to pin the parameters at arity 5.
+    // The frozen Phase 0G V1 credential leaf, which Phase 1B superseded. It is
+    // kept because it is a known-good circomlibjs arity-5 vector; the live
+    // Phase 1B leaf is arity 6 and is pinned below.
     assert_digest(
         &[
             "18949280892933681",
@@ -101,6 +101,30 @@ fn poseidon5_matches_circomlibjs() {
             "41",
         ],
         "15218271836826561578701755741896301127594556628574350368538319672252803018733",
+    );
+}
+
+#[test]
+fn poseidon6_matches_circomlibjs() {
+    assert_digest(
+        &["1", "2", "3", "4", "5", "6"],
+        "20400040500897583745843009878988256314335038853985262692600694741116813247201",
+    );
+    // The Phase 1B active credential leaf
+    // = H(CRED_V2, authorityCommitment, subjectCommitment, credentialMeta,
+    //     credentialNonce, approvedReceiverCommitment), from
+    // tests/fixtures/phase1b-eligibility-v2.json. Phase 1B introduced arity 6,
+    // so these parameters must be pinned exactly like the others.
+    assert_digest(
+        &[
+            "18949280892933682",
+            "70707070707070",
+            "8182499163832458428983635402341439692935005683808059285091898351261831993662",
+            "10862951632723896631943303993573880486210175684885551136634224834169439788480",
+            "41",
+            "11061882383881915406447883142926671585417814924641945492950382527926270559758",
+        ],
+        "20863877480330145676905791210365306223555027381899343250780242783978115337129",
     );
 }
 
