@@ -27,11 +27,12 @@ Every tag is its ASCII label read as a positive big-endian integer. The tables
 below are split by which component computes them, because the two groups have
 different sources of truth.
 
-### Implemented by the Phase 1 commitment engine
+### Implemented in Rust
 
 These are exactly the separators defined by `Domain` in
-`crates/commitments/src/domain.rs`, and they cover the whole
-`TradeCommitmentV1` and recipient-binding path.
+`crates/commitments/src/domain.rs`. They cover the whole `TradeCommitmentV1` and
+recipient-binding path, plus the Phase 1B active credential leaf that
+`zwa-credentials` builds.
 
 | Label | Integer | Used by |
 |---|---:|---|
@@ -47,8 +48,14 @@ These are exactly the separators defined by `Domain` in
 | `RCPBIND1` | 5927669780177634353 | Phase 0G `recipientCommitment` |
 | `FRCPTV1` | 19793697433736753 | `matcherFeeRecipientCommitment` |
 | `RCPTV1` | 90449063990833 | Phase 0F trade `recipientCommitment` |
+| `CREDMETA` | 4851015908287927361 | credential leaf metadata |
+| `CRED_V2` | 18949280892933682 | Phase 1B active credential leaf |
 
 `ZEC` is a fee-asset tag, not an `AssetBase`.
+
+`CREDMETA` and `CRED_V2` are credential-leaf separators, not part of
+`TradeCommitmentV1`. They are listed here because `zwa-credentials` recomputes
+the Phase 1B leaf; see [ADR 0004](decisions/0004-credential-approved-receiver-binding.md).
 
 `FRCPTV1` and `RCPTV1` are canonical-byte commitments rather than limb
 commitments; see [Canonical-byte recipient commitments](#canonical-byte-recipient-commitments).
@@ -58,18 +65,23 @@ subject.
 
 ### Circuit-side leaf separators
 
-These are used by the Circom circuits and `circuits/shared/*.js` to build
-issuance and credential leaves. The Phase 1 Rust `Domain` type deliberately does
-not define them, because Phase 1 does not recompute those leaves; they are
-listed here so the frozen constant table is complete.
+These are used by the Circom circuits and `circuits/shared/*.js`. The Rust
+`Domain` type does not define them, because Rust does not recompute the issuance
+leaf or the eligibility policy leaf; they are listed here so the frozen constant
+table is complete.
 
 | Label | Integer | Used by |
 |---|---:|---|
 | `ISSMETA1` | 5283658379176460593 | issuance leaf metadata |
 | `ISSUEV1` | 20639290677876273 | issuance leaf |
-| `CREDMETA` | 4851015908287927361 | credential leaf metadata |
-| `CRED_V1` | 18949280892933681 | credential leaf |
 | `ELIGPOL1` | 4993446657485917233 | eligibility policy leaf |
+| `CRED_V1` | 18949280892933681 | superseded Phase 0G credential leaf |
+
+`CRED_V1` is retained only so migrated Phase 0G evidence stays reproducible. It
+committed to no receiver, so any receiver satisfied any credential; Phase 1B
+replaced it with `CRED_V2`, which binds the authority-approved receiver
+commitment. A `CRED_V1` leaf must not be used to build a new active credential
+root.
 
 ## Exact Poseidon staging
 
