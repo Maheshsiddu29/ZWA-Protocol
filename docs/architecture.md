@@ -39,7 +39,9 @@ An issuance leaf commits the issuer, exact `AssetBase`, series, policy root, and
 
 ## 9. Credential issuance
 
-A credential leaf commits the configured authority, a subject commitment, private investor class, private jurisdiction, credential expiry, and nonce. The active credential tree supports revocation through root rotation. The authority signs versioned root metadata; the matcher checks signature, authority, freshness, and version.
+A credential leaf commits the configured authority, a subject commitment, private investor class, private jurisdiction, credential expiry, a nonce, and the authority-approved Orchard receiver commitment. The active credential tree supports revocation through root rotation. The authority signs versioned root metadata; the matcher checks signature, authority, freshness, and version.
+
+The approved receiver commitment is the Phase 1B binding: a credential authorizes exactly the receiver committed into its leaf, so `credential(receiver A) + trade(receiver B)` cannot produce a valid eligibility proof even when the subject secret, class, jurisdiction, expiry, and root are all correct. Approving a receiver is an issuance-time statement by the authority and is not proof that the trader currently controls that receiver; live recipient-control authentication remains the separate matcher concern described below. See [ADR 0004](decisions/0004-credential-approved-receiver-binding.md).
 
 ## 10. Private RFQ flow
 
@@ -55,7 +57,7 @@ The provenance proof has two public inputs: `authorizedIssuanceRoot` and `tradeC
 
 ## 13. Eligibility proof
 
-The eligibility proof has two public inputs: `activeCredentialRoot` and `tradeCommitment`. Its private witness proves active credential membership, allowed class and jurisdiction membership, and credential validity through trade expiry. The credential attributes remain private circuit inputs.
+The eligibility proof has two public inputs: `activeCredentialRoot` and `tradeCommitment`. Its private witness proves active credential membership, allowed class and jurisdiction membership, credential validity through trade expiry, and that the receiver behind the trade recipient commitment is the receiver the credential authority approved. The credential attributes remain private circuit inputs. The circuit derives the receiver commitment once and uses that single value both inside the credential leaf and inside the recipient binding, so the equality is structural rather than a separate comparison.
 
 ## 14. Recipient binding
 

@@ -12,6 +12,7 @@
 - ZEC matcher-fee amount and recipient commitment are bound into the trade commitment.
 - Private credential and policy membership with only the active root and trade commitment public.
 - Credential subject and exact Orchard receiver determine the recipient commitment.
+- An active credential authorizes exactly the Orchard receiver committed into its leaf, so the same credential cannot settle to a receiver the authority did not approve.
 - Borrowed-credential and receiver-substitution attempts fail.
 - Investor class and jurisdiction remain private while their permitted tuple is proved.
 - Credential expiry must cover trade expiry.
@@ -29,7 +30,7 @@
 - A production trusted setup or production key management.
 - Independent-party signing and custody workflow.
 - Bridge provenance, corporate actions, or regulator disclosure.
-- Proof of recipient spending-key control inside either ZK circuit.
+- Proof of recipient spending-key control inside either ZK circuit. Phase 1B proves that the credential authority approved a receiver, not that the trader currently controls it.
 - Liveness, high availability, or Byzantine tolerance of a matcher network.
 
 ## Future work
