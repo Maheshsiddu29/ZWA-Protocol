@@ -49,12 +49,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use zwa_protocol::error::ProtocolError;
-use zwa_protocol::lifecycle::{
-    FailureReason, LifecycleEvent, SettlementTxId, TradeLifecycleState,
-};
-use zwa_protocol::numbers::{
-    TradeAmount, TradeExpiry, TradeNonce, UnixSeconds, ZatoshiAmount,
-};
+use zwa_protocol::lifecycle::{FailureReason, LifecycleEvent, SettlementTxId, TradeLifecycleState};
+use zwa_protocol::numbers::{TradeAmount, TradeExpiry, TradeNonce, UnixSeconds, ZatoshiAmount};
 use zwa_protocol::{
     AssetBaseBytes, MatcherFee, PolicyRoot, RecipientCommitment, TradeCommitment, TradeIntent,
 };
@@ -602,7 +598,10 @@ fn encode_intent(intent: &TradeIntent) -> PersistedIntent {
         recipient_commitment_decimal: intent.recipient_commitment.to_string(),
         policy_root_decimal: intent.policy_root.to_string(),
         matcher_fee_amount: intent.matcher_fee.amount.get(),
-        matcher_fee_recipient_commitment_decimal: intent.matcher_fee.recipient_commitment.to_string(),
+        matcher_fee_recipient_commitment_decimal: intent
+            .matcher_fee
+            .recipient_commitment
+            .to_string(),
         nonce: intent.nonce.get(),
         expiry: intent.expiry.get(),
     }
@@ -619,8 +618,10 @@ fn decode_intent(p: &PersistedIntent) -> Result<TradeIntent, PersistenceError> {
         requested_asset: AssetBaseBytes::from_hex(&p.requested_asset_hex)
             .map_err(|e| bad("requested_asset", &e))?,
         requested_amount: TradeAmount::new(p.requested_amount),
-        recipient_commitment: RecipientCommitment::from_decimal_str(&p.recipient_commitment_decimal)
-            .map_err(|e| bad("recipient_commitment", &e))?,
+        recipient_commitment: RecipientCommitment::from_decimal_str(
+            &p.recipient_commitment_decimal,
+        )
+        .map_err(|e| bad("recipient_commitment", &e))?,
         policy_root: PolicyRoot::from_decimal_str(&p.policy_root_decimal)
             .map_err(|e| bad("policy_root", &e))?,
         matcher_fee: MatcherFee::new(
@@ -749,8 +750,9 @@ impl JsonFilePersistence {
                 expected: PERSISTENCE_SCHEMA_VERSION,
             });
         }
-        let file: PersistedFile = serde_json::from_value(value)
-            .map_err(|e| PersistenceError::Deserialization(format!("{}: {e}", self.path.display())))?;
+        let file: PersistedFile = serde_json::from_value(value).map_err(|e| {
+            PersistenceError::Deserialization(format!("{}: {e}", self.path.display()))
+        })?;
         let mut map = BTreeMap::new();
         for p in &file.records {
             let rec = decode_record(p)?;
@@ -990,7 +992,8 @@ impl ReplayPersistence for SqlitePersistence {
         let data = serde_json::to_string(&encode_record(new))
             .map_err(|e| PersistenceError::Serialization(format!("{e}")))?;
         let to_i64 = |v: u64| {
-            i64::try_from(v).map_err(|_| PersistenceError::Serialization("version overflow".to_string()))
+            i64::try_from(v)
+                .map_err(|_| PersistenceError::Serialization("version overflow".to_string()))
         };
         let new_version = to_i64(new.version)?;
         let mut conn = self.conn()?;
@@ -1151,9 +1154,15 @@ impl<P: ReplayPersistence> PersistentReplayStore<P> {
     }
 
     /// Inserts a `CREATED` record from a checked trade (gate only).
-    pub(crate) fn create_checked(&self, checked: &CheckedTrade) -> Result<ReplayRecord, ReplayError> {
+    pub(crate) fn create_checked(
+        &self,
+        checked: &CheckedTrade,
+    ) -> Result<ReplayRecord, ReplayError> {
         if let Some(existing) = self.persistence.load(checked.commitment())? {
-            return Err(ReplayError::Protocol(reject(existing.state, LifecycleEvent::Create)));
+            return Err(ReplayError::Protocol(reject(
+                existing.state,
+                LifecycleEvent::Create,
+            )));
         }
         let record = ReplayRecord::created(checked);
         self.persistence.compare_and_swap(None, &record)?;
@@ -1306,7 +1315,10 @@ impl<P: ReplayPersistence> PersistentReplayStore<P> {
     /// # Errors
     ///
     /// Persistence errors (fail closed; never reported as "absent").
-    pub fn state(&self, commitment: TradeCommitment) -> Result<Option<TradeLifecycleState>, ReplayError> {
+    pub fn state(
+        &self,
+        commitment: TradeCommitment,
+    ) -> Result<Option<TradeLifecycleState>, ReplayError> {
         Ok(self.persistence.load(commitment)?.map(|r| r.state))
     }
 
@@ -1387,17 +1399,17 @@ mod tests {
         intent.nonce = TradeNonce::new(7002);
         intent.recipient_commitment =
             RecipientCommitment::from_decimal_str(RECIPIENT_COMMITMENT_B).unwrap();
-        CheckedTrade::new(intent, TradeCommitment::from_decimal_str(PHASE_0G_TRADE_B).unwrap())
-            .unwrap()
+        CheckedTrade::new(
+            intent,
+            TradeCommitment::from_decimal_str(PHASE_0G_TRADE_B).unwrap(),
+        )
+        .unwrap()
     }
 
     fn temp_path(tag: &str, ext: &str) -> PathBuf {
         static COUNTER: AtomicUsize = AtomicUsize::new(0);
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        let p = std::env::temp_dir().join(format!(
-            "zwa-m2-{tag}-{}-{n}.{ext}",
-            std::process::id()
-        ));
+        let p = std::env::temp_dir().join(format!("zwa-m2-{tag}-{}-{n}.{ext}", std::process::id()));
         let _ = fs::remove_file(&p);
         let _ = fs::remove_file(p.with_extension("tmp"));
         p
@@ -1408,13 +1420,18 @@ mod tests {
     }
 
     fn is_conflict(e: &ReplayError) -> bool {
-        matches!(e, ReplayError::Persistence(PersistenceError::Conflict { .. }))
+        matches!(
+            e,
+            ReplayError::Persistence(PersistenceError::Conflict { .. })
+        )
     }
 
     /// Drives a store through a history that exercises every persisted field:
     /// trade A ends SUBMITTED with txid T2 after one retry that acknowledged T1;
     /// trade B ends EXPIRED while retaining failure reason ConstructionFailed.
-    fn build_rich_history<P: ReplayPersistence>(store: &PersistentReplayStore<P>) -> (ReplayRecord, ReplayRecord) {
+    fn build_rich_history<P: ReplayPersistence>(
+        store: &PersistentReplayStore<P>,
+    ) -> (ReplayRecord, ReplayRecord) {
         let a = checked_trade();
         let c = a.commitment();
         store.create_checked(&a).unwrap();
@@ -1423,7 +1440,10 @@ mod tests {
         store.submit(c, T1, BEFORE).unwrap();
         let failed = store.fail(c, FailureReason::SubmissionFailed).unwrap();
         assert_eq!(failed.prior_txid(), Some(T1));
-        assert_eq!(failed.failure_reason(), Some(FailureReason::SubmissionFailed));
+        assert_eq!(
+            failed.failure_reason(),
+            Some(FailureReason::SubmissionFailed)
+        );
         store.retry_after_failure(c, Some(T1), BEFORE).unwrap();
         store.verify(c, BEFORE).unwrap();
         store.acquire_construction(c, BEFORE).unwrap();
@@ -1439,7 +1459,10 @@ mod tests {
         store.fail(cb, FailureReason::ConstructionFailed).unwrap();
         let rec_b = store.expire(cb, AFTER).unwrap();
         assert_eq!(rec_b.state(), TradeLifecycleState::Expired);
-        assert_eq!(rec_b.failure_reason(), Some(FailureReason::ConstructionFailed));
+        assert_eq!(
+            rec_b.failure_reason(),
+            Some(FailureReason::ConstructionFailed)
+        );
         (rec_a, rec_b)
     }
 
@@ -1459,7 +1482,11 @@ mod tests {
         fn load_all(&self) -> Result<Vec<ReplayRecord>, PersistenceError> {
             self.inner.load_all()
         }
-        fn compare_and_swap(&self, e: Option<&ReplayRecord>, n: &ReplayRecord) -> Result<(), PersistenceError> {
+        fn compare_and_swap(
+            &self,
+            e: Option<&ReplayRecord>,
+            n: &ReplayRecord,
+        ) -> Result<(), PersistenceError> {
             if self.fail.load(Ordering::SeqCst) {
                 return Err(PersistenceError::Io("injected write failure".to_string()));
             }
@@ -1482,7 +1509,11 @@ mod tests {
         fn load_all(&self) -> Result<Vec<ReplayRecord>, PersistenceError> {
             self.inner.load_all()
         }
-        fn compare_and_swap(&self, e: Option<&ReplayRecord>, n: &ReplayRecord) -> Result<(), PersistenceError> {
+        fn compare_and_swap(
+            &self,
+            e: Option<&ReplayRecord>,
+            n: &ReplayRecord,
+        ) -> Result<(), PersistenceError> {
             self.barrier.wait();
             self.inner.compare_and_swap(e, n)
         }
@@ -1492,7 +1523,14 @@ mod tests {
     /// (which must share storage) on a VERIFIED record; exactly one must win.
     fn race_acquire<P: ReplayPersistence>(pa: P, pb: P, c: TradeCommitment, verified_version: u64) {
         let barrier = Arc::new(Barrier::new(2));
-        let sa = PersistentReplayStore::new(BarrierCas { inner: pa, barrier: Arc::clone(&barrier) }, 3).unwrap();
+        let sa = PersistentReplayStore::new(
+            BarrierCas {
+                inner: pa,
+                barrier: Arc::clone(&barrier),
+            },
+            3,
+        )
+        .unwrap();
         let sb = PersistentReplayStore::new(BarrierCas { inner: pb, barrier }, 3).unwrap();
         let (ra, rb) = std::thread::scope(|scope| {
             let ha = scope.spawn(|| sa.acquire_construction(c, BEFORE));
@@ -1503,7 +1541,10 @@ mod tests {
             (Ok(w), Err(l)) | (Err(l), Ok(w)) => (w, l),
             (a, b) => panic!("exactly one acquire must win, got {a:?} / {b:?}"),
         };
-        assert!(is_conflict(&loser), "loser must be a CAS conflict, got {loser:?}");
+        assert!(
+            is_conflict(&loser),
+            "loser must be a CAS conflict, got {loser:?}"
+        );
         assert_eq!(winner.state(), TradeLifecycleState::SettlementConstructed);
         assert_eq!(winner.version(), verified_version + 1);
         let stored = sa.get(c).unwrap().unwrap();
@@ -1521,7 +1562,11 @@ mod tests {
             && frozen.retry_count() == m2.retry_count()
     }
 
-    fn call_frozen(store: &mut ReplayStore, c: TradeCommitment, op: Op) -> Result<TradeRecord, ProtocolError> {
+    fn call_frozen(
+        store: &mut ReplayStore,
+        c: TradeCommitment,
+        op: Op,
+    ) -> Result<TradeRecord, ProtocolError> {
         match op {
             Op::Verify(now) => store.verify(c, now),
             Op::AcquireConstruction(now) => store.acquire_construction(c, now),
@@ -1555,20 +1600,29 @@ mod tests {
             let f_after = *f.get(c).unwrap();
             match (fres, apply(m2, op, max)) {
                 (Ok(fr), Step::Commit(next)) => {
-                    assert!(same(&fr, &next), "{op:?} from {m2:?}: frozen {fr:?} vs m2 {next:?}");
+                    assert!(
+                        same(&fr, &next),
+                        "{op:?} from {m2:?}: frozen {fr:?} vs m2 {next:?}"
+                    );
                     assert!(same(&f_after, &next));
                     assert_eq!(next.version(), m2.version() + 1);
                     explore(&f, &next, depth - 1, ops, max, visited, states_seen);
                 }
                 (Err(fe), Step::CommitThenReject(next, me)) => {
                     assert_eq!(fe, me, "{op:?} from {m2:?}");
-                    assert!(same(&f_after, &next), "{op:?}: frozen mutated to {f_after:?}, m2 {next:?}");
+                    assert!(
+                        same(&f_after, &next),
+                        "{op:?}: frozen mutated to {f_after:?}, m2 {next:?}"
+                    );
                     assert_eq!(next.version(), m2.version() + 1);
                     explore(&f, &next, depth - 1, ops, max, visited, states_seen);
                 }
                 (Err(fe), Step::Reject(me)) => {
                     assert_eq!(fe, me, "{op:?} from {m2:?}");
-                    assert!(same(&f_after, m2), "{op:?}: frozen mutated on reject to {f_after:?}");
+                    assert!(
+                        same(&f_after, m2),
+                        "{op:?}: frozen mutated on reject to {f_after:?}"
+                    );
                 }
                 (f, m) => panic!("{op:?} from {m2:?}: frozen {f:?} vs m2 {m:?}"),
             }
@@ -1598,14 +1652,28 @@ mod tests {
         let max_retries = 1;
         let checked = checked_trade();
         let mut frozen = ReplayStore::with_max_retries(max_retries);
-        let created = frozen.create(checked.commitment(), checked.intent()).unwrap();
+        let created = frozen
+            .create(checked.commitment(), checked.intent())
+            .unwrap();
         let m2 = ReplayRecord::created(&checked);
         assert!(same(&created, &m2));
         let mut visited = 0;
         let mut states = std::collections::BTreeSet::new();
-        explore(&frozen, &m2, 7, &ops, max_retries, &mut visited, &mut states);
+        explore(
+            &frozen,
+            &m2,
+            7,
+            &ops,
+            max_retries,
+            &mut visited,
+            &mut states,
+        );
         assert!(visited > 1_000, "explored {visited}");
-        assert_eq!(states.len(), 8, "every lifecycle state must be reached: {states:?}");
+        assert_eq!(
+            states.len(),
+            8,
+            "every lifecycle state must be reached: {states:?}"
+        );
     }
 
     // --- Store behaviour ---
@@ -1632,7 +1700,10 @@ mod tests {
         let store = mem_store();
         let c = checked_trade().commitment();
         store.create_checked(&checked_trade()).unwrap();
-        assert_eq!(store.verify(c, AT).unwrap().state(), TradeLifecycleState::Verified);
+        assert_eq!(
+            store.verify(c, AT).unwrap().state(),
+            TradeLifecycleState::Verified
+        );
         assert_eq!(
             store.acquire_construction(c, AT).unwrap().state(),
             TradeLifecycleState::SettlementConstructed
@@ -1641,7 +1712,10 @@ mod tests {
         let store = mem_store();
         store.create_checked(&checked_trade()).unwrap();
         let err = store.verify(c, AFTER).unwrap_err();
-        assert!(matches!(err, ReplayError::Protocol(ProtocolError::ExpiredTrade { .. })));
+        assert!(matches!(
+            err,
+            ReplayError::Protocol(ProtocolError::ExpiredTrade { .. })
+        ));
         assert_eq!(store.state(c).unwrap(), Some(TradeLifecycleState::Expired));
         // Terminal.
         assert!(store.fail(c, FailureReason::VerificationRejected).is_err());
@@ -1659,12 +1733,17 @@ mod tests {
         store.confirm(c).unwrap();
         store.consume(c).unwrap();
         for err in [
-            store.fail(c, FailureReason::ConfirmationFailed).unwrap_err(),
+            store
+                .fail(c, FailureReason::ConfirmationFailed)
+                .unwrap_err(),
             store.expire(c, AFTER).unwrap_err(),
             store.verify(c, BEFORE).unwrap_err(),
             store.create_checked(&checked_trade()).unwrap_err(),
         ] {
-            assert!(matches!(err, ReplayError::Protocol(ProtocolError::AlreadyConsumed)), "{err:?}");
+            assert!(
+                matches!(err, ReplayError::Protocol(ProtocolError::AlreadyConsumed)),
+                "{err:?}"
+            );
         }
     }
 
@@ -1679,7 +1758,10 @@ mod tests {
         store.fail(c, FailureReason::SubmissionFailed).unwrap();
         for bad in [None, Some(T2)] {
             let err = store.retry_after_failure(c, bad, BEFORE).unwrap_err();
-            assert!(matches!(err, ReplayError::Protocol(ProtocolError::UnreconciledPriorSubmission)));
+            assert!(matches!(
+                err,
+                ReplayError::Protocol(ProtocolError::UnreconciledPriorSubmission)
+            ));
         }
         let rec = store.retry_after_failure(c, Some(T1), BEFORE).unwrap();
         assert_eq!(rec.state(), TradeLifecycleState::Created);
@@ -1702,11 +1784,15 @@ mod tests {
             ));
             let verified = store.verify(c, BEFORE).unwrap();
             // Writer that still believes the record is `created`.
-            let Step::Commit(stale_next) = apply(&created, Op::Fail(FailureReason::VerificationRejected), 3) else {
+            let Step::Commit(stale_next) =
+                apply(&created, Op::Fail(FailureReason::VerificationRejected), 3)
+            else {
                 panic!("fail from CREATED must commit");
             };
             assert!(matches!(
-                store.persistence().compare_and_swap(Some(&created), &stale_next),
+                store
+                    .persistence()
+                    .compare_and_swap(Some(&created), &stale_next),
                 Err(PersistenceError::Conflict { .. })
             ));
             assert_eq!(store.get(c).unwrap(), Some(verified));
@@ -1720,7 +1806,10 @@ mod tests {
     #[test]
     fn persistence_failure_does_not_advance_state() {
         let store = PersistentReplayStore::new(
-            FailingCas { inner: InMemoryPersistence::new(), fail: AtomicBool::new(false) },
+            FailingCas {
+                inner: InMemoryPersistence::new(),
+                fail: AtomicBool::new(false),
+            },
             3,
         )
         .unwrap();
@@ -1729,7 +1818,10 @@ mod tests {
 
         // Failed create leaves no record.
         store.persistence().fail.store(true, Ordering::SeqCst);
-        assert!(matches!(store.create_checked(&checked), Err(ReplayError::Persistence(_))));
+        assert!(matches!(
+            store.create_checked(&checked),
+            Err(ReplayError::Persistence(_))
+        ));
         assert_eq!(store.get(c).unwrap(), None);
 
         store.persistence().fail.store(false, Ordering::SeqCst);
@@ -1738,12 +1830,18 @@ mod tests {
 
         // Failed acquire leaves VERIFIED at the same version.
         store.persistence().fail.store(true, Ordering::SeqCst);
-        assert!(matches!(store.acquire_construction(c, BEFORE), Err(ReplayError::Persistence(_))));
+        assert!(matches!(
+            store.acquire_construction(c, BEFORE),
+            Err(ReplayError::Persistence(_))
+        ));
         assert_eq!(store.get(c).unwrap(), Some(verified));
 
         // Expiry transition that cannot be persisted surfaces the persistence
         // error (not ExpiredTrade) and leaves the record untouched.
-        assert!(matches!(store.acquire_construction(c, AFTER), Err(ReplayError::Persistence(_))));
+        assert!(matches!(
+            store.acquire_construction(c, AFTER),
+            Err(ReplayError::Persistence(_))
+        ));
         assert_eq!(store.get(c).unwrap(), Some(verified));
 
         store.persistence().fail.store(false, Ordering::SeqCst);
@@ -1767,15 +1865,23 @@ mod tests {
     fn json_restart_round_trips_every_field_exactly() {
         let path = temp_path("json-restart", "json");
         let (a, b) = {
-            let store = PersistentReplayStore::new(JsonFilePersistence::new(&path).unwrap(), 3).unwrap();
+            let store =
+                PersistentReplayStore::new(JsonFilePersistence::new(&path).unwrap(), 3).unwrap();
             build_rich_history(&store)
         };
-        assert!(!path.with_extension("tmp").exists(), "temp file must not survive a write");
-        let store = PersistentReplayStore::new(JsonFilePersistence::new(&path).unwrap(), 3).unwrap();
+        assert!(
+            !path.with_extension("tmp").exists(),
+            "temp file must not survive a write"
+        );
+        let store =
+            PersistentReplayStore::new(JsonFilePersistence::new(&path).unwrap(), 3).unwrap();
         assert_eq!(store.get(a.commitment()).unwrap(), Some(a));
         assert_eq!(store.get(b.commitment()).unwrap(), Some(b));
         // The reloaded record is live: it continues from the exact state.
-        assert_eq!(store.confirm(a.commitment()).unwrap().prior_txid(), Some(T2));
+        assert_eq!(
+            store.confirm(a.commitment()).unwrap().prior_txid(),
+            Some(T2)
+        );
         let _ = fs::remove_file(&path);
     }
 
@@ -1793,7 +1899,8 @@ mod tests {
     }
 
     fn rewrite_json(path: &Path, f: impl FnOnce(&mut serde_json::Value)) {
-        let mut v: serde_json::Value = serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+        let mut v: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
         f(&mut v);
         fs::write(path, serde_json::to_vec(&v).unwrap()).unwrap();
     }
@@ -1801,7 +1908,8 @@ mod tests {
     #[test]
     fn json_load_failures_fail_closed() {
         let path = temp_path("json-bad", "json");
-        let store = PersistentReplayStore::new(JsonFilePersistence::new(&path).unwrap(), 3).unwrap();
+        let store =
+            PersistentReplayStore::new(JsonFilePersistence::new(&path).unwrap(), 3).unwrap();
         let c = checked_trade().commitment();
         store.create_checked(&checked_trade()).unwrap();
         let good = fs::read_to_string(&path).unwrap();
@@ -1812,26 +1920,65 @@ mod tests {
         assert!(store.get(c).is_err());
         assert!(store.verify(c, BEFORE).is_err());
         assert!(JsonFilePersistence::new(&path).is_err());
-        assert_eq!(fs::read(&path).unwrap(), b"{ not json", "no destructive rewrite");
+        assert_eq!(
+            fs::read(&path).unwrap(),
+            b"{ not json",
+            "no destructive rewrite"
+        );
 
         type Mutation = Box<dyn Fn(&mut serde_json::Value)>;
         let cases: Vec<(&str, Mutation)> = vec![
-            ("unknown state", Box::new(|v: &mut serde_json::Value| v["records"][0]["state"] = "APPROVED".into())),
-            ("unknown failure", Box::new(|v: &mut serde_json::Value| v["records"][0]["failure_reason"] = "OOPS".into())),
-            ("bad txid", Box::new(|v: &mut serde_json::Value| v["records"][0]["prior_txid_hex"] = "abcd".into())),
-            ("tampered commitment", Box::new(|v: &mut serde_json::Value| v["records"][0]["commitment_decimal"] = PHASE_0G_TRADE_B.into())),
-            ("tampered intent", Box::new(|v: &mut serde_json::Value| v["records"][0]["intent"]["offered_amount"] = 11.into())),
-            ("unknown field", Box::new(|v: &mut serde_json::Value| v["records"][0]["extra"] = 1.into())),
-            ("zero version", Box::new(|v: &mut serde_json::Value| v["records"][0]["version"] = 0.into())),
-            ("duplicate", Box::new(|v: &mut serde_json::Value| {
-                let r = v["records"][0].clone();
-                v["records"].as_array_mut().unwrap().push(r);
-            })),
+            (
+                "unknown state",
+                Box::new(|v: &mut serde_json::Value| v["records"][0]["state"] = "APPROVED".into()),
+            ),
+            (
+                "unknown failure",
+                Box::new(|v: &mut serde_json::Value| {
+                    v["records"][0]["failure_reason"] = "OOPS".into()
+                }),
+            ),
+            (
+                "bad txid",
+                Box::new(|v: &mut serde_json::Value| {
+                    v["records"][0]["prior_txid_hex"] = "abcd".into()
+                }),
+            ),
+            (
+                "tampered commitment",
+                Box::new(|v: &mut serde_json::Value| {
+                    v["records"][0]["commitment_decimal"] = PHASE_0G_TRADE_B.into()
+                }),
+            ),
+            (
+                "tampered intent",
+                Box::new(|v: &mut serde_json::Value| {
+                    v["records"][0]["intent"]["offered_amount"] = 11.into()
+                }),
+            ),
+            (
+                "unknown field",
+                Box::new(|v: &mut serde_json::Value| v["records"][0]["extra"] = 1.into()),
+            ),
+            (
+                "zero version",
+                Box::new(|v: &mut serde_json::Value| v["records"][0]["version"] = 0.into()),
+            ),
+            (
+                "duplicate",
+                Box::new(|v: &mut serde_json::Value| {
+                    let r = v["records"][0].clone();
+                    v["records"].as_array_mut().unwrap().push(r);
+                }),
+            ),
         ];
         for (name, mutate) in cases {
             fs::write(&path, &good).unwrap();
             rewrite_json(&path, |v| mutate(v));
-            assert!(JsonFilePersistence::new(&path).is_err(), "{name} must fail to open");
+            assert!(
+                JsonFilePersistence::new(&path).is_err(),
+                "{name} must fail to open"
+            );
             assert!(store.get(c).is_err(), "{name} must fail to load");
         }
 
@@ -1843,9 +1990,15 @@ mod tests {
             Err(PersistenceError::UnknownSchemaVersion { got: 1, .. })
         ));
         fs::write(&path, b"[]").unwrap();
-        assert!(JsonFilePersistence::new(&path).is_err(), "legacy bare array rejected");
+        assert!(
+            JsonFilePersistence::new(&path).is_err(),
+            "legacy bare array rejected"
+        );
         fs::write(&path, b"").unwrap();
-        assert!(JsonFilePersistence::new(&path).is_err(), "empty file rejected");
+        assert!(
+            JsonFilePersistence::new(&path).is_err(),
+            "empty file rejected"
+        );
         let _ = fs::remove_file(&path);
     }
 
@@ -1862,7 +2015,8 @@ mod tests {
     fn sqlite_restart_round_trips_every_field_exactly() {
         let path = temp_path("sqlite-restart", "db");
         let (a, b) = {
-            let store = PersistentReplayStore::new(SqlitePersistence::new(&path).unwrap(), 3).unwrap();
+            let store =
+                PersistentReplayStore::new(SqlitePersistence::new(&path).unwrap(), 3).unwrap();
             build_rich_history(&store)
         };
         let store = PersistentReplayStore::new(SqlitePersistence::new(&path).unwrap(), 3).unwrap();
@@ -1870,7 +2024,10 @@ mod tests {
         assert_eq!(store.get(b.commitment()).unwrap(), Some(b));
         let all = store.persistence().load_all().unwrap();
         assert_eq!(all.len(), 2);
-        assert_eq!(store.confirm(a.commitment()).unwrap().prior_txid(), Some(T2));
+        assert_eq!(
+            store.confirm(a.commitment()).unwrap().prior_txid(),
+            Some(T2)
+        );
         let _ = fs::remove_file(&path);
     }
 
@@ -1901,21 +2058,30 @@ mod tests {
         let c = checked.commitment();
         let created = store.create_checked(&checked).unwrap();
         let verified = store.verify(c, BEFORE).unwrap();
-        let Step::Commit(stale_next) = apply(&created, Op::Fail(FailureReason::VerificationRejected), 3) else {
+        let Step::Commit(stale_next) =
+            apply(&created, Op::Fail(FailureReason::VerificationRejected), 3)
+        else {
             panic!("fail from CREATED must commit");
         };
         assert!(matches!(
-            store.persistence().compare_and_swap(Some(&created), &stale_next),
+            store
+                .persistence()
+                .compare_and_swap(Some(&created), &stale_next),
             Err(PersistenceError::Conflict { .. })
         ));
         assert_eq!(store.get(c).unwrap(), Some(verified));
 
         // Column/data disagreement is corruption, not "absent".
         let raw = rusqlite::Connection::open(&path).unwrap();
-        raw.execute("UPDATE replay_records_v2 SET state = 'CONSUMED'", []).unwrap();
+        raw.execute("UPDATE replay_records_v2 SET state = 'CONSUMED'", [])
+            .unwrap();
         assert!(store.get(c).is_err());
         assert!(SqlitePersistence::new(&path).is_err());
-        raw.execute("UPDATE replay_records_v2 SET state = 'VERIFIED', schema_version = 1", []).unwrap();
+        raw.execute(
+            "UPDATE replay_records_v2 SET state = 'VERIFIED', schema_version = 1",
+            [],
+        )
+        .unwrap();
         assert!(matches!(
             store.persistence().load(c),
             Err(PersistenceError::UnknownSchemaVersion { got: 1, .. })
