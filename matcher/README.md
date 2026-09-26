@@ -286,14 +286,14 @@ Compliance is matcher-enforced. ZSA settlement is experimental QEDIT stack, not 
 > re-auditor, not the implementer. Open items: (1) there is no end-to-end ALLOW
 > with *real* Groth16 proofs, because the fixture proofs are for two different
 > trades (provenance `7409…`, eligibility `10187…`) and regenerating proofs is
-> out of M2 scope; (2) the frozen circuits modified in `ef7fc73` (`dummyProd`
-> constraint) have been restored to the frozen M1 source (`b017962`), while the
-> Groth16 key/proof fixtures in `tests/fixtures/groth16/` are kept unchanged
-> (hashes `4831d3…`, `879d42…`) — they were generated from the modified variant,
-> so the M1 owner must re-issue or approve keys for the frozen circuits; (3) `crates/settlement` and `crates/zcash-adapter`
-> (M4) received a compile-only adaptation to the new replay/gate API, which is pending
-> review by the M4 owner (see `docs/matcher-handoff.md`). Statements below that predate the
-> remediation are historical.
+> out of M2 scope; (2) the Groth16 key/proof fixtures in `tests/fixtures/groth16/` (hashes
+> `4831d3…`, `879d42…`) are kept byte-for-byte unchanged; they were generated in
+> `ef7fc73` from a circuit variant with an extra `dummyProd` constraint that is
+> **not** part of this candidate (`circuits/` is byte-identical to the frozen M1
+> base `b017962`), so the M1 owner must re-issue or approve keys for the frozen
+> circuits; (3) this candidate is M2-only: it contains no settlement (M3) or M4
+> code, and downstream crates must adapt to the replay/gate API changes listed in
+> `docs/matcher-handoff.md`. Statements below that predate the remediation are historical.
 
 **One complete valid flow: real signatures, real proofs, real recipient control, persistent replay → MatcherApproval**
 
