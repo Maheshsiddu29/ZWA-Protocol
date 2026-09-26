@@ -1082,9 +1082,11 @@ impl ReplayPersistence for RocksDbPersistence {
 /// Holds no lifecycle state of its own. The commitment-keyed `create_checked`,
 /// `verify` and `acquire_construction` are crate-private and used only by
 /// [`crate::gate::MatcherGate`] after every gate check has passed (F-07).
-/// Other crates can create, verify or lock a trade only by presenting the
-/// resulting `MatcherApproval` (`create_from_approval`, `verify_approved`,
-/// `acquire_construction_approved`).
+/// There is no public way to create, verify or lock a trade: after `FAILED` →
+/// [`PersistentReplayStore::retry_after_failure`] the trade must pass
+/// [`crate::gate::MatcherGate::evaluate`] again in full (A8-R1: the former
+/// approval-driven methods let a held `MatcherApproval` re-lock it without
+/// re-verification).
 #[derive(Debug)]
 pub struct PersistentReplayStore<P: ReplayPersistence> {
     persistence: P,
@@ -1185,54 +1187,6 @@ impl<P: ReplayPersistence> PersistentReplayStore<P> {
         now: UnixSeconds,
     ) -> Result<ReplayRecord, ReplayError> {
         self.transition(commitment, Op::AcquireConstruction(now))
-    }
-
-    // --- Approval-gated API for downstream replay stores (settlement side) ---
-    //
-    // A `MatcherApproval` can only be produced by `MatcherGate::evaluate` after
-    // every gate check passed for exactly `approval.commitment()`, so holding
-    // one is the authorization to create / verify / lock that trade in another
-    // replay store. There is no way to reach `VERIFIED` or
-    // `SETTLEMENT_CONSTRUCTED` through the public API without an approval.
-
-    /// Inserts a `CREATED` record for an approved trade.
-    ///
-    /// # Errors
-    ///
-    /// Duplicate / terminal record (frozen lifecycle error), persistence errors,
-    /// CAS conflict.
-    pub fn create_from_approval(
-        &self,
-        approval: &crate::gate::MatcherApproval,
-    ) -> Result<ReplayRecord, ReplayError> {
-        self.create_checked(approval.checked_trade())
-    }
-
-    /// `CREATED → VERIFIED` for an approved trade (expiry-gated).
-    ///
-    /// # Errors
-    ///
-    /// Frozen lifecycle errors, persistence errors, CAS conflict.
-    pub fn verify_approved(
-        &self,
-        approval: &crate::gate::MatcherApproval,
-        now: UnixSeconds,
-    ) -> Result<ReplayRecord, ReplayError> {
-        self.verify(approval.commitment(), now)
-    }
-
-    /// `VERIFIED → SETTLEMENT_CONSTRUCTED` for an approved trade — CAS lock,
-    /// exactly one winner (expiry-gated).
-    ///
-    /// # Errors
-    ///
-    /// Frozen lifecycle errors, persistence errors, CAS conflict.
-    pub fn acquire_construction_approved(
-        &self,
-        approval: &crate::gate::MatcherApproval,
-        now: UnixSeconds,
-    ) -> Result<ReplayRecord, ReplayError> {
-        self.acquire_construction(approval.commitment(), now)
     }
 
     /// `SETTLEMENT_CONSTRUCTED → SUBMITTED`, recording `txid`.

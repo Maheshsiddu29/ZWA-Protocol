@@ -1379,34 +1379,61 @@ mod tests {
     }
 
     #[test]
-    fn approval_gated_replay_api_on_downstream_store() {
+    fn a8r1_old_approval_cannot_relock_after_failed_retry() {
+        // A8-R1: an approval held across FAILED -> retry must not re-lock the
+        // trade; only a full `evaluate` (every check re-run) can.
         let (input, gate) = valid_gate_input();
+        let c = input.commitment;
         let now = input.now;
-        let approval = gate.evaluate(input).unwrap();
-        // A separate (e.g. settlement-side) store can only be driven with the approval.
-        let downstream = PersistentReplayStore::lazy(InMemoryPersistence::new(), 3);
-        assert_eq!(
-            downstream.create_from_approval(&approval).unwrap().state(),
-            zwa_protocol::lifecycle::TradeLifecycleState::Created
-        );
-        assert!(
-            downstream.create_from_approval(&approval).is_err(),
-            "duplicate create"
-        );
-        downstream.verify_approved(&approval, now).unwrap();
-        let locked = downstream
-            .acquire_construction_approved(&approval, now)
+        let old_approval = gate.evaluate(input).unwrap();
+        gate.replay_store()
+            .fail(c, FailureReason::ConstructionFailed)
             .unwrap();
+        gate.replay_store()
+            .retry_after_failure(c, None, now)
+            .unwrap();
+        assert_eq!(state_of(&gate, c), Some(TradeLifecycleState::Created));
+        let after_first = calls(&gate);
+
+        // Every remaining public store operation leaves the trade unlocked.
+        let store = gate.replay_store();
+        assert!(store.submit(c, TXID_1, now).is_err());
+        assert!(store.confirm(c).is_err());
+        assert!(store.consume(c).is_err());
+        assert_eq!(state_of(&gate, c), Some(TradeLifecycleState::Created));
+        assert_eq!(calls(&gate), after_first);
+
+        // Only a full evaluate re-locks it, and it re-runs both proofs.
+        let (again, _) = valid_gate_input();
+        gate.evaluate(again).unwrap();
         assert_eq!(
-            locked.state(),
-            zwa_protocol::lifecycle::TradeLifecycleState::SettlementConstructed
+            state_of(&gate, c),
+            Some(TradeLifecycleState::SettlementConstructed)
         );
-        assert!(
-            downstream
-                .acquire_construction_approved(&approval, now)
-                .is_err(),
-            "construction lock has exactly one winner"
-        );
+        assert_eq!(calls(&gate), (after_first.0 + 1, after_first.1 + 1));
+        assert_eq!(old_approval.commitment(), c);
+    }
+
+    #[test]
+    fn a8r1_no_approval_driven_replay_api_exists() {
+        // Guard against re-introducing a public path to VERIFIED /
+        // SETTLEMENT_CONSTRUCTED that bypasses `MatcherGate::evaluate`.
+        let sources = [
+            ("replay.rs", include_str!("replay.rs")),
+            ("gate.rs", include_str!("gate.rs")),
+            ("lib.rs", include_str!("lib.rs")),
+        ];
+        let banned = [
+            ["fn create_from_", "approval"].concat(),
+            ["fn verify_", "approved"].concat(),
+            ["fn acquire_construction_", "approved"].concat(),
+        ];
+        for (name, src) in sources {
+            let prod = src.find("\nmod tests {").map_or(src, |i| &src[..i]);
+            for b in &banned {
+                assert!(!prod.contains(b.as_str()), "{name} must not contain `{b}`");
+            }
+        }
     }
 
     #[test]
