@@ -184,7 +184,7 @@ Backends:
 
 Corrupt, tampered, legacy (v1 / bare array / old SQLite table), empty or unknown-version data is rejected at open/load — never silently skipped, migrated or rewritten.
 
-API: `PersistentReplayStore::new(p, max_retries) -> Result<Self, ReplayError>` (validates all stored records) or `PersistentReplayStore::lazy(p, max_retries)` (no startup scan; every operation still fails closed); other crates drive a store only with a `&MatcherApproval` (`create_from_approval`, `verify_approved`, `acquire_construction_approved`); `state()`/`get()` return `Result<Option<_>>`. `create_checked`, `verify`, `acquire_construction` are `pub(crate)`: only `MatcherGate::evaluate` can create, verify and lock a trade. `submit`, `confirm`, `consume`, `fail`, `expire`, `retry_after_failure(ack_txid, now)` remain public for the settlement side.
+API: `PersistentReplayStore::new(p, max_retries) -> Result<Self, ReplayError>` (validates all stored records) or `PersistentReplayStore::lazy(p, max_retries)` (no startup scan; every operation still fails closed); there is no public way to create, verify or lock a trade (the former approval-driven methods were removed, A8-R1); `state()`/`get()` return `Result<Option<_>>`. `create_checked`, `verify`, `acquire_construction` are `pub(crate)`: only `MatcherGate::evaluate` can create, verify and lock a trade. `submit`, `confirm`, `consume`, `fail`, `expire`, `retry_after_failure(ack_txid, now)` remain public for the settlement side.
 
 Tests: exact restart round-trip (JSON; SQLite) of retry count, txids, failure reason, expiry; injected persistence failure does not advance state; concurrent CAS has exactly one winner (shared in-memory, two SQLite connections to one DB); stale CAS rejected on every backend; corrupt/legacy/tampered data fails closed.
 
@@ -294,6 +294,18 @@ Compliance is matcher-enforced. ZSA settlement is experimental QEDIT stack, not 
 > circuits; (3) this candidate is M2-only: it contains no settlement (M3) or M4
 > code, and downstream crates must adapt to the replay/gate API changes listed in
 > `docs/matcher-handoff.md`. Statements below that predate the remediation are historical.
+>
+> **A8-R1 (re-audit finding, fixed).** A held `MatcherApproval` could re-lock a
+> trade after `FAILED` → `retry_after_failure` via the approval-driven replay
+> methods, skipping re-verification. Those methods (`create_from_approval`,
+> `verify_approved`, `acquire_construction_approved`) are removed;
+> `MatcherGate::evaluate` is the only path to `VERIFIED` /
+> `SETTLEMENT_CONSTRUCTED`. Regression tests:
+> `a8r1_old_approval_cannot_relock_after_failed_retry`,
+> `a8r1_no_approval_driven_replay_api_exists`. Open (Low): A8-R2
+> `JsonFilePersistence` single-writer is documented, not enforced; A8-R3 the
+> gate accepts any verifier implementation and `from_vkey_json(.., None)`
+> skips VK pinning (configuration responsibility).
 
 **One complete valid flow: real signatures, real proofs, real recipient control, persistent replay → MatcherApproval**
 

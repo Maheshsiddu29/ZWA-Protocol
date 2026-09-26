@@ -183,6 +183,7 @@ Vikram should only call `MatcherGate::evaluate()` and handle `GateRejection`. Do
 - Gate order: CheckedTrade → read-only replay precheck → trade expiry → roots → recipient binding + control → provenance → eligibility → create/VERIFIED/SETTLEMENT_CONSTRUCTED (CAS). No replay write happens before all checks pass.
 - `FAILED` is never retried by the gate (`RetryRequired`); the settlement side must call `retry_after_failure` with the exact prior txid, after which the trade must pass the full gate again.
 - Breaking changes for the settlement side (M4, not modified here): `PersistentReplayStore::new` returns `Result`; `state/get` return `Result<Option<_>>` and `ReplayRecord` instead of `TradeRecord`; `create_checked/verify/acquire_construction` are crate-private; `ReplayPersistence` trait changed; `GateInput.recipient_subject_commitment` added; `RocksDbPersistence` fails closed.
+- A8-R1: `PersistentReplayStore::create_from_approval`, `verify_approved` and `acquire_construction_approved` are removed. A held `MatcherApproval` could re-lock a trade after `FAILED` → `retry_after_failure` without re-verification. `MatcherGate::evaluate` is the only way to reach `VERIFIED` / `SETTLEMENT_CONSTRUCTED`; after a retry the trade must pass the full gate again. `MatcherApproval` and its getters are unchanged.
 
 ## For Vikram — what to call
 
