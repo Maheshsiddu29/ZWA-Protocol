@@ -184,7 +184,7 @@ Backends:
 
 Corrupt, tampered, legacy (v1 / bare array / old SQLite table), empty or unknown-version data is rejected at open/load — never silently skipped, migrated or rewritten.
 
-API: `PersistentReplayStore::new(p, max_retries) -> Result<Self, ReplayError>` (validates all stored records) or `PersistentReplayStore::lazy(p, max_retries)` (no startup scan; every operation still fails closed); there is no public way to create, verify or lock a trade (the former approval-driven methods were removed, A8-R1); `state()`/`get()` return `Result<Option<_>>`. `create_checked`, `verify`, `acquire_construction` are `pub(crate)`: only `MatcherGate::evaluate` can create, verify and lock a trade. `submit`, `confirm`, `consume`, `fail`, `expire`, `retry_after_failure(ack_txid, now)` remain public for the settlement side.
+API: `PersistentReplayStore::new(p, max_retries) -> Result<Self, ReplayError>` (validates all stored records) or `PersistentReplayStore::lazy(p, max_retries)` (no startup scan; every operation still fails closed); there is no public way to create, verify or lock a trade (the former approval-driven methods were removed, A8-R1); there is also no public way to write replay state directly: `ReplayPersistence::compare_and_swap` requires a `CasWrite` capability that only this crate can construct, and every backend rejects writes that are not exactly one legal lifecycle step (A8-R4); `state()`/`get()` return `Result<Option<_>>`. `create_checked`, `verify`, `acquire_construction` are `pub(crate)`: only `MatcherGate::evaluate` can create, verify and lock a trade. `submit`, `confirm`, `consume`, `fail`, `expire`, `retry_after_failure(ack_txid, now)` remain public for the settlement side.
 
 Tests: exact restart round-trip (JSON; SQLite) of retry count, txids, failure reason, expiry; injected persistence failure does not advance state; concurrent CAS has exactly one winner (shared in-memory, two SQLite connections to one DB); stale CAS rejected on every backend; corrupt/legacy/tampered data fails closed.
 
@@ -344,3 +344,31 @@ cargo test --workspace --release             # debug ↔ release parity
 node --test tests/adversarial/root-signature.test.js  # JS golden vectors
 node scripts/verify-root-sigs.js                      # client-side
 ```
+
+## A8-R4: raw replay writes (fixed)
+
+**Finding (Medium).** Found in the A8 re-audit of `b303c42` and reproduced with a proof-of-concept test on the memory and SQLite backends. `PersistentReplayStore::persistence()` exposed the backend, and any crate could call `ReplayPersistence::compare_and_swap`. `check_expected` compared the stored record with `expected` but never validated `new`, so a caller could write back an earlier snapshot obtained from `get()` or a transition result. Two concrete effects:
+- a `CONSUMED` trade could be rewound to `SETTLEMENT_CONSTRUCTED` and settled again;
+- after a `FAILED -> CREATED` retry, the trade could be re-locked without re-verification, which also reset the retry budget.
+
+Every backend (memory, JSON, SQLite) was affected.
+
+**Fix.**
+1. `compare_and_swap` takes a `CasWrite` capability. `CasWrite` has a private field and a `pub(crate)` constructor and is not `Clone`, `Copy` or `Default`. Only `zwa-matcher` can therefore call `compare_and_swap`, including on a backend handle the caller kept (for example an `Arc` clone). Other crates can still implement `ReplayPersistence`.
+2. Every backend validates the write before the conditional update (`check_write`):
+   - an insert must be a fresh `CREATED` record at version 1;
+   - otherwise the commitment and intent must be unchanged, the version must be exactly `expected + 1`, and the state change must be a legal single lifecycle step;
+   - the retry count must be unchanged, except `+1` on `FAILED -> CREATED`.
+
+   Violations return `PersistenceError::IllegalWrite` and leave storage unchanged.
+
+**API change for implementors.** The trait method is now `fn compare_and_swap(&self, expected, new, auth: CasWrite)`. Store behaviour and the public lifecycle methods are unchanged, and `MatcherGate::evaluate` is again the only path to `VERIFIED` / `SETTLEMENT_CONSTRUCTED`.
+
+**Tests.**
+- `a8r4_consumed_trade_cannot_be_rewound_by_raw_cas` (memory and JSON)
+- `a8r4_sqlite_consumed_trade_cannot_be_rewound_by_raw_cas`
+- `a8r4_failed_retry_cannot_be_relocked_by_raw_cas`
+- `a8r4_skipped_state_foreign_record_and_budget_reset_are_rejected`
+- `a8r4_cas_capability_cannot_be_constructed_outside_the_crate`
+
+Frozen M1 code, circuits, proofs and verification keys are unchanged.

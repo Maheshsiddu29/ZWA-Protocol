@@ -211,3 +211,11 @@ match gate.evaluate(input) {
 ```
 
 `approval` is opaque `MatcherApproval` — do not serialize, do not clone, do not fabricate. Only `gate.evaluate()` can produce it.
+
+## A8-R4: replay persistence write capability
+
+`ReplayPersistence::compare_and_swap` now takes a `CasWrite` capability that only `zwa-matcher` can construct. Downstream crates cannot write replay state directly; use the public lifecycle methods (`submit`, `confirm`, `consume`, `fail`, `expire`, `retry_after_failure`) and `MatcherGate::evaluate`.
+
+If you implement `ReplayPersistence` for your own backend:
+- add the `auth: CasWrite` parameter and forward it when delegating;
+- reject any write that is not exactly one legal lifecycle step from `expected` (the built-in backends do this in `check_write` and return `PersistenceError::IllegalWrite`).
