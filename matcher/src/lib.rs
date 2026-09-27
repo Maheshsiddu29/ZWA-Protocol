@@ -59,8 +59,8 @@ pub use gate::{GateInput, GateRejection, MatcherApproval, MatcherGate, VerifiedT
 #[cfg(feature = "sqlite")]
 pub use replay::SqlitePersistence;
 pub use replay::{
-    InMemoryPersistence, JsonFilePersistence, PersistenceError, PersistentReplayStore, ReplayError,
-    ReplayPersistence, ReplayRecord, RocksDbPersistence, PERSISTENCE_SCHEMA_VERSION,
+    CasWrite, InMemoryPersistence, JsonFilePersistence, PersistenceError, PersistentReplayStore,
+    ReplayError, ReplayPersistence, ReplayRecord, RocksDbPersistence, PERSISTENCE_SCHEMA_VERSION,
 };
 pub use roots::{
     check_combined_root_expiry, AuthenticatedCredentialRoot, AuthenticatedIssuerRoot,

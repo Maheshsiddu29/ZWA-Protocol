@@ -90,6 +90,11 @@ pub enum PersistenceError {
     /// concurrent writer advanced it, or it already exists on insert).
     #[error("compare-and-swap conflict for commitment {commitment}")]
     Conflict { commitment: String },
+    /// A8-R4: the write is not exactly one legal lifecycle step from the
+    /// expected record (stale snapshot, skipped state, identity change or
+    /// retry-budget reset). Storage is unchanged.
+    #[error("illegal replay write for commitment {commitment}: {reason}")]
+    IllegalWrite { commitment: String, reason: String },
 
     /// Backend is not available in this build/configuration.
     #[error("persistence backend not configured: {0}")]
@@ -350,6 +355,106 @@ pub(crate) fn apply(record: &ReplayRecord, op: Op, max_retries: u32) -> Step {
 // Persistence trait
 // ---------------------------------------------------------------------------
 
+/// Write capability for [`ReplayPersistence::compare_and_swap`] (A8-R4).
+///
+/// Only `zwa-matcher` can construct it (private field, crate-private
+/// constructor, deliberately not `Clone`/`Copy`/`Default`). Code outside this
+/// crate therefore cannot call `compare_and_swap` on any backend: not through
+/// [`PersistentReplayStore::persistence`], and not on a backend handle it kept
+/// (e.g. an `Arc` clone). Other crates may still *implement*
+/// [`ReplayPersistence`]; they only receive a capability for the duration of a
+/// store-driven write.
+///
+/// ```compile_fail
+/// let _auth = zwa_matcher::replay::CasWrite { _private: () };
+/// ```
+///
+/// ```compile_fail
+/// let _auth = zwa_matcher::replay::CasWrite::new();
+/// ```
+#[derive(Debug)]
+pub struct CasWrite {
+    _private: (),
+}
+
+impl CasWrite {
+    pub(crate) const fn new() -> Self {
+        Self { _private: () }
+    }
+}
+
+/// Legal single-step successors of the frozen lifecycle (mirror of [`apply`]).
+fn is_legal_successor(from: TradeLifecycleState, to: TradeLifecycleState) -> bool {
+    use TradeLifecycleState as S;
+    matches!(
+        (from, to),
+        (S::Created, S::Verified | S::Failed | S::Expired)
+            | (
+                S::Verified,
+                S::SettlementConstructed | S::Failed | S::Expired
+            )
+            | (
+                S::SettlementConstructed,
+                S::Submitted | S::Failed | S::Expired
+            )
+            | (S::Submitted, S::Confirmed | S::Failed)
+            | (S::Confirmed, S::Consumed)
+            | (S::Failed, S::Created | S::Expired)
+    )
+}
+
+/// A8-R4: rejects any write that is not exactly one legal lifecycle step from
+/// `expected`.
+///
+/// Runs in every backend before the conditional write, so a stale snapshot
+/// (lower version), a skipped state, a foreign record or a reset retry budget
+/// can never be persisted, even by code inside this crate.
+fn check_write(
+    expected: Option<&ReplayRecord>,
+    new: &ReplayRecord,
+) -> Result<(), PersistenceError> {
+    let deny = |reason: &str| -> Result<(), PersistenceError> {
+        Err(PersistenceError::IllegalWrite {
+            commitment: new.commitment.to_string(),
+            reason: reason.to_string(),
+        })
+    };
+    match expected {
+        None => {
+            if new.state != TradeLifecycleState::Created
+                || new.version != 1
+                || new.retry_count != 0
+                || new.failure_reason.is_some()
+                || new.prior_txid.is_some()
+            {
+                return deny("insert must be a fresh CREATED record at version 1");
+            }
+        }
+        Some(exp) => {
+            if new.commitment != exp.commitment || new.intent != exp.intent {
+                return deny("record identity changed");
+            }
+            if Some(new.version) != exp.version.checked_add(1) {
+                return deny("version must advance by exactly one");
+            }
+            if !is_legal_successor(exp.state, new.state) {
+                return deny("not a legal lifecycle transition");
+            }
+            let retry_ok = if exp.state == TradeLifecycleState::Failed
+                && new.state == TradeLifecycleState::Created
+            {
+                exp.retry_count.checked_add(1) == Some(new.retry_count)
+            } else {
+                new.retry_count == exp.retry_count
+            };
+            if !retry_ok {
+                return deny("retry count may only advance by one on FAILED -> CREATED");
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Pluggable, authoritative replay persistence.
 ///
 /// Implementations must be linearizable per commitment and must only return
@@ -367,6 +472,10 @@ pub trait ReplayPersistence: Send + Sync {
 
     /// Atomic conditional write.
     ///
+    /// Requires a [`CasWrite`] capability, which only this crate can
+    /// construct (A8-R4). Implementations must reject writes that
+    /// `check_write` rejects; the built-in backends do.
+    ///
     /// - `expected == None`: insert `new` only if no record exists for
     ///   `new.commitment()`.
     /// - `expected == Some(e)`: replace only if the stored record currently has
@@ -378,6 +487,7 @@ pub trait ReplayPersistence: Send + Sync {
         &self,
         expected: Option<&ReplayRecord>,
         new: &ReplayRecord,
+        auth: CasWrite,
     ) -> Result<(), PersistenceError>;
 }
 
@@ -396,8 +506,9 @@ impl<T: ReplayPersistence + ?Sized> ReplayPersistence for std::sync::Arc<T> {
         &self,
         expected: Option<&ReplayRecord>,
         new: &ReplayRecord,
+        auth: CasWrite,
     ) -> Result<(), PersistenceError> {
-        (**self).compare_and_swap(expected, new)
+        (**self).compare_and_swap(expected, new, auth)
     }
 }
 
@@ -413,6 +524,7 @@ fn check_expected(
     expected: Option<&ReplayRecord>,
     new: &ReplayRecord,
 ) -> Result<(), PersistenceError> {
+    check_write(expected, new)?;
     match (current, expected) {
         (None, None) => Ok(()),
         (Some(cur), Some(exp)) if cur.state == exp.state && cur.version == exp.version => Ok(()),
@@ -475,6 +587,7 @@ impl ReplayPersistence for InMemoryPersistence {
         &self,
         expected: Option<&ReplayRecord>,
         new: &ReplayRecord,
+        _auth: CasWrite,
     ) -> Result<(), PersistenceError> {
         let mut guard = self.guard()?;
         check_expected(guard.get(&new.commitment), expected, new)?;
@@ -811,6 +924,7 @@ impl ReplayPersistence for JsonFilePersistence {
         &self,
         expected: Option<&ReplayRecord>,
         new: &ReplayRecord,
+        _auth: CasWrite,
     ) -> Result<(), PersistenceError> {
         let _guard = self
             .write_lock
@@ -987,7 +1101,9 @@ impl ReplayPersistence for SqlitePersistence {
         &self,
         expected: Option<&ReplayRecord>,
         new: &ReplayRecord,
+        _auth: CasWrite,
     ) -> Result<(), PersistenceError> {
+        check_write(expected, new)?;
         let key = new.commitment.to_string();
         let data = serde_json::to_string(&encode_record(new))
             .map_err(|e| PersistenceError::Serialization(format!("{e}")))?;
@@ -1067,6 +1183,7 @@ impl ReplayPersistence for RocksDbPersistence {
         &self,
         _expected: Option<&ReplayRecord>,
         _new: &ReplayRecord,
+        _auth: CasWrite,
     ) -> Result<(), PersistenceError> {
         Err(Self::unavailable())
     }
@@ -1144,11 +1261,13 @@ impl<P: ReplayPersistence> PersistentReplayStore<P> {
         let current = self.load_existing(commitment)?;
         match apply(&current, op, self.max_retries) {
             Step::Commit(next) => {
-                self.persistence.compare_and_swap(Some(&current), &next)?;
+                self.persistence
+                    .compare_and_swap(Some(&current), &next, CasWrite::new())?;
                 Ok(next)
             }
             Step::CommitThenReject(next, err) => {
-                self.persistence.compare_and_swap(Some(&current), &next)?;
+                self.persistence
+                    .compare_and_swap(Some(&current), &next, CasWrite::new())?;
                 Err(ReplayError::Protocol(err))
             }
             Step::Reject(err) => Err(ReplayError::Protocol(err)),
@@ -1167,7 +1286,8 @@ impl<P: ReplayPersistence> PersistentReplayStore<P> {
             )));
         }
         let record = ReplayRecord::created(checked);
-        self.persistence.compare_and_swap(None, &record)?;
+        self.persistence
+            .compare_and_swap(None, &record, CasWrite::new())?;
         Ok(record)
     }
 
@@ -1440,11 +1560,12 @@ mod tests {
             &self,
             e: Option<&ReplayRecord>,
             n: &ReplayRecord,
+            auth: CasWrite,
         ) -> Result<(), PersistenceError> {
             if self.fail.load(Ordering::SeqCst) {
                 return Err(PersistenceError::Io("injected write failure".to_string()));
             }
-            self.inner.compare_and_swap(e, n)
+            self.inner.compare_and_swap(e, n, auth)
         }
     }
 
@@ -1467,9 +1588,10 @@ mod tests {
             &self,
             e: Option<&ReplayRecord>,
             n: &ReplayRecord,
+            auth: CasWrite,
         ) -> Result<(), PersistenceError> {
             self.barrier.wait();
-            self.inner.compare_and_swap(e, n)
+            self.inner.compare_and_swap(e, n, auth)
         }
     }
 
@@ -1733,7 +1855,9 @@ mod tests {
             let created = store.create_checked(&checked).unwrap();
             // Duplicate insert via raw CAS.
             assert!(matches!(
-                store.persistence().compare_and_swap(None, &created),
+                store
+                    .persistence()
+                    .compare_and_swap(None, &created, CasWrite::new()),
                 Err(PersistenceError::Conflict { .. })
             ));
             let verified = store.verify(c, BEFORE).unwrap();
@@ -1746,7 +1870,7 @@ mod tests {
             assert!(matches!(
                 store
                     .persistence()
-                    .compare_and_swap(Some(&created), &stale_next),
+                    .compare_and_swap(Some(&created), &stale_next, CasWrite::new()),
                 Err(PersistenceError::Conflict { .. })
             ));
             assert_eq!(store.get(c).unwrap(), Some(verified));
@@ -2020,7 +2144,7 @@ mod tests {
         assert!(matches!(
             store
                 .persistence()
-                .compare_and_swap(Some(&created), &stale_next),
+                .compare_and_swap(Some(&created), &stale_next, CasWrite::new()),
             Err(PersistenceError::Conflict { .. })
         ));
         assert_eq!(store.get(c).unwrap(), Some(verified));
@@ -2053,5 +2177,170 @@ mod tests {
             Err(PersistenceError::UnknownSchemaVersion { got: 1, .. })
         ));
         let _ = fs::remove_file(&legacy);
+    }
+
+    // --- A8-R4: raw compare-and-swap cannot rewind or skip lifecycle steps ---
+
+    fn assert_illegal(r: Result<(), PersistenceError>) {
+        assert!(
+            matches!(r, Err(PersistenceError::IllegalWrite { .. })),
+            "expected IllegalWrite, got {r:?}"
+        );
+    }
+
+    /// Legitimate path to CONSUMED; returns (locked snapshot, consumed record).
+    fn a8r4_consume<P: ReplayPersistence>(
+        store: &PersistentReplayStore<P>,
+    ) -> (ReplayRecord, ReplayRecord) {
+        let checked = checked_trade();
+        let c = checked.commitment();
+        store.create_checked(&checked).unwrap();
+        store.verify(c, BEFORE).unwrap();
+        let locked = store.acquire_construction(c, BEFORE).unwrap();
+        store.submit(c, T1, BEFORE).unwrap();
+        store.confirm(c).unwrap();
+        let consumed = store.consume(c).unwrap();
+        (locked, consumed)
+    }
+
+    fn a8r4_rewind_check<P: ReplayPersistence>(store: PersistentReplayStore<P>) {
+        let (locked, consumed) = a8r4_consume(&store);
+        let c = consumed.commitment();
+        assert_illegal(store.persistence().compare_and_swap(
+            Some(&consumed),
+            &locked,
+            CasWrite::new(),
+        ));
+        assert_eq!(store.get(c).unwrap(), Some(consumed));
+        assert!(store.submit(c, T2, BEFORE).is_err());
+    }
+
+    #[test]
+    fn a8r4_consumed_trade_cannot_be_rewound_by_raw_cas() {
+        a8r4_rewind_check(mem_store());
+        let path = temp_path("a8r4-rewind", "json");
+        a8r4_rewind_check(
+            PersistentReplayStore::new(JsonFilePersistence::new(&path).unwrap(), 3).unwrap(),
+        );
+        let _ = fs::remove_file(&path);
+    }
+
+    #[cfg(feature = "sqlite")]
+    #[test]
+    fn a8r4_sqlite_consumed_trade_cannot_be_rewound_by_raw_cas() {
+        let path = temp_path("a8r4-rewind", "db");
+        a8r4_rewind_check(
+            PersistentReplayStore::new(SqlitePersistence::new(&path).unwrap(), 3).unwrap(),
+        );
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a8r4_failed_retry_cannot_be_relocked_by_raw_cas() {
+        let store = mem_store();
+        let checked = checked_trade();
+        let c = checked.commitment();
+        store.create_checked(&checked).unwrap();
+        store.verify(c, BEFORE).unwrap();
+        let locked = store.acquire_construction(c, BEFORE).unwrap();
+        store.fail(c, FailureReason::ConstructionFailed).unwrap();
+        let created = store.retry_after_failure(c, None, BEFORE).unwrap();
+        assert_illegal(store.persistence().compare_and_swap(
+            Some(&created),
+            &locked,
+            CasWrite::new(),
+        ));
+        let current = store.get(c).unwrap().unwrap();
+        assert_eq!(current, created);
+        assert_eq!(current.state(), TradeLifecycleState::Created);
+        assert_eq!(current.retry_count(), 1);
+    }
+
+    #[test]
+    fn a8r4_skipped_state_foreign_record_and_budget_reset_are_rejected() {
+        use TradeLifecycleState as S;
+        let store = mem_store();
+        let checked = checked_trade();
+        let c = checked.commitment();
+        let p = store.persistence();
+
+        // Insert must be a fresh CREATED record at version 1.
+        let fresh = ReplayRecord::created(&checked);
+        let locked_insert = ReplayRecord {
+            state: S::SettlementConstructed,
+            ..fresh
+        };
+        assert_illegal(p.compare_and_swap(None, &locked_insert, CasWrite::new()));
+        let late_insert = ReplayRecord {
+            version: 7,
+            ..fresh
+        };
+        assert_illegal(p.compare_and_swap(None, &late_insert, CasWrite::new()));
+        assert_eq!(store.get(c).unwrap(), None);
+
+        let created = store.create_checked(&checked).unwrap();
+        // CREATED -> SETTLEMENT_CONSTRUCTED skips VERIFIED.
+        let skip = ReplayRecord {
+            state: S::SettlementConstructed,
+            version: created.version + 1,
+            ..created
+        };
+        assert_illegal(p.compare_and_swap(Some(&created), &skip, CasWrite::new()));
+        // Version must advance by exactly one.
+        let jump = ReplayRecord {
+            state: S::Verified,
+            version: created.version + 2,
+            ..created
+        };
+        assert_illegal(p.compare_and_swap(Some(&created), &jump, CasWrite::new()));
+        // Another trade's record cannot replace this one.
+        let other = ReplayRecord::created(&checked_trade_b());
+        let foreign = ReplayRecord {
+            state: S::Verified,
+            version: created.version + 1,
+            ..other
+        };
+        assert_illegal(p.compare_and_swap(Some(&created), &foreign, CasWrite::new()));
+        assert_eq!(store.get(c).unwrap(), Some(created));
+
+        // FAILED -> CREATED must spend exactly one retry.
+        let failed = store.fail(c, FailureReason::VerificationRejected).unwrap();
+        let free_retry = ReplayRecord {
+            state: S::Created,
+            version: failed.version + 1,
+            failure_reason: None,
+            prior_txid: None,
+            ..failed
+        };
+        assert_illegal(p.compare_and_swap(Some(&failed), &free_retry, CasWrite::new()));
+        assert_eq!(store.get(c).unwrap(), Some(failed));
+
+        // The legitimate path still works.
+        let retried = store.retry_after_failure(c, None, BEFORE).unwrap();
+        assert_eq!(retried.retry_count(), 1);
+    }
+
+    #[test]
+    fn a8r4_cas_capability_cannot_be_constructed_outside_the_crate() {
+        let src = include_str!("replay.rs");
+        let compact = src.split_whitespace().collect::<Vec<_>>().join(" ");
+        let def = concat!("#[derive(Debug)] pub struct ", "CasWrite { _private: (), }");
+        let ctor = concat!(
+            "impl ",
+            "CasWrite { pub(crate) const fn new() -> Self { Self { _private: () } } }"
+        );
+        assert!(
+            compact.contains(def),
+            "CasWrite must have only a private field"
+        );
+        assert!(compact.contains(ctor), "CasWrite::new must be pub(crate)");
+        for forbidden in [
+            concat!("impl Clone for ", "CasWrite"),
+            concat!("impl Copy for ", "CasWrite"),
+            concat!("impl Default for ", "CasWrite"),
+            concat!("pub fn new() -> ", "CasWrite"),
+        ] {
+            assert!(!compact.contains(forbidden), "found {forbidden}");
+        }
     }
 }
