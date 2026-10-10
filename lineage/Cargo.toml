@@ -1,0 +1,75 @@
+[package]
+name = "zwa-lineage"
+description = "Production verifier for frozen ZWA rooted lineage evidence (NormalLineageStepV2, Design A)"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/Maheshsiddu29/ZWA-Protocol"
+publish = false
+
+# This is its own Cargo workspace on purpose (INTEGRATION_BOUNDARY.md §1).
+# The frozen lineage proof stack needs a [patch.crates-io] section, the
+# `zcash_unstable="nu7"` cfg (.cargo/config.toml) and the pinned lock file.
+# None of that may leak into the protocol-core workspace.
+#
+# The frozen R2B-L1 circuit, Params::new(11) and VK* are reused unmodified from
+# the research repository checked out next to this one
+# (../../ZWA-Lineage-Research). R2B-L1 itself compiles the Orchard cf801a5
+# sources from the pinned offline cargo home, so builds must use
+# CARGO_HOME=../../zsa-feasibility/.cargo-home and --offline --locked
+# (scripts/check.sh). Cargo.lock was seeded from
+# post-h1f/layer-b/experiments/Cargo.lock (sha256 fd8ba4ba…bd4b1).
+
+[workspace]
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+# Frozen R2B-L1 (NormalLineageStepV2): circuit, params(), keygen_vk(), verify().
+zwa-lineage-r2b-l1 = { path = "../../ZWA-Lineage-Research/r2c-h1d/r2b-l1" }
+halo2_proofs = { version = "0.3", default-features = false, features = ["batch", "floor-planner-v1-legacy-pdqsort"] }
+pasta_curves = "0.5"
+ff = "0.13"
+blake2b_simd = "=1.0.1"
+sha2 = "0.10"
+hex = "0.4.3"
+serde_json = "1"
+thiserror = "2"
+
+[dev-dependencies]
+# Differential oracles only. Never linked into the library.
+zwa-r3e-experiments = { path = "../../ZWA-Lineage-Research/post-h1f/r3e/experiments" }
+zwa-layer-b = { path = "../../ZWA-Lineage-Research/post-h1f/layer-b/experiments" }
+
+[lints.rust]
+missing_docs = "warn"
+unsafe_code = "forbid"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+
+# Dependencies (halo2, pasta) are optimized in dev and test builds so the
+# per-step proof verifications in the test suite run at realistic speed. The
+# crate itself stays unoptimized with debug assertions.
+[profile.dev.package."*"]
+opt-level = 3
+
+[patch.crates-io]
+orchard = { git = "https://github.com/QED-it/orchard", rev = "cf801a5d6701bc128e21678ba0034564af4a2aca" }
+sapling-crypto = { git = "https://github.com/QED-it/sapling-crypto", rev = "e785faaa5eaf67bd2cb328fdd82a345df44e5754" }
+zcash_note_encryption = { git = "https://github.com/zcash/zcash_note_encryption", rev = "9f7e93d42cef839d02b9d75918117941d453f8cb" }
+zcash_primitives = { git = "https://github.com/QED-it/librustzcash", rev = "c5c232db9c54eeb8bc1d0f4dc1b8a0e40f981bb0" }
+zcash_protocol = { git = "https://github.com/QED-it/librustzcash", rev = "c5c232db9c54eeb8bc1d0f4dc1b8a0e40f981bb0" }
+zcash_address = { git = "https://github.com/QED-it/librustzcash", rev = "c5c232db9c54eeb8bc1d0f4dc1b8a0e40f981bb0" }
+zcash_proofs = { git = "https://github.com/QED-it/librustzcash", rev = "c5c232db9c54eeb8bc1d0f4dc1b8a0e40f981bb0" }
+zcash_encoding = { git = "https://github.com/QED-it/librustzcash", rev = "c5c232db9c54eeb8bc1d0f4dc1b8a0e40f981bb0" }
+zcash_transparent = { git = "https://github.com/QED-it/librustzcash", rev = "c5c232db9c54eeb8bc1d0f4dc1b8a0e40f981bb0" }
+sinsemilla = { git = "https://github.com/zcash/sinsemilla", rev = "aabb707e862bc3d7b803c77d14e5a771bcee3e8c" }
+halo2_gadgets = { git = "https://github.com/QED-it/halo2", rev = "ef3d0ba2e9a513658f8d3d00294ddebd92cc649e" }
+halo2_proofs = { git = "https://github.com/QED-it/halo2", rev = "ef3d0ba2e9a513658f8d3d00294ddebd92cc649e" }
+halo2_poseidon = { git = "https://github.com/QED-it/halo2", rev = "ef3d0ba2e9a513658f8d3d00294ddebd92cc649e" }
+zcash_spec = { git = "https://github.com/QED-it/zcash_spec", rev = "d5e84264d2ad0646b587a837f4e2424ca64d3a05" }
