@@ -285,6 +285,23 @@ fn malformed_and_endpoint_evidence_deny_trade() {
     let result = verifier(SnapshotId::A7).verify_v3(&bytes);
     assert_eq!(result.status, LineageStatus::Rejected);
     assert!(!result.permits_trade_verification());
+
+    let mut bytes = request(SnapshotId::A7, "n3").encode().unwrap();
+    bytes[16] = 4;
+    let result = verifier(SnapshotId::A7).verify_v3(&bytes);
+    assert_eq!(result.status, LineageStatus::Unsupported);
+    assert!(!result.permits_trade_verification());
+
+    let mut bytes = request(SnapshotId::A7, "n3").encode().unwrap();
+    bytes[17] ^= 1;
+    let result = verifier(SnapshotId::A7).verify_v3(&bytes);
+    assert_eq!(result.status, LineageStatus::Rejected);
+    assert_eq!(result.failure.unwrap().research_code(), "DA_FOREIGN_VK");
+
+    let mut bytes = request(SnapshotId::A7, "n3").encode().unwrap();
+    bytes.truncate(230 + 1169 + 100);
+    let result = verifier(SnapshotId::A7).verify_v3(&bytes);
+    assert_eq!(result.status, LineageStatus::Rejected);
 }
 
 #[test]
