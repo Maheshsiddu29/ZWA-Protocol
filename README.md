@@ -34,6 +34,7 @@ The demo will use one RWA class, one issuer, one credential authority, and one a
 
 - `circuits/`: migrated provenance and eligibility circuits plus attributed ZK-ORIGIN helpers
 - `crates/`: `zwa-protocol`, `zwa-commitments`, and `zwa-credentials` libraries; `zcash-adapter` remains a reserved settlement boundary
+- `lineage/`: separate Cargo workspace verifying frozen rooted-lineage evidence (Design A over `NormalLineageStepV2`); root, terminal and chain authentication are not wired yet, so it cannot return `VERIFIED` ([integration notes](docs/lineage-integration.md))
 - `matcher/`: compliant matcher boundary
 - `rfq/`: private RFQ and order-intent boundary
 - `frontend/`: demo application boundary
