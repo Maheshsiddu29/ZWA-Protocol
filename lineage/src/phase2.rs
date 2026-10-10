@@ -3,8 +3,8 @@
 //! The snapshot bytes and their SHA-256 pins are owned by this crate. The
 //! frozen Layer-B implementation re-derives the block, transaction and
 //! Orchard-tree facts at load. No caller supplies a view or policy through a
-//! lineage request. The sibling research crate remains a pinned build-time
-//! dependency until the exact source can be packaged locally.
+//! lineage request. The sibling research crate remains a pinned source and
+//! runtime dependency until the exact source can be packaged locally.
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, Mutex};

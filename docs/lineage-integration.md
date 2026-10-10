@@ -171,3 +171,59 @@ The protocol-core CI (`.github/workflows/protocol-core.yml`) does not build `lin
 - `PENDING_AUTHENTICATION` is an extension of the contract's status list (section 8).
 - The research is **not independently human-reviewed** (RV-1 open). Every `VERIFIED` will be conditional on the research premises (contract preamble).
 - No ZSA mainnet availability is implied.
+
+## 13. Phase 2: snapshot-backed rooted path
+
+`lineage::phase2` adds a verifier-owned `SnapshotChainView`. Each shipped view
+(A4, A7, CPA, B8, CKN) is pinned by SHA-256. Loading checks the outer hash,
+then the frozen Layer-B loader re-derives the network identity, header hashes,
+previous-block links, transaction Merkle roots, ordered Orchard leaves and
+roots from block and transaction bytes. A mismatch stops startup. The selected
+view ID is attached to each verification result. These fixtures are regtest
+snapshots; there is no live Zebra client in this phase.
+
+The v3 request inserts fixed-length root evidence (1,169 bytes) and terminal
+evidence (1,028 bytes) between the v2 endpoints and step count. It retains
+the v2 VK identity, chain reference, public tuples and exact 5,120-byte step
+proof rule. `decode(encode(request))` is byte-exact, and decoding rejects
+trailing data, unknown versions, foreign VKs, missing evidence and malformed
+lengths. v2 remains decodable with its Phase 1 semantics. History mode and
+provenance policy are operator configuration, never request fields.
+
+The rooted orchestrator keeps the engineering contract's order: chain_ref
+identity, root, Design A, terminal, height context, and finality/history
+policy. The chain reference binds network ID, height, block hash and Orchard
+root to the selected view. Root authentication re-verifies the issue bundle,
+including authorization, issued-ρ semantics and the operator-pinned public
+provenance policy. Terminal authentication requires a ZSA Action output,
+its Merkle path, valid Action proof and an earlier final anchor. These checks
+use the immutable view; caller assertions cannot create authentication
+successes.
+
+The frozen research fixture policy is depth `K = 3`. This is a ZWA policy,
+not consensus finality; a deeper consensus-valid reorg was demonstrated in
+the research. The in-memory tracker carries observed references across view
+changes. Accepted references become finalized at depth 3; a reference lost
+after acceptance becomes `INVALIDATED_BY_REORG`, and loss after finalization
+raises `FINALITY_VIOLATION` under that status. An unrelated tip extension
+preserves the reference. Tracker state is not persisted across restarts.
+
+FV requires the view's node checkpoint maximum to be zero. CP trust is off by
+default. A checkpointed view with trust off returns
+`CHECKPOINT_TRUST_REQUIRED`; an operator may explicitly opt into CKPT-R for
+checkpoint-covered history. That trust asserts Action proof validity, anchor
+history and nullifier uniqueness for covered blocks; endpoint checks do not
+establish it. The known CKN counterexample cannot be configured as trusted.
+
+Only `VERIFIED` permits execution through `TradePermission::from_result`.
+Every other status denies. `VERIFIED` means canonical v3, the pinned VK and
+parameters, all Design-A proofs and joins, authenticated chain reference,
+authorized issuance root, valid ZSA terminal, satisfied history mode and
+finality. It does not prove ownership, unspentness, settlement spend or value
+flow, and the research still awaits independent human review.
+
+The production adapter currently links the byte-identical sibling research
+Layer-B crate, so the sibling checkout and pinned Cargo home remain build
+requirements. The snapshots and policy fixture are public evidence only.
+Deployment packaging, a persistent tracker, live node supervision, mainnet
+policy and API orchestration remain outside this phase.
