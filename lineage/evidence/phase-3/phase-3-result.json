@@ -22,7 +22,7 @@
     "bad-terminal",
     "reorg"
   ],
-  "end_commit": "e23a84782e893afa65d64e0d25e2b12954d7a79f",
+  "end_commit": "bc2139c0a830116de1d0ec354e7a2f19166933b2",
   "end_commit_scope": "validated implementation before this evidence-record commit; the self-containing report commit cannot name its own hash",
   "health_endpoints": "PASS: live and ready; startup checks source, fixtures, snapshots, policy, VK and parameters",
   "independent_human_review": "PENDING",
@@ -49,7 +49,9 @@
     "4c708f7 feat(lineage): package frozen verifier and serve rooted API",
     "1a8405f test(api): exercise live HTTP boundary and wire CI",
     "1110f34 docs(api): define Phase 3 trust and integration contract",
-    "e23a847 fix(lineage): keep formatting check scoped to production workspace"
+    "e23a847 fix(lineage): keep formatting check scoped to production workspace",
+    "86568c6 test(lineage): record Phase 3 validation evidence",
+    "bc2139c docs(api): enumerate exact Phase 4 response enums and codes"
   ],
   "next_stage": "PRODUCTION ZWA INTEGRATION PHASE 4 \u2014 FRONTEND / UI",
   "npm_tests_passed": 15,
