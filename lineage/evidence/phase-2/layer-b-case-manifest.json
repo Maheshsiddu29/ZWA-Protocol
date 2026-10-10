@@ -1,0 +1,2391 @@
+{
+  "research_commit": "3e7115d0e4c2f1cf36355f028447fc1b58290583",
+  "scope": "218 frozen Layer-B vectors plus 18 H1-rooted key rows",
+  "total_authoritative_cases": 236,
+  "replayed_cases": 202,
+  "agreements": 201,
+  "intentional_stricter_rejections": 1,
+  "not_portable": 34,
+  "missing_authoritative_input": 0,
+  "divergences": 0,
+  "cases": [
+    {
+      "case_id": "CR-NETIDS",
+      "category": "chainref",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": null,
+      "status": "NOT_PORTABLE",
+      "reason_if_not_portable": "Research setup compares six network identities; production pins one regtest network and this is not a chain-reference verification request.",
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "CR-NET-SAMEPARAMS",
+      "category": "chainref",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": null,
+      "status": "NOT_PORTABLE",
+      "reason_if_not_portable": "Compares H1C and H1B chain views that are not production-pinned snapshots; no individual chain-reference result is asserted.",
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "CR-01",
+      "category": "chainref",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "ACCEPT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "CR-02",
+      "category": "chainref",
+      "research_expected": "UNKNOWN",
+      "research_actual": "UNKNOWN",
+      "production_result": "UNKNOWN",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "CR-03",
+      "category": "chainref",
+      "research_expected": "UNKNOWN",
+      "research_actual": "UNKNOWN",
+      "production_result": "UNKNOWN",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "CR-04",
+      "category": "chainref",
+      "research_expected": "TREESTATE_MISMATCH",
+      "research_actual": "TREESTATE_MISMATCH",
+      "production_result": "TREESTATE_MISMATCH",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "CR-05",
+      "category": "chainref",
+      "research_expected": "MALFORMED",
+      "research_actual": "MALFORMED",
+      "production_result": "MALFORMED",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "CR-06",
+      "category": "chainref",
+      "research_expected": "UNSUPPORTED_VERSION",
+      "research_actual": "UNSUPPORTED_VERSION",
+      "production_result": "UNSUPPORTED_VERSION",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "CR-07",
+      "category": "chainref",
+      "research_expected": "MALFORMED",
+      "research_actual": "MALFORMED",
+      "production_result": "MALFORMED",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "CR-08a",
+      "category": "chainref",
+      "research_expected": "MALFORMED",
+      "research_actual": "MALFORMED",
+      "production_result": "MALFORMED",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "CR-08b",
+      "category": "chainref",
+      "research_expected": "MALFORMED",
+      "research_actual": "MALFORMED",
+      "production_result": "MALFORMED",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "CR-09",
+      "category": "chainref",
+      "research_expected": "MALFORMED",
+      "research_actual": "MALFORMED",
+      "production_result": "MALFORMED",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "CR-10",
+      "category": "chainref",
+      "research_expected": "UNKNOWN_FUTURE",
+      "research_actual": "UNKNOWN_FUTURE",
+      "production_result": "UNKNOWN_FUTURE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "CR-11",
+      "category": "chainref",
+      "research_expected": "NETWORK",
+      "research_actual": "NETWORK",
+      "production_result": "NETWORK",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "CR-12a",
+      "category": "chainref",
+      "research_expected": "NETWORK",
+      "research_actual": "NETWORK",
+      "production_result": "NETWORK",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "CR-12b",
+      "category": "chainref",
+      "research_expected": "NETWORK",
+      "research_actual": "NETWORK",
+      "production_result": "NETWORK",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "CR-13",
+      "category": "chainref",
+      "research_expected": "NETWORK",
+      "research_actual": "NETWORK",
+      "production_result": "NETWORK",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "CR-14",
+      "category": "chainref",
+      "research_expected": "NETWORK",
+      "research_actual": "NETWORK",
+      "production_result": "NETWORK",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "CR-15",
+      "category": "chainref",
+      "research_expected": "NETWORK",
+      "research_actual": "NETWORK",
+      "production_result": "NETWORK",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "CR-16",
+      "category": "chainref",
+      "research_expected": "VIEW_UNAVAILABLE",
+      "research_actual": "VIEW_UNAVAILABLE",
+      "production_result": "VIEW_UNAVAILABLE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "CR-ROOTONLY",
+      "category": "chainref",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": null,
+      "status": "NOT_PORTABLE",
+      "reason_if_not_portable": "Observation that several A-chain heights share an Orchard root; no chain-reference validation call or result exists for this row.",
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "CR-17",
+      "category": "chainref",
+      "research_expected": "UNKNOWN",
+      "research_actual": "UNKNOWN",
+      "production_result": "UNKNOWN",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "CR-18a",
+      "category": "chainref",
+      "research_expected": "NOT_FINAL",
+      "research_actual": "NOT_FINAL",
+      "production_result": "NOT_FINAL",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "CR-18b",
+      "category": "chainref",
+      "research_expected": "NOT_FINAL",
+      "research_actual": "NOT_FINAL",
+      "production_result": "NOT_FINAL",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "CR-19",
+      "category": "chainref",
+      "research_expected": "UNKNOWN",
+      "research_actual": "UNKNOWN",
+      "production_result": "UNKNOWN",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "FR-01",
+      "category": "finality",
+      "research_expected": "NOT_FINAL",
+      "research_actual": "NOT_FINAL",
+      "production_result": "NOT_FINAL",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "FR-02",
+      "category": "finality",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "ACCEPT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "FR-03",
+      "category": "finality",
+      "research_expected": "NOT_FINAL",
+      "research_actual": "NOT_FINAL",
+      "production_result": "NOT_FINAL",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "FR-04",
+      "category": "finality",
+      "research_expected": "NOT_FINAL",
+      "research_actual": "NOT_FINAL",
+      "production_result": "NOT_FINAL",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "FR-05",
+      "category": "finality",
+      "research_expected": "INVALIDATED",
+      "research_actual": "INVALIDATED",
+      "production_result": "INVALIDATED",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "FR-06",
+      "category": "finality",
+      "research_expected": "FINALITY_VIOLATION",
+      "research_actual": "FINALITY_VIOLATION",
+      "production_result": "FINALITY_VIOLATION",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "FR-07",
+      "category": "finality",
+      "research_expected": "UNKNOWN",
+      "research_actual": "UNKNOWN",
+      "production_result": "UNKNOWN",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "FR-08",
+      "category": "finality",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "ACCEPT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "FR-09a",
+      "category": "finality",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "ACCEPT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "FR-09b",
+      "category": "finality",
+      "research_expected": "NOT_FINAL",
+      "research_actual": "NOT_FINAL",
+      "production_result": "NOT_FINAL",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "FR-REORG",
+      "category": "finality",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": null,
+      "status": "NOT_PORTABLE",
+      "reason_if_not_portable": "Natural work-based Zebra branch-selection fact, not a production finality-verifier request; its accepted and finalized consequences are replayed in FR-05/06.",
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "FR-ZEBRA-1000",
+      "category": "finality",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": null,
+      "status": "NOT_PORTABLE",
+      "reason_if_not_portable": "Zebra consensus reorg-limit source fact, not a production finality-verifier request; production K=3 policy is tested separately.",
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "FR-CP-a",
+      "category": "finality",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "ACCEPT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "FR-CP-UNK",
+      "category": "finality",
+      "research_expected": "NOT_FINAL",
+      "research_actual": "NOT_FINAL",
+      "production_result": "NOT_FINAL",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "FR-CP-CONFLICT",
+      "category": "finality",
+      "research_expected": "CHECKPOINT_CONFLICT",
+      "research_actual": "CHECKPOINT_CONFLICT",
+      "production_result": "CHECKPOINT_CONFLICT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "FR-CP-FUTURE",
+      "category": "finality",
+      "research_expected": "NOT_FINAL",
+      "research_actual": "NOT_FINAL",
+      "production_result": "NOT_FINAL",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "FR-HYB-a",
+      "category": "finality",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "ACCEPT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "FR-HYB-b",
+      "category": "finality",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "ACCEPT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "FR-HYB-c",
+      "category": "finality",
+      "research_expected": "NOT_FINAL",
+      "research_actual": "NOT_FINAL",
+      "production_result": "NOT_FINAL",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "FR-CKPT-a",
+      "category": "finality",
+      "research_expected": "CHECKPOINTED_HISTORY",
+      "research_actual": "CHECKPOINTED_HISTORY",
+      "production_result": "CHECKPOINTED_HISTORY",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "FR-CKPT-b",
+      "category": "finality",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "ACCEPT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "FR-CKPT-c",
+      "category": "finality",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "ACCEPT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "FR-AGE-a",
+      "category": "finality",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "ACCEPT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "FR-AGE-b",
+      "category": "finality",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "ACCEPT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "FR-AGE-c",
+      "category": "finality",
+      "research_expected": "EXPIRED",
+      "research_actual": "EXPIRED",
+      "production_result": "EXPIRED",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "FR-AGE-d",
+      "category": "finality",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "ACCEPT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "FR-AGE-e",
+      "category": "finality",
+      "research_expected": "UNKNOWN_FUTURE",
+      "research_actual": "UNKNOWN_FUTURE",
+      "production_result": "UNKNOWN_FUTURE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#chainref_vectors"
+    },
+    {
+      "case_id": "VW-LOAD-A4",
+      "category": "view",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": "TRUE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#view_vectors"
+    },
+    {
+      "case_id": "VW-LOAD-A7",
+      "category": "view",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": "TRUE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#view_vectors"
+    },
+    {
+      "case_id": "VW-LOAD-B8",
+      "category": "view",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": "TRUE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#view_vectors"
+    },
+    {
+      "case_id": "VW-LOAD-B8R",
+      "category": "view",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": "TRUE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#view_vectors"
+    },
+    {
+      "case_id": "VW-LOAD-CPA",
+      "category": "view",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": "TRUE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#view_vectors"
+    },
+    {
+      "case_id": "VW-LOAD-CPX",
+      "category": "view",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": "TRUE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#view_vectors"
+    },
+    {
+      "case_id": "VW-LOAD-H1B0",
+      "category": "view",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": "TRUE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#view_vectors"
+    },
+    {
+      "case_id": "VW-LOAD-H1B2A",
+      "category": "view",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": "TRUE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#view_vectors"
+    },
+    {
+      "case_id": "VW-LOAD-H1C",
+      "category": "view",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": "TRUE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#view_vectors"
+    },
+    {
+      "case_id": "VW-LOAD-NET",
+      "category": "view",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": "TRUE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#view_vectors"
+    },
+    {
+      "case_id": "VW-TAMPER-BLOCK",
+      "category": "view",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": "TRUE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#view_vectors"
+    },
+    {
+      "case_id": "VW-TAMPER-AUTH",
+      "category": "view",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": "TRUE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#view_vectors"
+    },
+    {
+      "case_id": "VW-TAMPER-AUTH-ROOT",
+      "category": "view",
+      "research_expected": "ROOT_ISSUANCE_INVALID",
+      "research_actual": "ROOT_ISSUANCE_INVALID",
+      "production_result": "ROOT_ISSUANCE_INVALID",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#view_vectors"
+    },
+    {
+      "case_id": "VW-TAMPER-TX",
+      "category": "view",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": "TRUE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#view_vectors"
+    },
+    {
+      "case_id": "VW-TAMPER-ROOT",
+      "category": "view",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": "TRUE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#view_vectors"
+    },
+    {
+      "case_id": "VW-TAMPER-HASH",
+      "category": "view",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": "TRUE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#view_vectors"
+    },
+    {
+      "case_id": "VW-TRUNCATED",
+      "category": "view",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": "TRUE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#view_vectors"
+    },
+    {
+      "case_id": "VW-KIND",
+      "category": "view",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": "TRUE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#view_vectors"
+    },
+    {
+      "case_id": "VW-LINK",
+      "category": "view",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": "TRUE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#view_vectors"
+    },
+    {
+      "case_id": "VW-PIN",
+      "category": "view",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": "TRUE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#view_vectors"
+    },
+    {
+      "case_id": "VW-B9R",
+      "category": "view",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": null,
+      "status": "NOT_PORTABLE",
+      "reason_if_not_portable": "B8R is not a production-pinned snapshot; the row records a node remaining unchanged after a rejected block.",
+      "source": "post-h1f/layer-b/layer-b-result.json#view_vectors"
+    },
+    {
+      "case_id": "VW-EMPTY-ROOT",
+      "category": "view",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": null,
+      "status": "NOT_PORTABLE",
+      "reason_if_not_portable": "The NET view is not a production-pinned snapshot; the row records its empty-tree root.",
+      "source": "post-h1f/layer-b/layer-b-result.json#view_vectors"
+    },
+    {
+      "case_id": "VW-H1C-FROZEN",
+      "category": "view",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": null,
+      "status": "NOT_PORTABLE",
+      "reason_if_not_portable": "H1C is not a production-pinned snapshot; the row compares old frozen block hashes and roots.",
+      "source": "post-h1f/layer-b/layer-b-result.json#view_vectors"
+    },
+    {
+      "case_id": "VW-CHAIN-NAME",
+      "category": "view",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": null,
+      "status": "NOT_PORTABLE",
+      "reason_if_not_portable": "Node-reported RPC chain name is capture metadata; the production verifier performs no RPC query.",
+      "source": "post-h1f/layer-b/layer-b-result.json#view_vectors"
+    },
+    {
+      "case_id": "VW-3IMPL",
+      "category": "view",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": null,
+      "status": "NOT_PORTABLE",
+      "reason_if_not_portable": "Cross-implementation node/bridgetree/MerklePath witness comparison is a research fact; the production core omits witness generation.",
+      "source": "post-h1f/layer-b/layer-b-result.json#view_vectors"
+    },
+    {
+      "case_id": "RT-01",
+      "category": "root",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "ACCEPT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-02",
+      "category": "root",
+      "research_expected": "ROOT_POLICY_ISSUER",
+      "research_actual": "ROOT_POLICY_ISSUER",
+      "production_result": "ROOT_POLICY_ISSUER",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-03",
+      "category": "root",
+      "research_expected": "ROOT_POLICY_ASSET",
+      "research_actual": "ROOT_POLICY_ASSET",
+      "production_result": "ROOT_POLICY_ASSET",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-04a",
+      "category": "root",
+      "research_expected": "NETWORK",
+      "research_actual": "NETWORK",
+      "production_result": "NETWORK",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-04b",
+      "category": "root",
+      "research_expected": "ROOT_POLICY_NETWORK",
+      "research_actual": "ROOT_POLICY_NETWORK",
+      "production_result": "ROOT_POLICY_NETWORK",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-04c",
+      "category": "root",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "ACCEPT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-05",
+      "category": "root",
+      "research_expected": "ROOT_CMX",
+      "research_actual": "ROOT_CMX",
+      "production_result": "ROOT_CMX",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-06",
+      "category": "root",
+      "research_expected": "ROOT_NOT_ISSUANCE",
+      "research_actual": "ROOT_NOT_ISSUANCE",
+      "production_result": "ROOT_NOT_ISSUANCE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-06z",
+      "category": "root",
+      "research_expected": "ROOT_MALFORMED",
+      "research_actual": "ROOT_MALFORMED",
+      "production_result": "ROOT_MALFORMED",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-07a",
+      "category": "root",
+      "research_expected": "ROOT_CONTEXT",
+      "research_actual": "ROOT_CONTEXT",
+      "production_result": "ROOT_CONTEXT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-07b",
+      "category": "root",
+      "research_expected": "ROOT_CONTEXT",
+      "research_actual": "ROOT_CONTEXT",
+      "production_result": "ROOT_CONTEXT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-07c",
+      "category": "root",
+      "research_expected": "ROOT_CONTEXT",
+      "research_actual": "ROOT_CONTEXT",
+      "production_result": "ROOT_CONTEXT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-07d",
+      "category": "root",
+      "research_expected": "ROOT_CMX",
+      "research_actual": "ROOT_CMX",
+      "production_result": "ROOT_CMX",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-08a",
+      "category": "root",
+      "research_expected": "TREESTATE_MISMATCH",
+      "research_actual": "TREESTATE_MISMATCH",
+      "production_result": "TREESTATE_MISMATCH",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-08b",
+      "category": "root",
+      "research_expected": "ROOT_MERKLE",
+      "research_actual": "ROOT_MERKLE",
+      "production_result": "ROOT_MERKLE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-08c",
+      "category": "root",
+      "research_expected": "UNKNOWN",
+      "research_actual": "UNKNOWN",
+      "production_result": "UNKNOWN",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-08d",
+      "category": "root",
+      "research_expected": "ROOT_OUT_OF_RANGE",
+      "research_actual": "ROOT_OUT_OF_RANGE",
+      "production_result": "ROOT_OUT_OF_RANGE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-20",
+      "category": "root",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "ACCEPT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-09a",
+      "category": "root",
+      "research_expected": "FINALITY_VIOLATION",
+      "research_actual": "FINALITY_VIOLATION",
+      "production_result": "FINALITY_VIOLATION",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-09b",
+      "category": "root",
+      "research_expected": "REJECT:*",
+      "research_actual": "ROOT_CONTEXT",
+      "production_result": "ROOT_CONTEXT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-09c",
+      "category": "root",
+      "research_expected": "REJECT:*",
+      "research_actual": "ROOT_CONTEXT",
+      "production_result": "ROOT_CONTEXT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-09d",
+      "category": "root",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "ACCEPT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-10a",
+      "category": "root",
+      "research_expected": "REJECT:*",
+      "research_actual": "ROOT_CMX",
+      "production_result": "ROOT_CMX",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-10b",
+      "category": "root",
+      "research_expected": "ROOT_MALFORMED",
+      "research_actual": "ROOT_MALFORMED",
+      "production_result": "ROOT_MALFORMED",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-11",
+      "category": "root",
+      "research_expected": "ROOT_SHAPE",
+      "research_actual": "ROOT_SHAPE",
+      "production_result": "ROOT_SHAPE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-12a",
+      "category": "root",
+      "research_expected": "ROOT_ASSET_MISMATCH",
+      "research_actual": "ROOT_ASSET_MISMATCH",
+      "production_result": "ROOT_ASSET_MISMATCH",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-12b",
+      "category": "root",
+      "research_expected": "ROOT_ASSET_MISMATCH",
+      "research_actual": "ROOT_ASSET_MISMATCH",
+      "production_result": "ROOT_ASSET_MISMATCH",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-13a",
+      "category": "root",
+      "research_expected": "ROOT_MERKLE",
+      "research_actual": "ROOT_MERKLE",
+      "production_result": "ROOT_MERKLE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-13b",
+      "category": "root",
+      "research_expected": "ROOT_MALFORMED",
+      "research_actual": "ROOT_MALFORMED",
+      "production_result": "ROOT_MALFORMED",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-14",
+      "category": "root",
+      "research_expected": "REJECT:*",
+      "research_actual": "ROOT_CONTEXT",
+      "production_result": "ROOT_CONTEXT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-15",
+      "category": "root",
+      "research_expected": "ROOT_POLICY_UNTRUSTED",
+      "research_actual": "ROOT_POLICY_UNTRUSTED",
+      "production_result": "ROOT_POLICY_UNTRUSTED",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-16",
+      "category": "root",
+      "research_expected": "ROOT_POLICY_REVOKED",
+      "research_actual": "ROOT_POLICY_REVOKED",
+      "production_result": "ROOT_POLICY_REVOKED",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-17",
+      "category": "root",
+      "research_expected": "ROOT_POLICY_UNTRUSTED",
+      "research_actual": "ROOT_POLICY_UNTRUSTED",
+      "production_result": "ROOT_POLICY_UNTRUSTED",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-18",
+      "category": "root",
+      "research_expected": "ROOT_POLICY_ENTRY_REVOKED",
+      "research_actual": "ROOT_POLICY_ENTRY_REVOKED",
+      "production_result": "ROOT_POLICY_ENTRY_REVOKED",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-19a",
+      "category": "root",
+      "research_expected": "ROOT_POLICY_WINDOW",
+      "research_actual": "ROOT_POLICY_WINDOW",
+      "production_result": "ROOT_POLICY_WINDOW",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-19b",
+      "category": "root",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "ACCEPT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-24",
+      "category": "root",
+      "research_expected": "ROOT_POLICY_ISSUER",
+      "research_actual": "ROOT_POLICY_ISSUER",
+      "production_result": "ROOT_POLICY_ISSUER",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-21-node",
+      "category": "root",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": null,
+      "status": "NOT_PORTABLE",
+      "reason_if_not_portable": "Zebra checkpoint admission fact for CASE2A; production consumes authenticated snapshots and does not run a node.",
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-21",
+      "category": "root",
+      "research_expected": "ROOT_ISSUANCE_INVALID",
+      "research_actual": "ROOT_ISSUANCE_INVALID",
+      "production_result": "ROOT_ISSUANCE_INVALID",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-21c",
+      "category": "root",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "ACCEPT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-22",
+      "category": "root",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "ACCEPT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-23-absent",
+      "category": "root",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": null,
+      "status": "NOT_PORTABLE",
+      "reason_if_not_portable": "Synthetic F-SAME root is absent from H1C, which is not a production-pinned snapshot; this row is a fixture-existence fact.",
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-23",
+      "category": "root",
+      "research_expected": "ROOT_CMX",
+      "research_actual": "ROOT_CMX",
+      "production_result": "ROOT_CMX",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-25a",
+      "category": "root",
+      "research_expected": "ROOT_MALFORMED",
+      "research_actual": "ROOT_MALFORMED",
+      "production_result": "ROOT_MALFORMED",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-25b",
+      "category": "root",
+      "research_expected": "ROOT_MALFORMED",
+      "research_actual": "ROOT_MALFORMED",
+      "production_result": "ROOT_MALFORMED",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "RT-25c",
+      "category": "root",
+      "research_expected": "ROOT_MALFORMED",
+      "research_actual": "ROOT_MALFORMED",
+      "production_result": "ROOT_MALFORMED",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#root_vectors"
+    },
+    {
+      "case_id": "TM-01",
+      "category": "terminal",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "ACCEPT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-02-absent",
+      "category": "terminal",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": null,
+      "status": "NOT_PORTABLE",
+      "reason_if_not_portable": "Synthetic F-FOREIGN and F-REAL terminals are absent from captured views; this is a fixture-existence fact, not a terminal authentication call.",
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-02a",
+      "category": "terminal",
+      "research_expected": "TERM_CMX",
+      "research_actual": "TERM_CMX",
+      "production_result": "TERM_CMX",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-02b",
+      "category": "terminal",
+      "research_expected": "TERM_CMX",
+      "research_actual": "TERM_CMX",
+      "production_result": "TERM_CMX",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-03a",
+      "category": "terminal",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "ACCEPT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-03b",
+      "category": "terminal",
+      "research_expected": "TERM_CMX",
+      "research_actual": "TERM_CMX",
+      "production_result": "TERM_CMX",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-04",
+      "category": "terminal",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "ACCEPT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-05a",
+      "category": "terminal",
+      "research_expected": "UNKNOWN",
+      "research_actual": "UNKNOWN",
+      "production_result": "UNKNOWN",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-05b",
+      "category": "terminal",
+      "research_expected": "TERM_OUT_OF_RANGE",
+      "research_actual": "TERM_OUT_OF_RANGE",
+      "production_result": "TERM_OUT_OF_RANGE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-05c",
+      "category": "terminal",
+      "research_expected": "TREESTATE_MISMATCH",
+      "research_actual": "TREESTATE_MISMATCH",
+      "production_result": "TREESTATE_MISMATCH",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-06a",
+      "category": "terminal",
+      "research_expected": "REJECT:*",
+      "research_actual": "TERM_CMX",
+      "production_result": "TERM_CMX",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-06b",
+      "category": "terminal",
+      "research_expected": "TERM_MALFORMED",
+      "research_actual": "TERM_MALFORMED",
+      "production_result": "TERM_MALFORMED",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-07-L0",
+      "category": "terminal",
+      "research_expected": "TERM_MERKLE",
+      "research_actual": "TERM_MERKLE",
+      "production_result": "TERM_MERKLE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-07-L7",
+      "category": "terminal",
+      "research_expected": "TERM_MERKLE",
+      "research_actual": "TERM_MERKLE",
+      "production_result": "TERM_MERKLE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-07-L31",
+      "category": "terminal",
+      "research_expected": "TERM_MERKLE",
+      "research_actual": "TERM_MERKLE",
+      "production_result": "TERM_MERKLE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-07-NC",
+      "category": "terminal",
+      "research_expected": "TERM_MALFORMED",
+      "research_actual": "TERM_MALFORMED",
+      "production_result": "TERM_MALFORMED",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-08a",
+      "category": "terminal",
+      "research_expected": "REJECT:*",
+      "research_actual": "TERM_CMX",
+      "production_result": "TERM_CMX",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-08b",
+      "category": "terminal",
+      "research_expected": "REJECT:*",
+      "research_actual": "TERM_NOT_ACTION",
+      "production_result": "TERM_NOT_ACTION",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-08c",
+      "category": "terminal",
+      "research_expected": "REJECT:*",
+      "research_actual": "TERM_OUT_OF_RANGE",
+      "production_result": "TERM_OUT_OF_RANGE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-08d",
+      "category": "terminal",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": null,
+      "status": "NOT_PORTABLE",
+      "reason_if_not_portable": "Merkle-path bit-flip observation without a terminal authentication call; production's terminal proof is exercised by TM-08a/b/c and TM-07 variants.",
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-10a",
+      "category": "terminal",
+      "research_expected": "NETWORK",
+      "research_actual": "NETWORK",
+      "production_result": "NETWORK",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-10b",
+      "category": "terminal",
+      "research_expected": "NETWORK",
+      "research_actual": "NETWORK",
+      "production_result": "NETWORK",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-10c",
+      "category": "terminal",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "ACCEPT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-11a",
+      "category": "terminal",
+      "research_expected": "FINALITY_VIOLATION",
+      "research_actual": "FINALITY_VIOLATION",
+      "production_result": "FINALITY_VIOLATION",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-11b",
+      "category": "terminal",
+      "research_expected": "UNKNOWN",
+      "research_actual": "UNKNOWN",
+      "production_result": "UNKNOWN",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-11c",
+      "category": "terminal",
+      "research_expected": "TERM_CMX",
+      "research_actual": "TERM_CMX",
+      "production_result": "TERM_CMX",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-12-absent",
+      "category": "terminal",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": null,
+      "status": "NOT_PORTABLE",
+      "reason_if_not_portable": "The rejected B9R block is not a production-pinned view; this is a node/fixture absence fact.",
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-12a",
+      "category": "terminal",
+      "research_expected": "UNKNOWN_FUTURE",
+      "research_actual": "UNKNOWN_FUTURE",
+      "production_result": "UNKNOWN_FUTURE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-12b",
+      "category": "terminal",
+      "research_expected": "TERM_OUT_OF_RANGE",
+      "research_actual": "TERM_OUT_OF_RANGE",
+      "production_result": "TERM_OUT_OF_RANGE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-12c",
+      "category": "terminal",
+      "research_expected": "TREESTATE_MISMATCH",
+      "research_actual": "TREESTATE_MISMATCH",
+      "production_result": "TREESTATE_MISMATCH",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-13-absent",
+      "category": "terminal",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": null,
+      "status": "NOT_PORTABLE",
+      "reason_if_not_portable": "TU was never mined and has no authenticated production snapshot leaf; this is a fixture absence fact.",
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-13a",
+      "category": "terminal",
+      "research_expected": "TERM_OUT_OF_RANGE",
+      "research_actual": "TERM_OUT_OF_RANGE",
+      "production_result": "TERM_OUT_OF_RANGE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-13b",
+      "category": "terminal",
+      "research_expected": "TREESTATE_MISMATCH",
+      "research_actual": "TREESTATE_MISMATCH",
+      "production_result": "TREESTATE_MISMATCH",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-14",
+      "category": "terminal",
+      "research_expected": "TERM_NOT_ACTION",
+      "research_actual": "TERM_NOT_ACTION",
+      "production_result": "TERM_NOT_ACTION",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-15-node",
+      "category": "terminal",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": null,
+      "status": "NOT_PORTABLE",
+      "reason_if_not_portable": "Zebra checkpoint admission fact for A2X; production consumes authenticated snapshots and does not run a node.",
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-15",
+      "category": "terminal",
+      "research_expected": "TERM_ACTION_PROOF",
+      "research_actual": "TERM_ACTION_PROOF",
+      "production_result": "TERM_ACTION_PROOF",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-15c",
+      "category": "terminal",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "ACCEPT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-17",
+      "category": "terminal",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "ACCEPT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "TM-18",
+      "category": "terminal",
+      "research_expected": "TERM_MALFORMED",
+      "research_actual": "TERM_MALFORMED",
+      "production_result": "TERM_MALFORMED",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#terminal_vectors"
+    },
+    {
+      "case_id": "CB-00",
+      "category": "combined",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "ACCEPT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-00b",
+      "category": "combined",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "ACCEPT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-00c",
+      "category": "combined",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "ACCEPT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-00d",
+      "category": "combined",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "ACCEPT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-01",
+      "category": "combined",
+      "research_expected": "ROOT_POLICY_ISSUER",
+      "research_actual": "ROOT_POLICY_ISSUER",
+      "production_result": "ROOT_POLICY_ISSUER",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-01b",
+      "category": "combined",
+      "research_expected": "ROOT_CMX",
+      "research_actual": "ROOT_CMX",
+      "production_result": "ROOT_CMX",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-02a",
+      "category": "combined",
+      "research_expected": "TERM_CMX",
+      "research_actual": "TERM_CMX",
+      "production_result": "TERM_CMX",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-02b",
+      "category": "combined",
+      "research_expected": "ROOT_CMX",
+      "research_actual": "ROOT_CMX",
+      "production_result": "ROOT_CMX",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-03a",
+      "category": "combined",
+      "research_expected": "UNKNOWN",
+      "research_actual": "UNKNOWN",
+      "production_result": "UNKNOWN",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-03b",
+      "category": "combined",
+      "research_expected": "TREESTATE_MISMATCH",
+      "research_actual": "TREESTATE_MISMATCH",
+      "production_result": "TREESTATE_MISMATCH",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-03c",
+      "category": "combined",
+      "research_expected": "NOT_FINAL",
+      "research_actual": "NOT_FINAL",
+      "production_result": "NOT_FINAL",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-04",
+      "category": "combined",
+      "research_expected": "DA_TERMINAL",
+      "research_actual": "DA_TERMINAL",
+      "production_result": "DA_TERMINAL",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-05",
+      "category": "combined",
+      "research_expected": "REJECT:*",
+      "research_actual": "ROOT_CONTEXT",
+      "production_result": "ROOT_CONTEXT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-06",
+      "category": "combined",
+      "research_expected": "EXPIRED",
+      "research_actual": "EXPIRED",
+      "production_result": "EXPIRED",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-07a",
+      "category": "combined",
+      "research_expected": "FINALITY_VIOLATION",
+      "research_actual": "FINALITY_VIOLATION",
+      "production_result": "FINALITY_VIOLATION",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-07b",
+      "category": "combined",
+      "research_expected": "NOT_FINAL",
+      "research_actual": "NOT_FINAL",
+      "production_result": "NOT_FINAL",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-07c",
+      "category": "combined",
+      "research_expected": "INVALIDATED",
+      "research_actual": "INVALIDATED",
+      "production_result": "INVALIDATED",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-08",
+      "category": "combined",
+      "research_expected": "NETWORK",
+      "research_actual": "NETWORK",
+      "production_result": "NETWORK",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-09a",
+      "category": "combined",
+      "research_expected": "TERM_CMX",
+      "research_actual": "TERM_CMX",
+      "production_result": "TERM_CMX",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-09b",
+      "category": "combined",
+      "research_expected": "REJECT:*",
+      "research_actual": "ROOT_CONTEXT",
+      "production_result": "ROOT_CONTEXT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-09c",
+      "category": "combined",
+      "research_expected": "REJECT:*",
+      "research_actual": "ROOT_CONTEXT",
+      "production_result": "ROOT_CONTEXT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-09d",
+      "category": "combined",
+      "research_expected": "MALFORMED",
+      "research_actual": "MALFORMED",
+      "production_result": "MALFORMED",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-10",
+      "category": "combined",
+      "research_expected": "ROOT_POLICY_UNTRUSTED",
+      "research_actual": "ROOT_POLICY_UNTRUSTED",
+      "production_result": "ROOT_POLICY_UNTRUSTED",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-11a",
+      "category": "combined",
+      "research_expected": "ROOT_POLICY_ENTRY_REVOKED",
+      "research_actual": "ROOT_POLICY_ENTRY_REVOKED",
+      "production_result": "ROOT_POLICY_ENTRY_REVOKED",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-11b",
+      "category": "combined",
+      "research_expected": "ROOT_POLICY_ISSUER",
+      "research_actual": "ROOT_POLICY_ISSUER",
+      "production_result": "ROOT_POLICY_ISSUER",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-12a",
+      "category": "combined",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "ACCEPT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-12b",
+      "category": "combined",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "ACCEPT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-12c",
+      "category": "combined",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "ACCEPT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-12d",
+      "category": "combined",
+      "research_expected": "CHECKPOINTED_HISTORY",
+      "research_actual": "CHECKPOINTED_HISTORY",
+      "production_result": "CHECKPOINTED_HISTORY",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-12e",
+      "category": "combined",
+      "research_expected": "UNKNOWN",
+      "research_actual": "UNKNOWN",
+      "production_result": "UNKNOWN",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-13a",
+      "category": "combined",
+      "research_expected": "DA_JOIN(0)",
+      "research_actual": "DA_JOIN(0)",
+      "production_result": "DA_JOIN(0)",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-13b",
+      "category": "combined",
+      "research_expected": "DA_ROOT",
+      "research_actual": "DA_ROOT",
+      "production_result": "DA_ROOT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-13c",
+      "category": "combined",
+      "research_expected": "ROOT_NOT_ISSUANCE",
+      "research_actual": "ROOT_NOT_ISSUANCE",
+      "production_result": "ROOT_NOT_ISSUANCE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-14a",
+      "category": "combined",
+      "research_expected": "DA_TERMINAL",
+      "research_actual": "DA_TERMINAL",
+      "production_result": "DA_TERMINAL",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-14b",
+      "category": "combined",
+      "research_expected": "DA_ROOT",
+      "research_actual": "DA_ROOT",
+      "production_result": "DA_ROOT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-15a",
+      "category": "combined",
+      "research_expected": "MALFORMED",
+      "research_actual": "MALFORMED",
+      "production_result": "MALFORMED",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-15b",
+      "category": "combined",
+      "research_expected": "MALFORMED",
+      "research_actual": "MALFORMED",
+      "production_result": "MALFORMED",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-15c",
+      "category": "combined",
+      "research_expected": "MALFORMED",
+      "research_actual": "MALFORMED",
+      "production_result": "MALFORMED",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-15d",
+      "category": "combined",
+      "research_expected": "MALFORMED",
+      "research_actual": "MALFORMED",
+      "production_result": "MALFORMED",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-15e",
+      "category": "combined",
+      "research_expected": "MALFORMED",
+      "research_actual": "MALFORMED",
+      "production_result": "MALFORMED",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-15f",
+      "category": "combined",
+      "research_expected": "MALFORMED",
+      "research_actual": "MALFORMED",
+      "production_result": "MALFORMED",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-15g",
+      "category": "combined",
+      "research_expected": "MALFORMED",
+      "research_actual": "MALFORMED",
+      "production_result": "MALFORMED",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-15h",
+      "category": "combined",
+      "research_expected": "UNSUPPORTED_VERSION",
+      "research_actual": "UNSUPPORTED_VERSION",
+      "production_result": "UNSUPPORTED_VERSION",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-15i",
+      "category": "combined",
+      "research_expected": "DA_NONCANONICAL(0)",
+      "research_actual": "DA_NONCANONICAL(0)",
+      "production_result": "DA_NONCANONICAL(0)",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-15j",
+      "category": "combined",
+      "research_expected": "ROOT_MALFORMED",
+      "research_actual": "ROOT_MALFORMED",
+      "production_result": "ROOT_MALFORMED",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-15k",
+      "category": "combined",
+      "research_expected": "DA_PROOF(1)",
+      "research_actual": "DA_PROOF(1)",
+      "production_result": "DA_PROOF(1)",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-15l",
+      "category": "combined",
+      "research_expected": "VIEW_UNAVAILABLE",
+      "research_actual": "VIEW_UNAVAILABLE",
+      "production_result": "VIEW_UNAVAILABLE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-16a",
+      "category": "combined",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "ACCEPT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-16b",
+      "category": "combined",
+      "research_expected": "NETWORK",
+      "research_actual": "NETWORK",
+      "production_result": "NETWORK",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-17a",
+      "category": "combined",
+      "research_expected": "TERM_ACTION_PROOF",
+      "research_actual": "TERM_ACTION_PROOF",
+      "production_result": "TERM_ACTION_PROOF",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-17b",
+      "category": "combined",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "ACCEPT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "CB-18",
+      "category": "combined",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": null,
+      "status": "NOT_PORTABLE",
+      "reason_if_not_portable": "Universal observation over research accepted objects, not a separately encoded production request; every combined decision is mirrored through the core check.",
+      "source": "post-h1f/layer-b/layer-b-result.json#combined_vectors"
+    },
+    {
+      "case_id": "MS-A",
+      "category": "multistep",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": null,
+      "status": "NOT_PORTABLE",
+      "reason_if_not_portable": "On-chain ground-truth fact about Action spends, anchors and uniqueness; the production API authenticates endpoints and Design-A proofs, not this investigative predicate.",
+      "source": "post-h1f/layer-b/layer-b-result.json#multistep_vectors"
+    },
+    {
+      "case_id": "MS-B",
+      "category": "multistep",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": null,
+      "status": "NOT_PORTABLE",
+      "reason_if_not_portable": "On-chain ground-truth fact about Action spends, anchors and uniqueness; the production API authenticates endpoints and Design-A proofs, not this investigative predicate.",
+      "source": "post-h1f/layer-b/layer-b-result.json#multistep_vectors"
+    },
+    {
+      "case_id": "MS-H1C",
+      "category": "multistep",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": null,
+      "status": "NOT_PORTABLE",
+      "reason_if_not_portable": "On-chain ground-truth fact about Action spends, anchors and uniqueness; the production API authenticates endpoints and Design-A proofs, not this investigative predicate.",
+      "source": "post-h1f/layer-b/layer-b-result.json#multistep_vectors"
+    },
+    {
+      "case_id": "MS-NET",
+      "category": "multistep",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": null,
+      "status": "NOT_PORTABLE",
+      "reason_if_not_portable": "On-chain ground-truth fact about Action spends, anchors and uniqueness; the production API authenticates endpoints and Design-A proofs, not this investigative predicate.",
+      "source": "post-h1f/layer-b/layer-b-result.json#multistep_vectors"
+    },
+    {
+      "case_id": "RP-LB-VIEWS",
+      "category": "h1-rooted-key",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": "TRUE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "note": "",
+      "source": "post-h1f/h1-rooted/h1-rooted-result.json#key_rows"
+    },
+    {
+      "case_id": "RP-LB-MATRIX",
+      "category": "h1-rooted-key",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": "TRUE",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "note": "",
+      "source": "post-h1f/h1-rooted/h1-rooted-result.json#key_rows"
+    },
+    {
+      "case_id": "RP-OBJ-FV",
+      "category": "h1-rooted-key",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "ACCEPT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "note": "N=3 A7 production result VERIFIED; normalized to research ACCEPT.",
+      "source": "post-h1f/h1-rooted/h1-rooted-result.json#key_rows"
+    },
+    {
+      "case_id": "RP-OBJ-CP",
+      "category": "h1-rooted-key",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "ACCEPT",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "note": "N=3 CPA explicit-trust production result VERIFIED; normalized to research ACCEPT.",
+      "source": "post-h1f/h1-rooted/h1-rooted-result.json#key_rows"
+    },
+    {
+      "case_id": "CK-OBJ-CP",
+      "category": "h1-rooted-key",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": "CHECKPOINT_TRUST_REQUIRED",
+      "status": "INTENTIONAL_STRICTER_REJECTION",
+      "reason_if_not_portable": null,
+      "note": "Research CP accepts under explicit trust. Production default forbids CKN checkpoint inheritance, and its configured trust constructor rejects CKN; trade remains denied.",
+      "source": "post-h1f/h1-rooted/h1-rooted-result.json#key_rows"
+    },
+    {
+      "case_id": "CK-OBJ-FV",
+      "category": "h1-rooted-key",
+      "research_expected": "CHECKPOINTED_HISTORY",
+      "research_actual": "CHECKPOINTED_HISTORY",
+      "production_result": "CHECKPOINTED_HISTORY",
+      "status": "AGREES",
+      "reason_if_not_portable": null,
+      "note": "Production CKN result CHECKPOINT_TRUST_REQUIRED carries CHECKPOINTED_HISTORY.",
+      "source": "post-h1f/h1-rooted/h1-rooted-result.json#key_rows"
+    },
+    {
+      "case_id": "CK-OBJ-FVNODE",
+      "category": "h1-rooted-key",
+      "research_expected": "UNKNOWN_FUTURE",
+      "research_actual": "UNKNOWN_FUTURE",
+      "production_result": null,
+      "status": "NOT_PORTABLE",
+      "reason_if_not_portable": "Full-validation node view with M2 rejected has tip 1; production pins only the CKN checkpoint view, not the separate FV-node view.",
+      "note": "",
+      "source": "post-h1f/h1-rooted/h1-rooted-result.json#key_rows"
+    },
+    {
+      "case_id": "CK-GT-X-OFFCHAIN",
+      "category": "h1-rooted-key",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": null,
+      "status": "NOT_PORTABLE",
+      "reason_if_not_portable": "Historical ground-truth leaf absence, not a verifier output; no production API for this investigative predicate.",
+      "note": "",
+      "source": "post-h1f/h1-rooted/h1-rooted-result.json#key_rows"
+    },
+    {
+      "case_id": "CK-GT-NF1-UNREVEALED",
+      "category": "h1-rooted-key",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": null,
+      "status": "NOT_PORTABLE",
+      "reason_if_not_portable": "Historical ground-truth nullifier absence, not a verifier output; no production API for this investigative predicate.",
+      "note": "",
+      "source": "post-h1f/h1-rooted/h1-rooted-result.json#key_rows"
+    },
+    {
+      "case_id": "CK-GT-PROOF-INVALID",
+      "category": "h1-rooted-key",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": null,
+      "status": "NOT_PORTABLE",
+      "reason_if_not_portable": "Historical intermediate Action proof fact under CKN, not a production endpoint verifier output.",
+      "note": "",
+      "source": "post-h1f/h1-rooted/h1-rooted-result.json#key_rows"
+    },
+    {
+      "case_id": "CK-OLD-M2-C2",
+      "category": "h1-rooted-key",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": null,
+      "status": "NOT_PORTABLE",
+      "reason_if_not_portable": "Historical checkpointed M2 anchor observation, not a verifier output; production does not expose the node's checkpoint internals.",
+      "note": "",
+      "source": "post-h1f/h1-rooted/h1-rooted-result.json#key_rows"
+    },
+    {
+      "case_id": "CK-OLD-C3",
+      "category": "h1-rooted-key",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": null,
+      "status": "NOT_PORTABLE",
+      "reason_if_not_portable": "Historical CKN nullifier uniqueness observation, not a verifier output; production does not expose this investigative predicate.",
+      "note": "",
+      "source": "post-h1f/h1-rooted/h1-rooted-result.json#key_rows"
+    },
+    {
+      "case_id": "AO-FAKE-0",
+      "category": "h1-rooted-key",
+      "research_expected": "TERM_ANCHOR",
+      "research_actual": "TERM_ANCHOR",
+      "production_result": null,
+      "status": "NOT_PORTABLE",
+      "reason_if_not_portable": "T7FAKE checkpoint view is not a production-pinned snapshot; terminal anchor behavior remains in byte-identical imported terminal source.",
+      "note": "",
+      "source": "post-h1f/h1-rooted/h1-rooted-result.json#key_rows"
+    },
+    {
+      "case_id": "AO-SELF-0",
+      "category": "h1-rooted-key",
+      "research_expected": "TERM_ANCHOR",
+      "research_actual": "TERM_ANCHOR",
+      "production_result": null,
+      "status": "NOT_PORTABLE",
+      "reason_if_not_portable": "T7SELF checkpoint view is not a production-pinned snapshot; terminal anchor behavior remains in byte-identical imported terminal source.",
+      "note": "",
+      "source": "post-h1f/h1-rooted/h1-rooted-result.json#key_rows"
+    },
+    {
+      "case_id": "AO-BRANCH-0",
+      "category": "h1-rooted-key",
+      "research_expected": "TERM_ANCHOR",
+      "research_actual": "TERM_ANCHOR",
+      "production_result": null,
+      "status": "NOT_PORTABLE",
+      "reason_if_not_portable": "T7BR checkpoint view is not a production-pinned snapshot; terminal anchor behavior remains in byte-identical imported terminal source.",
+      "note": "",
+      "source": "post-h1f/h1-rooted/h1-rooted-result.json#key_rows"
+    },
+    {
+      "case_id": "AO-CTL-0",
+      "category": "h1-rooted-key",
+      "research_expected": "ACCEPT",
+      "research_actual": "ACCEPT",
+      "production_result": null,
+      "status": "NOT_PORTABLE",
+      "reason_if_not_portable": "T7CTL control view is not a production-pinned snapshot; no production v3 fixture exists for its terminal.",
+      "note": "",
+      "source": "post-h1f/h1-rooted/h1-rooted-result.json#key_rows"
+    },
+    {
+      "case_id": "C5-CP-NOT-COMMITTED",
+      "category": "h1-rooted-key",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": null,
+      "status": "NOT_PORTABLE",
+      "reason_if_not_portable": "The invalid issued-rho CASE1 block never became a committed snapshot; production cannot authenticate it as a chain view.",
+      "note": "",
+      "source": "post-h1f/h1-rooted/h1-rooted-result.json#key_rows"
+    },
+    {
+      "case_id": "C5-CP-REASON",
+      "category": "h1-rooted-key",
+      "research_expected": "FACT",
+      "research_actual": "TRUE",
+      "production_result": null,
+      "status": "NOT_PORTABLE",
+      "reason_if_not_portable": "Zebra finalized-state writer fail-stop observation, not a production root-authentication request.",
+      "note": "",
+      "source": "post-h1f/h1-rooted/h1-rooted-result.json#key_rows"
+    }
+  ]
+}

@@ -22,6 +22,9 @@ fi
 echo "== fixture pins"
 (cd tests/fixtures && shasum -a 256 -c SHA256SUMS)
 
+echo "== frozen Layer-B core provenance"
+scripts/verify-layer-b-core-source.sh
+
 echo "== cargo fmt --check"
 cargo fmt --check
 
@@ -30,6 +33,11 @@ cargo clippy --offline --locked --all-targets -- -D warnings
 
 echo "== cargo test"
 cargo test --offline --locked
+
+if [ -n "${LAYER_B_EVIDENCE_DIR:-}" ]; then
+  echo "== full classified Layer-B matrix"
+  python3 scripts/build-phase-2-matrix.py
+fi
 
 echo "== lock unchanged"
 git diff --exit-code -- Cargo.lock
