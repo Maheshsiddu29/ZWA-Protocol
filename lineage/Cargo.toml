@@ -21,6 +21,7 @@ publish = false
 # post-h1f/layer-b/experiments/Cargo.lock (sha256 fd8ba4ba…bd4b1).
 
 [workspace]
+exclude = ["vendor/layer-b-core"]
 
 [lib]
 path = "src/lib.rs"
@@ -28,7 +29,7 @@ path = "src/lib.rs"
 [dependencies]
 # Frozen R2B-L1 (NormalLineageStepV2): circuit, params(), keygen_vk(), verify().
 zwa-lineage-r2b-l1 = { path = "../../ZWA-Lineage-Research/r2c-h1d/r2b-l1" }
-zwa-layer-b = { path = "../../ZWA-Lineage-Research/post-h1f/layer-b/experiments" }
+zwa-layer-b-core = { path = "vendor/layer-b-core" }
 orchard = { version = "0.14.0", features = ["zsa-issuance", "circuit"] }
 halo2_proofs = { version = "0.3", default-features = false, features = ["batch", "floor-planner-v1-legacy-pdqsort"] }
 pasta_curves = "0.5"
@@ -43,6 +44,8 @@ thiserror = "2"
 # Differential oracles only. Never linked into the library.
 zwa-r3e-experiments = { path = "../../ZWA-Lineage-Research/post-h1f/r3e/experiments" }
 zwa-layer-b = { path = "../../ZWA-Lineage-Research/post-h1f/layer-b/experiments" }
+zcash_primitives = { version = "0.28.0", features = ["circuits", "transparent-inputs", "non-standard-fees", "zsa-issuance", "zip-233"] }
+incrementalmerkletree = "0.8.2"
 
 [lints.rust]
 missing_docs = "warn"

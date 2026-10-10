@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use zwa_layer_b::policy::ProvenancePolicy;
+use zwa_layer_b_core::policy::ProvenancePolicy;
 use zwa_lineage::phase2::{
     Phase2LineageVerifier, Phase2VerifierConfig, SnapshotChainView, SnapshotId, TradePermission,
 };

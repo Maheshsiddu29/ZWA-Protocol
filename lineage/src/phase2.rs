@@ -12,12 +12,12 @@ use std::time::Instant;
 
 use orchard::circuit::VerifyingKey;
 use sha2::{Digest, Sha256};
-use zwa_layer_b::chainref::{self as research_ref, NetworkKind, ACTION_VK_ID, RULESET_TAG};
-use zwa_layer_b::finality::{self as research_finality, Tracker};
-use zwa_layer_b::policy::{Code, FinalityMode, ProvenancePolicy, VerifierConfig};
-use zwa_layer_b::root::{self as research_root, ROOT_EVIDENCE_LEN};
-use zwa_layer_b::terminal::{self as research_terminal, TERMINAL_EVIDENCE_LEN};
-use zwa_layer_b::view::ChainView as ResearchView;
+use zwa_layer_b_core::chainref::{self as research_ref, NetworkKind, ACTION_VK_ID, RULESET_TAG};
+use zwa_layer_b_core::finality::{self as research_finality, Tracker};
+use zwa_layer_b_core::policy::{Code, FinalityMode, ProvenancePolicy, VerifierConfig};
+use zwa_layer_b_core::root::{self as research_root, ROOT_EVIDENCE_LEN};
+use zwa_layer_b_core::terminal::{self as research_terminal, TERMINAL_EVIDENCE_LEN};
+use zwa_layer_b_core::view::ChainView as ResearchView;
 
 use crate::auth::{
     AuthenticatedChainContext, AuthenticatedRoot, AuthenticatedTerminal, ChainContextAuthenticator,

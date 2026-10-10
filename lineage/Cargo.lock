@@ -2918,6 +2918,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "zwa-layer-b-core"
+version = "0.0.0"
+dependencies = [
+ "blake2b_simd",
+ "bridgetree",
+ "ff",
+ "hex",
+ "orchard",
+ "pasta_curves",
+ "serde_json",
+ "sha2 0.10.9",
+ "zcash_encoding",
+ "zcash_primitives",
+ "zcash_protocol",
+ "zcash_transparent",
+]
+
+[[package]]
 name = "zwa-lineage"
 version = "0.1.0"
 dependencies = [
@@ -2925,12 +2943,15 @@ dependencies = [
  "ff",
  "halo2_proofs",
  "hex",
+ "incrementalmerkletree",
  "orchard",
  "pasta_curves",
  "serde_json",
  "sha2 0.10.9",
  "thiserror 2.0.21",
+ "zcash_primitives",
  "zwa-layer-b",
+ "zwa-layer-b-core",
  "zwa-lineage-r2b-l1",
  "zwa-r3e-experiments",
 ]
