@@ -19,12 +19,12 @@
 //! verifier sees every `cmx_old`, `nf_old`, `cmx_new` and `N`, and therefore
 //! the on-chain path. Nothing in this crate hides the path.
 //!
-//! # Status in this build (Phase 1)
+//! # Status in this build
 //!
-//! Design A runs the frozen verifier. Root, terminal and chain-context
-//! authentication are interfaces with `NotWired` adapters only, so the rooted
-//! path stops at `PENDING_AUTHENTICATION` and cannot return `VERIFIED`.
-//! See `docs/lineage-integration.md` in the repository root.
+//! `phase2::Phase2LineageVerifier` runs root, terminal, chain-context, and
+//! finality checks against pinned snapshots and can return `VERIFIED`. The
+//! Phase 1 `Phase1LineageService` retains its `NotWired` adapters for regression.
+//! See `docs/phase3-api.md` in the repository root.
 
 #![cfg_attr(
     test,

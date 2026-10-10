@@ -396,7 +396,7 @@ fn vanilla_v5_action_is_not_a_zwa_terminal() {
 
     let bytes = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../ZWA-Lineage-Research/post-h1f/a2bv/raw/runs/run2/chain/views/V5.json"
+        "/../../../ZWA-Lineage-Research/post-h1f/a2bv/raw/runs/run2/chain/views/V5.json"
     ));
     assert_eq!(
         hex::encode(Sha256::digest(bytes)),
@@ -439,7 +439,7 @@ fn vanilla_v5_action_is_not_a_zwa_terminal() {
 fn selected_layer_b_rows_match_frozen_matrix() {
     let matrix: serde_json::Value = serde_json::from_str(include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../ZWA-Lineage-Research/post-h1f/layer-b/layer-b-result.json"
+        "/../../../ZWA-Lineage-Research/post-h1f/layer-b/layer-b-result.json"
     )))
     .unwrap();
     let baseline = request(SnapshotId::A7, "n3");

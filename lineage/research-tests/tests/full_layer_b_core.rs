@@ -593,7 +593,7 @@ fn plus_q(x: &H32) -> H32 {
 #[test]
 fn full_layer_b_core_differential() {
     let research = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../ZWA-Lineage-Research/post-h1f/layer-b");
+        .join("../../../ZWA-Lineage-Research/post-h1f/layer-b");
     let run = research.join("raw/runs/run3");
     let fx = research.join("fixtures/new");
     let sums: BTreeMap<String, String> = fs::read_to_string(run.join("views/SHA256SUMS"))

@@ -12,23 +12,21 @@ publish = false
 # `zcash_unstable="nu7"` cfg (.cargo/config.toml) and the pinned lock file.
 # None of that may leak into the protocol-core workspace.
 #
-# The frozen R2B-L1 circuit, Params::new(11) and VK* are reused unmodified from
-# the research repository checked out next to this one
-# (../../ZWA-Lineage-Research). R2B-L1 itself compiles the Orchard cf801a5
-# sources from the pinned offline cargo home, so builds must use
-# CARGO_HOME=../../zsa-feasibility/.cargo-home and --offline --locked
-# (scripts/check.sh). Cargo.lock was seeded from
-# post-h1f/layer-b/experiments/Cargo.lock (sha256 fd8ba4ba…bd4b1).
+# The frozen R2B-L1 circuit and exact Orchard cf801a5 sources are packaged
+# under vendor/r2b-l1. Seven import paths are localized; source hashes and
+# research origins are pinned in SOURCE_MANIFEST.json. External Cargo revisions
+# remain locked. The separate research-tests workspace retains frozen oracles.
 
 [workspace]
-exclude = ["vendor/layer-b-core"]
+members = ["apps/api"]
+exclude = ["vendor/layer-b-core", "vendor/r2b-l1", "research-tests"]
 
 [lib]
 path = "src/lib.rs"
 
 [dependencies]
 # Frozen R2B-L1 (NormalLineageStepV2): circuit, params(), keygen_vk(), verify().
-zwa-lineage-r2b-l1 = { path = "../../ZWA-Lineage-Research/r2c-h1d/r2b-l1" }
+zwa-lineage-r2b-l1 = { package = "zwa-lineage-r2b-l1-local", path = "vendor/r2b-l1" }
 zwa-layer-b-core = { path = "vendor/layer-b-core" }
 orchard = { version = "0.14.0", features = ["zsa-issuance", "circuit"] }
 halo2_proofs = { version = "0.3", default-features = false, features = ["batch", "floor-planner-v1-legacy-pdqsort"] }
@@ -39,13 +37,6 @@ sha2 = "0.10"
 hex = "0.4.3"
 serde_json = "1"
 thiserror = "2"
-
-[dev-dependencies]
-# Differential oracles only. Never linked into the library.
-zwa-r3e-experiments = { path = "../../ZWA-Lineage-Research/post-h1f/r3e/experiments" }
-zwa-layer-b = { path = "../../ZWA-Lineage-Research/post-h1f/layer-b/experiments" }
-zcash_primitives = { version = "0.28.0", features = ["circuits", "transparent-inputs", "non-standard-fees", "zsa-issuance", "zip-233"] }
-incrementalmerkletree = "0.8.2"
 
 [lints.rust]
 missing_docs = "warn"

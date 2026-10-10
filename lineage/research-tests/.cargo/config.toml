@@ -1,0 +1,8 @@
+# Same cfg as the frozen research crates (ZWA-Lineage-Research/.cargo/config.toml
+# and r2c-h1d/r2b-l1/.cargo/config.toml). The ZSA/NU7 formats of the pinned
+# librustzcash are behind it. Cargo reads this only when invoked from lineage/.
+[target.'cfg(all())']
+rustflags = ["--cfg", "zcash_unstable=\"nu7\""]
+
+[net]
+offline = true

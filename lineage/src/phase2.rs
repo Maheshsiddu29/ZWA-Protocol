@@ -3,7 +3,7 @@
 //! The snapshot bytes and their SHA-256 pins are owned by this crate. The
 //! imported Layer-B core re-derives the block, transaction and Orchard-tree
 //! facts at load. No caller supplies a view or policy through a lineage
-//! request. The sibling frozen R2B-L1 proof crate remains a build dependency.
+//! request. The pinned R2B-L1 proof source is repository-local.
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, Mutex};
