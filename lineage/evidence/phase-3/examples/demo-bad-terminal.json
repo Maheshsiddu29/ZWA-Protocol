@@ -1,0 +1,101 @@
+{
+  "demo": true,
+  "description": "One byte changed in pinned terminal evidence",
+  "expected": "REJECTED",
+  "fixture": {
+    "name": "n3-v3.bin",
+    "sha256": "0821a7abafca556bdcf9403ed9e040603194bf5d46650316d42554ee9c96ebb0"
+  },
+  "matchesExpected": true,
+  "observed": "REJECTED",
+  "result": {
+    "actionEvaluated": false,
+    "eligibility": "NOT_EVALUATED",
+    "lineagePermission": "DENIED",
+    "settlement": "NOT_EXECUTED",
+    "timeline": [
+      {
+        "stage": "ISSUANCE_ROOT",
+        "status": "PASSED"
+      },
+      {
+        "stage": "LINEAGE_STEPS",
+        "status": "PASSED"
+      },
+      {
+        "stage": "CHAIN_CONTEXT",
+        "status": "PASSED"
+      },
+      {
+        "stage": "TERMINAL_OUTPUT",
+        "status": "FAILED"
+      },
+      {
+        "stage": "FINALITY",
+        "status": "NOT_EVALUATED"
+      },
+      {
+        "stage": "TRADE_PERMISSION",
+        "status": "FAILED"
+      }
+    ],
+    "tradePermission": {
+      "allowed": false,
+      "reason": "REJECTED"
+    },
+    "trustSource": "PINNED_REGTEST_FIXTURE",
+    "verification": {
+      "chain_ref_id": "ee6075c9caf6e6778b49a683c2e979b6a58fa335ebfbf9231f4a558e799c368f",
+      "code": "TERMINAL_AUTHENTICATION_FAILED",
+      "finality_state": null,
+      "history_mode": "FV",
+      "lineage_statement_id": "cab5ee103ee86cd682376abd96ac87f1c8313b111563a77149aea60576721455",
+      "message": "terminal_cmx is not an authenticated ZSA Action output",
+      "mode": "rooted",
+      "obligations": {
+        "chain_context": "PASSED",
+        "context": "NOT_EVALUATED",
+        "design_a": "PASSED",
+        "finality": "NOT_EVALUATED",
+        "parse": "PASSED",
+        "root": "PASSED",
+        "terminal": "FAILED"
+      },
+      "research_code": "TERM_MERKLE",
+      "root_height": 1,
+      "snapshot_id": "A7",
+      "snapshot_sha256": "28651a629cf0d8075c5d0ac7a7f93db45dd10729e5ba0dc48c156f903f3b8300",
+      "status": "REJECTED",
+      "step": null,
+      "steps": 3,
+      "terminal_height": null,
+      "timing_us": {
+        "chain_context": 1,
+        "decode": 7,
+        "design_a": 11499,
+        "finality": null,
+        "root_auth": 3414,
+        "steps": [
+          4066,
+          3681,
+          3751
+        ],
+        "terminal_auth": 2603,
+        "total": 17797
+      },
+      "verifier": {
+        "params_k": 11,
+        "params_sha256": "1eab6f93a080ce41b908d935c04bd2e3ed1ac23f277c15d11c499d56d28fa0f7",
+        "proof_system": "halo2_proofs QED-it ef3d0ba (IPA/Vesta), plonk::verify_proof, SingleVerifier, Blake2bRead",
+        "relation": "NormalLineageStepV2",
+        "step_proof_len": 5120,
+        "verifier_id": "lineage-v2-l1",
+        "vk_id": "a2b349d7470504b6b5de3214f1783bc06d28c2f4e73111f9568652d0615b36b3"
+      }
+    },
+    "verificationId": "faa3af21acd5d6d177e9ae030f47258e0fb0efa3385c84d0b905052a7920e4fe"
+  },
+  "scenarioId": "bad-terminal",
+  "scenarioName": "Bad terminal authentication",
+  "snapshot": "A7"
+}

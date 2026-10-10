@@ -1,0 +1,97 @@
+{
+  "demo": true,
+  "description": "A7 observed before switching to pinned B8",
+  "expected": "INVALIDATED_BY_REORG",
+  "fixture": {
+    "name": "n3-v3.bin",
+    "sha256": "0821a7abafca556bdcf9403ed9e040603194bf5d46650316d42554ee9c96ebb0"
+  },
+  "matchesExpected": true,
+  "observed": "INVALIDATED_BY_REORG",
+  "result": {
+    "actionEvaluated": false,
+    "eligibility": "NOT_EVALUATED",
+    "lineagePermission": "DENIED",
+    "settlement": "NOT_EXECUTED",
+    "timeline": [
+      {
+        "stage": "ISSUANCE_ROOT",
+        "status": "NOT_EVALUATED"
+      },
+      {
+        "stage": "LINEAGE_STEPS",
+        "status": "NOT_EVALUATED"
+      },
+      {
+        "stage": "CHAIN_CONTEXT",
+        "status": "FAILED"
+      },
+      {
+        "stage": "TERMINAL_OUTPUT",
+        "status": "NOT_EVALUATED"
+      },
+      {
+        "stage": "FINALITY",
+        "status": "NOT_EVALUATED"
+      },
+      {
+        "stage": "TRADE_PERMISSION",
+        "status": "FAILED"
+      }
+    ],
+    "tradePermission": {
+      "allowed": false,
+      "reason": "INVALIDATED_BY_REORG"
+    },
+    "trustSource": "PINNED_REGTEST_FIXTURE",
+    "verification": {
+      "chain_ref_id": "ee6075c9caf6e6778b49a683c2e979b6a58fa335ebfbf9231f4a558e799c368f",
+      "code": "FINALITY_VIOLATION",
+      "finality_state": "FINALITY_VIOLATION",
+      "history_mode": null,
+      "lineage_statement_id": "cab5ee103ee86cd682376abd96ac87f1c8313b111563a77149aea60576721455",
+      "message": "a finalized chain_ref was reorganized out of the selected chain (alarm)",
+      "mode": "rooted",
+      "obligations": {
+        "chain_context": "FAILED",
+        "context": "NOT_EVALUATED",
+        "design_a": "NOT_EVALUATED",
+        "finality": "NOT_EVALUATED",
+        "parse": "PASSED",
+        "root": "NOT_EVALUATED",
+        "terminal": "NOT_EVALUATED"
+      },
+      "research_code": "FINALITY_VIOLATION",
+      "root_height": null,
+      "snapshot_id": "B8",
+      "snapshot_sha256": "63f671fffdddb844aef3ac935ee56d901e9eaba6f82df04f361f356b68b7adcf",
+      "status": "INVALIDATED_BY_REORG",
+      "step": null,
+      "steps": 3,
+      "terminal_height": null,
+      "timing_us": {
+        "chain_context": 1,
+        "decode": 9,
+        "design_a": null,
+        "finality": null,
+        "root_auth": null,
+        "steps": [],
+        "terminal_auth": null,
+        "total": 258
+      },
+      "verifier": {
+        "params_k": 11,
+        "params_sha256": "1eab6f93a080ce41b908d935c04bd2e3ed1ac23f277c15d11c499d56d28fa0f7",
+        "proof_system": "halo2_proofs QED-it ef3d0ba (IPA/Vesta), plonk::verify_proof, SingleVerifier, Blake2bRead",
+        "relation": "NormalLineageStepV2",
+        "step_proof_len": 5120,
+        "verifier_id": "lineage-v2-l1",
+        "vk_id": "a2b349d7470504b6b5de3214f1783bc06d28c2f4e73111f9568652d0615b36b3"
+      }
+    },
+    "verificationId": "8f898d93cdc45987361b79f86d0760817fea319e1a112bdd6b574ce195845318"
+  },
+  "scenarioId": "reorg",
+  "scenarioName": "Invalidated reference",
+  "snapshot": "B8"
+}

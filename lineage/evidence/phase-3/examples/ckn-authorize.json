@@ -1,0 +1,89 @@
+{
+  "actionEvaluated": true,
+  "eligibility": "NOT_EVALUATED",
+  "lineagePermission": "DENIED",
+  "settlement": "NOT_EXECUTED",
+  "timeline": [
+    {
+      "stage": "ISSUANCE_ROOT",
+      "status": "PASSED"
+    },
+    {
+      "stage": "LINEAGE_STEPS",
+      "status": "PASSED"
+    },
+    {
+      "stage": "CHAIN_CONTEXT",
+      "status": "PASSED"
+    },
+    {
+      "stage": "TERMINAL_OUTPUT",
+      "status": "PASSED"
+    },
+    {
+      "stage": "FINALITY",
+      "status": "FAILED"
+    },
+    {
+      "stage": "TRADE_PERMISSION",
+      "status": "FAILED"
+    }
+  ],
+  "totalHandlerUs": 27232,
+  "tradePermission": {
+    "allowed": false,
+    "reason": "CHECKPOINT_TRUST_REQUIRED"
+  },
+  "transportDecodeUs": 35,
+  "trustSource": "PINNED_REGTEST_FIXTURE",
+  "verification": {
+    "chain_ref_id": "f7bcfea4a40c1a859d126fd403528c5111bb35087c78d2212c31b8fdfe70300e",
+    "code": "CHECKPOINTED_HISTORY",
+    "finality_state": null,
+    "history_mode": "CP(c=2)",
+    "lineage_statement_id": "08d1adaefe8c8a0529360210b7a2659c41434d89558f4bda9ce2ae3be987ebef",
+    "message": "the verifier's history is checkpoint-committed and checkpoint trust is not enabled",
+    "mode": "rooted",
+    "obligations": {
+      "chain_context": "PASSED",
+      "context": "PASSED",
+      "design_a": "PASSED",
+      "finality": "FAILED",
+      "parse": "PASSED",
+      "root": "PASSED",
+      "terminal": "PASSED"
+    },
+    "research_code": "CHECKPOINTED_HISTORY",
+    "root_height": 1,
+    "snapshot_id": "CKN",
+    "snapshot_sha256": "3466f0ad69d62559d7ca240ecab88fc8e73e8a24062ed89f098eeabbb5efe232",
+    "status": "CHECKPOINT_TRUST_REQUIRED",
+    "step": null,
+    "steps": 3,
+    "terminal_height": 3,
+    "timing_us": {
+      "chain_context": 4,
+      "decode": 22,
+      "design_a": 13363,
+      "finality": 4,
+      "root_auth": 4703,
+      "steps": [
+        4682,
+        4297,
+        4381
+      ],
+      "terminal_auth": 8354,
+      "total": 26858
+    },
+    "verifier": {
+      "params_k": 11,
+      "params_sha256": "1eab6f93a080ce41b908d935c04bd2e3ed1ac23f277c15d11c499d56d28fa0f7",
+      "proof_system": "halo2_proofs QED-it ef3d0ba (IPA/Vesta), plonk::verify_proof, SingleVerifier, Blake2bRead",
+      "relation": "NormalLineageStepV2",
+      "step_proof_len": 5120,
+      "verifier_id": "lineage-v2-l1",
+      "vk_id": "a2b349d7470504b6b5de3214f1783bc06d28c2f4e73111f9568652d0615b36b3"
+    }
+  },
+  "verificationId": "8d245264c241a7a60228e04401514ff52ae9056a1b76de487686601dc94594d9"
+}
