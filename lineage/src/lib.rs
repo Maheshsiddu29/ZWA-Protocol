@@ -44,6 +44,7 @@ pub mod evidence;
 pub mod field;
 pub mod finality;
 pub mod frozen;
+pub mod phase2;
 pub mod service;
 pub mod verdict;
 

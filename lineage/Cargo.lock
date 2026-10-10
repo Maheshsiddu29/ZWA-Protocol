@@ -2925,6 +2925,7 @@ dependencies = [
  "ff",
  "halo2_proofs",
  "hex",
+ "orchard",
  "pasta_curves",
  "serde_json",
  "sha2 0.10.9",

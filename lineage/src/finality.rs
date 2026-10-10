@@ -48,6 +48,19 @@ pub enum ReferenceState {
     FinalityViolation,
 }
 
+impl ReferenceState {
+    /// Stable wire name.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Unknown => "UNKNOWN",
+            Self::Accepted => "ACCEPTED",
+            Self::Finalized => "FINALIZED",
+            Self::Invalidated => "INVALIDATED",
+            Self::FinalityViolation => "FINALITY_VIOLATION",
+        }
+    }
+}
+
 /// A reference that is final under the verifier's policy. Only this crate can
 /// construct one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

@@ -137,6 +137,7 @@ pub(crate) enum StepCheck {
 }
 
 /// The frozen R2B-L1 verifier with its identity-checked key.
+#[derive(Clone)]
 pub struct FrozenStepVerifier {
     params: Params<vesta::Affine>,
     vk: VerifyingKey<vesta::Affine>,

@@ -38,7 +38,7 @@ use crate::auth::{
 use crate::container::decode_request;
 use crate::design_a::{verify_design_a, DesignAResult};
 use crate::evidence::RootedLineageEvidence;
-use crate::finality::{FinalityResult, HistoryMode};
+use crate::finality::{FinalityResult, HistoryMode, ReferenceState};
 use crate::frozen::{FrozenStepVerifier, VerifierIdentity};
 use crate::verdict::{FailureCode, LineageStatus, VerificationFailure};
 
@@ -129,7 +129,7 @@ pub struct Obligations {
 }
 
 impl Obligations {
-    const fn none() -> Self {
+    pub(crate) const fn none() -> Self {
         Self {
             parse: ObligationStatus::NotEvaluated,
             chain_context: ObligationStatus::NotEvaluated,
@@ -159,6 +159,10 @@ impl Obligations {
 pub struct VerificationEvidence {
     /// The verifier that ran.
     pub verifier: VerifierIdentity,
+    /// Pinned snapshot used by the Phase 2 verifier, if any.
+    pub snapshot_id: Option<&'static str>,
+    /// SHA-256 pin of the selected snapshot, if any.
+    pub snapshot_sha256: Option<&'static str>,
     /// `N`, once parsed.
     pub steps: Option<usize>,
     /// `chain_ref.id`, once parsed.
@@ -167,12 +171,24 @@ pub struct VerificationEvidence {
     pub lineage_statement_id: Option<[u8; 32]>,
     /// History mode, once the chain context is authenticated.
     pub history_mode: Option<HistoryMode>,
+    /// Observed state of the chain reference, if classified.
+    pub finality_state: Option<ReferenceState>,
     /// Root height, once authenticated.
     pub root_height: Option<u32>,
     /// Terminal height, once authenticated.
     pub terminal_height: Option<u32>,
     /// Per-step proof verification times, if Design A ran to completion.
     pub step_verify_times: Vec<Duration>,
+    /// v3 canonical decoding time, if a v3 request was used.
+    pub decode_time: Option<Duration>,
+    /// Chain-reference identity authentication time.
+    pub chain_context_time: Option<Duration>,
+    /// Root authentication time.
+    pub root_auth_time: Option<Duration>,
+    /// Terminal authentication time.
+    pub terminal_auth_time: Option<Duration>,
+    /// Finality and history-mode policy time.
+    pub finality_time: Option<Duration>,
     /// Design-A wall time, if it ran to completion.
     pub design_a_time: Option<Duration>,
     /// Wall time of the whole request.
@@ -180,16 +196,24 @@ pub struct VerificationEvidence {
 }
 
 impl VerificationEvidence {
-    fn new(verifier: VerifierIdentity) -> Self {
+    pub(crate) fn new(verifier: VerifierIdentity) -> Self {
         Self {
             verifier,
+            snapshot_id: None,
+            snapshot_sha256: None,
             steps: None,
             chain_ref_id: None,
             lineage_statement_id: None,
             history_mode: None,
+            finality_state: None,
             root_height: None,
             terminal_height: None,
             step_verify_times: Vec::new(),
+            decode_time: None,
+            chain_context_time: None,
+            root_auth_time: None,
+            terminal_auth_time: None,
+            finality_time: None,
             design_a_time: None,
             total_time: Duration::ZERO,
         }
@@ -259,14 +283,22 @@ impl LineageResult {
                 "step_proof_len": v.step_proof_len,
             },
             "steps": self.evidence.steps,
+            "snapshot_id": self.evidence.snapshot_id,
+            "snapshot_sha256": self.evidence.snapshot_sha256,
             "chain_ref_id": hex32(self.evidence.chain_ref_id),
             "lineage_statement_id": hex32(self.evidence.lineage_statement_id),
             "history_mode": self.evidence.history_mode.map(|m| m.to_string()),
+            "finality_state": self.evidence.finality_state.map(ReferenceState::as_str),
             "root_height": self.evidence.root_height,
             "terminal_height": self.evidence.terminal_height,
             "timing_us": {
                 "steps": self.evidence.step_verify_times.iter().map(|d| micros(*d)).collect::<Vec<_>>(),
                 "design_a": self.evidence.design_a_time.map(micros),
+                "decode": self.evidence.decode_time.map(micros),
+                "chain_context": self.evidence.chain_context_time.map(micros),
+                "root_auth": self.evidence.root_auth_time.map(micros),
+                "terminal_auth": self.evidence.terminal_auth_time.map(micros),
+                "finality": self.evidence.finality_time.map(micros),
                 "total": micros(self.evidence.total_time),
             },
         })
@@ -508,14 +540,22 @@ where
         };
 
         // 1. chain_ref identity (CR-1 … CR-6).
-        let context = match self.verify_chain_context(evidence) {
+        let chain_start = Instant::now();
+        let chain_result = self.verify_chain_context(evidence);
+        ev.chain_context_time = Some(chain_start.elapsed());
+        let context = match chain_result {
             ChainIdentityResult::Authenticated(c) => {
                 ob.chain_context = ObligationStatus::Passed;
                 ev.history_mode = Some(c.history_mode());
                 Some(c)
             }
             ChainIdentityResult::Invalidated { finality_violation } => {
-                return Err(fail(&mut ob.chain_context, invalidated(finality_violation)))
+                ev.finality_state = Some(if finality_violation {
+                    ReferenceState::FinalityViolation
+                } else {
+                    ReferenceState::Invalidated
+                });
+                return Err(fail(&mut ob.chain_context, invalidated(finality_violation)));
             }
             ChainIdentityResult::Rejected(f) | ChainIdentityResult::InternalError(f) => {
                 return Err(fail(&mut ob.chain_context, f))
@@ -533,19 +573,26 @@ where
         // 2. Root (R1 … R8), against the authenticated context only.
         let root = match &context {
             None => None,
-            Some(c) => match self.verify_root(evidence, c) {
-                RootAuthenticationResult::Authenticated(r) => {
-                    ob.root = ObligationStatus::Passed;
-                    ev.root_height = Some(r.height());
-                    Some(r)
+            Some(c) => {
+                let root_start = Instant::now();
+                let root_result = self.verify_root(evidence, c);
+                ev.root_auth_time = Some(root_start.elapsed());
+                match root_result {
+                    RootAuthenticationResult::Authenticated(r) => {
+                        ob.root = ObligationStatus::Passed;
+                        ev.root_height = Some(r.height());
+                        Some(r)
+                    }
+                    RootAuthenticationResult::Rejected(f)
+                    | RootAuthenticationResult::InternalError(f) => {
+                        return Err(fail(&mut ob.root, f))
+                    }
+                    RootAuthenticationResult::Unavailable(reason) => {
+                        on_unavailable(&mut ob.root, reason, FailureCode::RootNotAuthenticated)?;
+                        None
+                    }
                 }
-                RootAuthenticationResult::Rejected(f)
-                | RootAuthenticationResult::InternalError(f) => return Err(fail(&mut ob.root, f)),
-                RootAuthenticationResult::Unavailable(reason) => {
-                    on_unavailable(&mut ob.root, reason, FailureCode::RootNotAuthenticated)?;
-                    None
-                }
-            },
+            }
         };
 
         // 3. Design A: needs nothing from Layer B.
@@ -563,25 +610,30 @@ where
         // 4. Terminal (T1 … T7), against the authenticated context only.
         let terminal = match &context {
             None => None,
-            Some(c) => match self.verify_terminal(evidence, c) {
-                TerminalAuthenticationResult::Authenticated(t) => {
-                    ob.terminal = ObligationStatus::Passed;
-                    ev.terminal_height = Some(t.height());
-                    Some(t)
+            Some(c) => {
+                let term_start = Instant::now();
+                let term_result = self.verify_terminal(evidence, c);
+                ev.terminal_auth_time = Some(term_start.elapsed());
+                match term_result {
+                    TerminalAuthenticationResult::Authenticated(t) => {
+                        ob.terminal = ObligationStatus::Passed;
+                        ev.terminal_height = Some(t.height());
+                        Some(t)
+                    }
+                    TerminalAuthenticationResult::Rejected(f)
+                    | TerminalAuthenticationResult::InternalError(f) => {
+                        return Err(fail(&mut ob.terminal, f))
+                    }
+                    TerminalAuthenticationResult::Unavailable(reason) => {
+                        on_unavailable(
+                            &mut ob.terminal,
+                            reason,
+                            FailureCode::TerminalNotAuthenticated,
+                        )?;
+                        None
+                    }
                 }
-                TerminalAuthenticationResult::Rejected(f)
-                | TerminalAuthenticationResult::InternalError(f) => {
-                    return Err(fail(&mut ob.terminal, f))
-                }
-                TerminalAuthenticationResult::Unavailable(reason) => {
-                    on_unavailable(
-                        &mut ob.terminal,
-                        reason,
-                        FailureCode::TerminalNotAuthenticated,
-                    )?;
-                    None
-                }
-            },
+            }
         };
 
         // 5. Context A5: h_root < h_term ≤ r.height.
@@ -598,18 +650,29 @@ where
 
         // 6. Finality and policy (CR-7 … CR-9), against the authenticated context only.
         if let Some(c) = &context {
+            let finality_start = Instant::now();
             let result = guarded(|| self.chain.evaluate_finality(c))
                 .unwrap_or_else(FinalityResult::InternalError);
+            ev.finality_time = Some(finality_start.elapsed());
             match result {
                 FinalityResult::Finalized(fin) => {
                     ob.finality = ObligationStatus::Passed;
                     ev.history_mode = Some(fin.history_mode());
+                    ev.finality_state = Some(ReferenceState::Finalized);
                 }
                 // Not a stop: PENDING_FINALITY is reported only if every other
                 // obligation passed (see `finish`).
-                FinalityResult::NotFinal => ob.finality = ObligationStatus::Failed,
+                FinalityResult::NotFinal => {
+                    ob.finality = ObligationStatus::Failed;
+                    ev.finality_state = Some(ReferenceState::Accepted);
+                }
                 FinalityResult::Invalidated { finality_violation } => {
-                    return Err(fail(&mut ob.finality, invalidated(finality_violation)))
+                    ev.finality_state = Some(if finality_violation {
+                        ReferenceState::FinalityViolation
+                    } else {
+                        ReferenceState::Invalidated
+                    });
+                    return Err(fail(&mut ob.finality, invalidated(finality_violation)));
                 }
                 FinalityResult::CheckpointTrustRequired => {
                     return Err(fail(
