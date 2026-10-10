@@ -1,0 +1,90 @@
+{
+  "a4_status": "PENDING_FINALITY",
+  "a7_status": "VERIFIED",
+  "api_integration_tests_failed": 0,
+  "api_integration_tests_passed": 46,
+  "api_normal_dependencies": {
+    "h2": false,
+    "hyper": "1.9.0",
+    "reqwest": false
+  },
+  "api_service": "PASS: Rust Axum HTTP process bound to loopback and tested with real requests",
+  "branch": "integration/lineage-phase-3",
+  "ci_workflow": "CONFIGURED; workflow YAML parsed and component commands tested locally; hosted run unavailable before owner push",
+  "ckn_status": "CHECKPOINT_TRUST_REQUIRED",
+  "clean_environment_build": "NOT_TESTED: only a documented prepared pinned Cargo cache was available",
+  "demo_scenarios": [
+    "valid-rooted-n3",
+    "pending-a4",
+    "checkpoint-ckn",
+    "tampered-proof",
+    "bad-root",
+    "bad-terminal",
+    "reorg"
+  ],
+  "end_commit": "e23a84782e893afa65d64e0d25e2b12954d7a79f",
+  "end_commit_scope": "validated implementation before this evidence-record commit; the self-containing report commit cannot name its own hash",
+  "health_endpoints": "PASS: live and ready; startup checks source, fixtures, snapshots, policy, VK and parameters",
+  "independent_human_review": "PENDING",
+  "known_limitations": [
+    "Independent human review pending.",
+    "Only pinned regtest fixtures; no live chain source, investor eligibility evaluation or settlement execution.",
+    "In-memory finality observations do not survive process restarts.",
+    "Clean dependency download on a fresh machine was not tested; locked upstream Git access is required for cache preparation.",
+    "Frozen research-only differential harness requires a sibling checkout and its original absolute Orchard source alias on clean CI.",
+    "The hosted GitHub Actions workflow has not run because pushing is prohibited in this task."
+  ],
+  "layer_b_authoritative_cases": 236,
+  "layer_b_classification": {
+    "DIRECT_REPLAY": 196,
+    "INTENTIONAL_STRICTER_REJECTION": 1,
+    "NOT_PORTABLE": 34,
+    "ROOTED_MAPPING": 5
+  },
+  "layer_b_unclassified": 0,
+  "layer_b_unexplained_divergences": 0,
+  "lineage_tests_ignored": 1,
+  "lineage_tests_passed": 67,
+  "local_commits": [
+    "4c708f7 feat(lineage): package frozen verifier and serve rooted API",
+    "1a8405f test(api): exercise live HTTP boundary and wire CI",
+    "1110f34 docs(api): define Phase 3 trust and integration contract",
+    "e23a847 fix(lineage): keep formatting check scoped to production workspace"
+  ],
+  "next_stage": "PRODUCTION ZWA INTEGRATION PHASE 4 \u2014 FRONTEND / UI",
+  "npm_tests_passed": 15,
+  "offline_build": "PASS: source-only copy built with prepared documented Cargo home, --offline --locked",
+  "parameter_sha256": "1eab6f93a080ce41b908d935c04bd2e3ed1ac23f277c15d11c499d56d28fa0f7",
+  "performance": {
+    "A4AuthorizeMs": 27.142,
+    "CKNAuthorizeMs": 27.791,
+    "checkpoint-cknMs": 22.904,
+    "concurrent8MaxMs": 138.627,
+    "concurrent8MeanMs": 87.383,
+    "firstA7Ms": 25.154,
+    "firstHandlerUs": 24767,
+    "jsonBase64DecodeUs": 33,
+    "pending-a4Ms": 24.056,
+    "startupMs": 9789.984374998312,
+    "warmedA7MsMean": 23.525
+  },
+  "phase": "production-integration-phase-3",
+  "production_verifier_normal_dependencies": {
+    "h2": false,
+    "hyper": false,
+    "reqwest": false
+  },
+  "protocol_tests_passed": 95,
+  "r2b_l1_provenance": "PASS: 24 pinned R2B-L1/Orchard source files; seven path-only rewrites; research HEAD 3e7115d; Orchard cf801a5",
+  "research_baseline_hash_after": "7c05d1e9b3884e30fc901535f0d8ca95f9430204a379f0182c248416760ca4bc",
+  "research_baseline_hash_before": "7c05d1e9b3884e30fc901535f0d8ca95f9430204a379f0182c248416760ca4bc",
+  "research_baseline_unchanged": true,
+  "research_tracked_baseline_files": 1699,
+  "rooted_verify_endpoint": "PASS: canonical v3 bytes passed to Phase2LineageVerifier.verify_v3",
+  "standalone_source_build": "PASS: copied production lineage source built in /tmp without sibling research checkout",
+  "start_commit": "402a98ed98486cc0348a5055350c71e1e32be310",
+  "trade_authorize_endpoint": "PASS: each call re-verifies and uses TradePermission::from_result",
+  "verification_commit": "e23a84782e893afa65d64e0d25e2b12954d7a79f",
+  "verifier_info": "PASS: actual VK, parameter, relation, K=3, regtest and snapshot identity",
+  "verifier_vk_digest": "a2b349d7470504b6b5de3214f1783bc06d28c2f4e73111f9568652d0615b36b3"
+}
