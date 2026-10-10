@@ -21,7 +21,8 @@
 //!
 //! # Status
 //!
-//! Work in progress: canonical domain model only.
+//! Work in progress: domain model, request container and Design A over the
+//! frozen verifier. No authentication layer yet.
 
 #![cfg_attr(
     test,
@@ -34,16 +35,22 @@
 )]
 
 pub mod chain_ref;
+pub mod container;
+pub mod design_a;
 pub mod evidence;
 pub mod field;
+pub mod frozen;
 pub mod verdict;
 
 pub use chain_ref::{ChainRef, ChainRefError};
+pub use container::{decode_request, encode_request, LineageRequest};
+pub use design_a::{verify_design_a, DesignAReport, DesignAResult};
 pub use evidence::{
     CanonicalStepProof, LineagePublicInputs, LineageStepProof, RawLineageEvidence, RawStep,
     RootedLineageEvidence, MAX_STEPS, STEP_PROOF_LEN,
 };
 pub use field::{CanonicalCmx, CanonicalFieldElement, CanonicalNullifier, CanonicalOrchardRoot};
+pub use frozen::{FrozenStepVerifier, VerifierIdentity, VerifierInitError};
 pub use verdict::{FailureCode, FieldRole, LineageStatus, VerificationFailure};
 
 /// BLAKE2b-256 with a 16-byte personalization.
