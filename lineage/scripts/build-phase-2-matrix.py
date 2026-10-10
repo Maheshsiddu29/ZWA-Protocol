@@ -111,13 +111,18 @@ def main() -> None:
     assert len(rows) == 236, len(rows)
     counts = collections.Counter(r["status"] for r in rows)
     assert counts["DIVERGES"] == 0, counts
+    applicable = len(rows) - counts["NOT_PORTABLE"] - counts["MISSING_AUTHORITATIVE_INPUT"]
+    core_replayed = sum(r["category"] != "h1-rooted-key" and r["status"] == "AGREES" for r in rows)
+    rooted_mapped = applicable - core_replayed
+    assert core_replayed == 196 and rooted_mapped == 6
     manifest = {"research_commit": HEAD, "scope": "218 frozen Layer-B vectors plus 18 H1-rooted key rows",
-                "total_authoritative_cases": len(rows), "replayed_cases": len(rows) - counts["NOT_PORTABLE"] - counts["MISSING_AUTHORITATIVE_INPUT"],
+                "total_authoritative_cases": len(rows), "applicable_cases": applicable,
+                "core_replayed_cases": core_replayed, "rooted_mapped_cases": rooted_mapped,
                 "agreements": counts["AGREES"], "intentional_stricter_rejections": counts["INTENTIONAL_STRICTER_REJECTION"],
                 "not_portable": counts["NOT_PORTABLE"], "missing_authoritative_input": counts["MISSING_AUTHORITATIVE_INPUT"],
                 "divergences": counts["DIVERGES"], "cases": rows}
     OUT.write_text(json.dumps(manifest, indent=2) + "\n")
-    print({k: manifest[k] for k in ("total_authoritative_cases", "replayed_cases", "agreements", "intentional_stricter_rejections", "not_portable", "missing_authoritative_input", "divergences")})
+    print({k: manifest[k] for k in ("total_authoritative_cases", "applicable_cases", "core_replayed_cases", "rooted_mapped_cases", "agreements", "intentional_stricter_rejections", "not_portable", "missing_authoritative_input", "divergences")})
 
 
 if __name__ == "__main__":
