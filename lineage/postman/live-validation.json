@@ -1,0 +1,2506 @@
+{
+  "baseUrl": "http://127.0.0.1:3000",
+  "collectionRequestsExecuted": false,
+  "executionMethod": "Python HTTP equivalent using every generated collection request body and URL",
+  "failed": 0,
+  "passed": 36,
+  "records": [
+    {
+      "elapsedMs": 15.682,
+      "errors": [],
+      "folder": "01 Health",
+      "httpStatus": 200,
+      "method": "GET",
+      "passed": true,
+      "path": "/health/live",
+      "request": "Live",
+      "responseBody": {
+        "status": "LIVE"
+      }
+    },
+    {
+      "elapsedMs": 0.259,
+      "errors": [],
+      "folder": "01 Health",
+      "httpStatus": 200,
+      "method": "GET",
+      "passed": true,
+      "path": "/health/ready",
+      "request": "Ready",
+      "responseBody": {
+        "snapshot": "A7",
+        "status": "READY",
+        "trustSource": "PINNED_REGTEST_FIXTURE"
+      }
+    },
+    {
+      "elapsedMs": 0.245,
+      "errors": [],
+      "folder": "02 Verifier Information",
+      "httpStatus": 200,
+      "method": "GET",
+      "passed": true,
+      "path": "/v1/verifier/info",
+      "request": "Verifier information",
+      "responseBody": {
+        "containerVersions": [
+          3
+        ],
+        "finality": {
+          "k": 3,
+          "mode": "depth"
+        },
+        "historyModes": [
+          "FV"
+        ],
+        "implementationVersion": "0.1.0",
+        "network": "regtest",
+        "parameterIdentity": "1eab6f93a080ce41b908d935c04bd2e3ed1ac23f277c15d11c499d56d28fa0f7",
+        "parameterK": 11,
+        "protocolVersion": "0.1.0",
+        "relation": "NormalLineageStepV2",
+        "researchReview": "PENDING",
+        "snapshot": {
+          "id": "A7",
+          "sha256": "28651a629cf0d8075c5d0ac7a7f93db45dd10729e5ba0dc48c156f903f3b8300"
+        },
+        "trustSource": "PINNED_REGTEST_FIXTURE",
+        "verifierId": "lineage-v2-l1",
+        "vkDigest": "a2b349d7470504b6b5de3214f1783bc06d28c2f4e73111f9568652d0615b36b3"
+      }
+    },
+    {
+      "elapsedMs": 0.235,
+      "errors": [],
+      "folder": "03 Demo Scenarios",
+      "httpStatus": 200,
+      "method": "GET",
+      "passed": true,
+      "path": "/v1/demo/scenarios",
+      "request": "List all seven scenarios",
+      "responseBody": {
+        "scenarios": [
+          {
+            "description": "Authorized issuance, three real proofs, authenticated terminal and depth-3 finality",
+            "expected": "VERIFIED",
+            "fixture": "n3-v3.bin",
+            "id": "valid-rooted-n3",
+            "name": "A7 rooted N=3",
+            "snapshot": "A7"
+          },
+          {
+            "description": "The same N=3 evidence at tip 4",
+            "expected": "PENDING_FINALITY",
+            "fixture": "n3-v3.bin",
+            "id": "pending-a4",
+            "name": "A4 pending finality",
+            "snapshot": "A4"
+          },
+          {
+            "description": "Checkpointed history without operator trust",
+            "expected": "CHECKPOINT_TRUST_REQUIRED",
+            "fixture": "ckn-v3.bin",
+            "id": "checkpoint-ckn",
+            "name": "CKN checkpoint trust",
+            "snapshot": "CKN"
+          },
+          {
+            "description": "One byte changed inside the authoritative proof",
+            "expected": "REJECTED",
+            "fixture": "n3-v3.bin",
+            "id": "tampered-proof",
+            "name": "Tampered proof",
+            "snapshot": "A7"
+          },
+          {
+            "description": "One byte changed in pinned root evidence",
+            "expected": "REJECTED",
+            "fixture": "n3-v3.bin",
+            "id": "bad-root",
+            "name": "Bad root authentication",
+            "snapshot": "A7"
+          },
+          {
+            "description": "One byte changed in pinned terminal evidence",
+            "expected": "REJECTED",
+            "fixture": "n3-v3.bin",
+            "id": "bad-terminal",
+            "name": "Bad terminal authentication",
+            "snapshot": "A7"
+          },
+          {
+            "description": "A7 observed before switching to pinned B8",
+            "expected": "INVALIDATED_BY_REORG",
+            "fixture": "n3-v3.bin",
+            "id": "reorg",
+            "name": "Invalidated reference",
+            "snapshot": "B8"
+          }
+        ],
+        "trustSource": "PINNED_REGTEST_FIXTURE"
+      }
+    },
+    {
+      "elapsedMs": 24.991,
+      "errors": [],
+      "folder": "03 Demo Scenarios",
+      "httpStatus": 200,
+      "method": "POST",
+      "passed": true,
+      "path": "/v1/demo/run",
+      "request": "valid-rooted-n3",
+      "responseBody": {
+        "demo": true,
+        "description": "Authorized issuance, three real proofs, authenticated terminal and depth-3 finality",
+        "expected": "VERIFIED",
+        "fixture": {
+          "name": "n3-v3.bin",
+          "sha256": "0821a7abafca556bdcf9403ed9e040603194bf5d46650316d42554ee9c96ebb0"
+        },
+        "matchesExpected": true,
+        "observed": "VERIFIED",
+        "result": {
+          "actionEvaluated": false,
+          "eligibility": "NOT_EVALUATED",
+          "lineagePermission": "ALLOWED",
+          "settlement": "NOT_EXECUTED",
+          "timeline": [
+            {
+              "stage": "ISSUANCE_ROOT",
+              "status": "PASSED"
+            },
+            {
+              "stage": "LINEAGE_STEPS",
+              "status": "PASSED"
+            },
+            {
+              "stage": "CHAIN_CONTEXT",
+              "status": "PASSED"
+            },
+            {
+              "stage": "TERMINAL_OUTPUT",
+              "status": "PASSED"
+            },
+            {
+              "stage": "FINALITY",
+              "status": "PASSED"
+            },
+            {
+              "stage": "TRADE_PERMISSION",
+              "status": "PASSED"
+            }
+          ],
+          "tradePermission": {
+            "allowed": true,
+            "reason": "VERIFIED"
+          },
+          "trustSource": "PINNED_REGTEST_FIXTURE",
+          "verification": {
+            "chain_ref_id": "ee6075c9caf6e6778b49a683c2e979b6a58fa335ebfbf9231f4a558e799c368f",
+            "code": null,
+            "finality_state": "FINALIZED",
+            "history_mode": "FV",
+            "lineage_statement_id": "cab5ee103ee86cd682376abd96ac87f1c8313b111563a77149aea60576721455",
+            "message": null,
+            "mode": "rooted",
+            "obligations": {
+              "chain_context": "PASSED",
+              "context": "PASSED",
+              "design_a": "PASSED",
+              "finality": "PASSED",
+              "parse": "PASSED",
+              "root": "PASSED",
+              "terminal": "PASSED"
+            },
+            "research_code": null,
+            "root_height": 1,
+            "snapshot_id": "A7",
+            "snapshot_sha256": "28651a629cf0d8075c5d0ac7a7f93db45dd10729e5ba0dc48c156f903f3b8300",
+            "status": "VERIFIED",
+            "step": null,
+            "steps": 3,
+            "terminal_height": 4,
+            "timing_us": {
+              "chain_context": 3,
+              "decode": 27,
+              "design_a": 12454,
+              "finality": 3,
+              "root_auth": 3559,
+              "steps": [
+                4177,
+                4093,
+                4182
+              ],
+              "terminal_auth": 7992,
+              "total": 24361
+            },
+            "verifier": {
+              "params_k": 11,
+              "params_sha256": "1eab6f93a080ce41b908d935c04bd2e3ed1ac23f277c15d11c499d56d28fa0f7",
+              "proof_system": "halo2_proofs QED-it ef3d0ba (IPA/Vesta), plonk::verify_proof, SingleVerifier, Blake2bRead",
+              "relation": "NormalLineageStepV2",
+              "step_proof_len": 5120,
+              "verifier_id": "lineage-v2-l1",
+              "vk_id": "a2b349d7470504b6b5de3214f1783bc06d28c2f4e73111f9568652d0615b36b3"
+            }
+          },
+          "verificationId": "8f898d93cdc45987361b79f86d0760817fea319e1a112bdd6b574ce195845318"
+        },
+        "scenarioId": "valid-rooted-n3",
+        "scenarioName": "A7 rooted N=3",
+        "snapshot": "A7"
+      }
+    },
+    {
+      "elapsedMs": 25.488,
+      "errors": [],
+      "folder": "03 Demo Scenarios",
+      "httpStatus": 200,
+      "method": "POST",
+      "passed": true,
+      "path": "/v1/demo/run",
+      "request": "pending-a4",
+      "responseBody": {
+        "demo": true,
+        "description": "The same N=3 evidence at tip 4",
+        "expected": "PENDING_FINALITY",
+        "fixture": {
+          "name": "n3-v3.bin",
+          "sha256": "0821a7abafca556bdcf9403ed9e040603194bf5d46650316d42554ee9c96ebb0"
+        },
+        "matchesExpected": true,
+        "observed": "PENDING_FINALITY",
+        "result": {
+          "actionEvaluated": false,
+          "eligibility": "NOT_EVALUATED",
+          "lineagePermission": "DENIED",
+          "settlement": "NOT_EXECUTED",
+          "timeline": [
+            {
+              "stage": "ISSUANCE_ROOT",
+              "status": "PASSED"
+            },
+            {
+              "stage": "LINEAGE_STEPS",
+              "status": "PASSED"
+            },
+            {
+              "stage": "CHAIN_CONTEXT",
+              "status": "PASSED"
+            },
+            {
+              "stage": "TERMINAL_OUTPUT",
+              "status": "PASSED"
+            },
+            {
+              "stage": "FINALITY",
+              "status": "FAILED"
+            },
+            {
+              "stage": "TRADE_PERMISSION",
+              "status": "FAILED"
+            }
+          ],
+          "tradePermission": {
+            "allowed": false,
+            "reason": "PENDING_FINALITY"
+          },
+          "trustSource": "PINNED_REGTEST_FIXTURE",
+          "verification": {
+            "chain_ref_id": "ee6075c9caf6e6778b49a683c2e979b6a58fa335ebfbf9231f4a558e799c368f",
+            "code": "REFERENCE_NOT_FINAL",
+            "finality_state": "ACCEPTED",
+            "history_mode": "FV",
+            "lineage_statement_id": "cab5ee103ee86cd682376abd96ac87f1c8313b111563a77149aea60576721455",
+            "message": "chain_ref is not yet final; re-submit later",
+            "mode": "rooted",
+            "obligations": {
+              "chain_context": "PASSED",
+              "context": "PASSED",
+              "design_a": "PASSED",
+              "finality": "FAILED",
+              "parse": "PASSED",
+              "root": "PASSED",
+              "terminal": "PASSED"
+            },
+            "research_code": "NOT_FINAL",
+            "root_height": 1,
+            "snapshot_id": "A4",
+            "snapshot_sha256": "b1cf498742737f15a30af75c30a0a12e0701257a1c6a2e891902c42acc6f3cde",
+            "status": "PENDING_FINALITY",
+            "step": null,
+            "steps": 3,
+            "terminal_height": 4,
+            "timing_us": {
+              "chain_context": 1,
+              "decode": 8,
+              "design_a": 12893,
+              "finality": 2,
+              "root_auth": 3536,
+              "steps": [
+                4406,
+                4188,
+                4297
+              ],
+              "terminal_auth": 8165,
+              "total": 24885
+            },
+            "verifier": {
+              "params_k": 11,
+              "params_sha256": "1eab6f93a080ce41b908d935c04bd2e3ed1ac23f277c15d11c499d56d28fa0f7",
+              "proof_system": "halo2_proofs QED-it ef3d0ba (IPA/Vesta), plonk::verify_proof, SingleVerifier, Blake2bRead",
+              "relation": "NormalLineageStepV2",
+              "step_proof_len": 5120,
+              "verifier_id": "lineage-v2-l1",
+              "vk_id": "a2b349d7470504b6b5de3214f1783bc06d28c2f4e73111f9568652d0615b36b3"
+            }
+          },
+          "verificationId": "8f898d93cdc45987361b79f86d0760817fea319e1a112bdd6b574ce195845318"
+        },
+        "scenarioId": "pending-a4",
+        "scenarioName": "A4 pending finality",
+        "snapshot": "A4"
+      }
+    },
+    {
+      "elapsedMs": 24.955,
+      "errors": [],
+      "folder": "03 Demo Scenarios",
+      "httpStatus": 200,
+      "method": "POST",
+      "passed": true,
+      "path": "/v1/demo/run",
+      "request": "checkpoint-ckn",
+      "responseBody": {
+        "demo": true,
+        "description": "Checkpointed history without operator trust",
+        "expected": "CHECKPOINT_TRUST_REQUIRED",
+        "fixture": {
+          "name": "ckn-v3.bin",
+          "sha256": "f1edfd8a4cae7a1efff33290dd3dded70b8ee6eb33382bc71a64dafc7910f5ef"
+        },
+        "matchesExpected": true,
+        "observed": "CHECKPOINT_TRUST_REQUIRED",
+        "result": {
+          "actionEvaluated": false,
+          "eligibility": "NOT_EVALUATED",
+          "lineagePermission": "DENIED",
+          "settlement": "NOT_EXECUTED",
+          "timeline": [
+            {
+              "stage": "ISSUANCE_ROOT",
+              "status": "PASSED"
+            },
+            {
+              "stage": "LINEAGE_STEPS",
+              "status": "PASSED"
+            },
+            {
+              "stage": "CHAIN_CONTEXT",
+              "status": "PASSED"
+            },
+            {
+              "stage": "TERMINAL_OUTPUT",
+              "status": "PASSED"
+            },
+            {
+              "stage": "FINALITY",
+              "status": "FAILED"
+            },
+            {
+              "stage": "TRADE_PERMISSION",
+              "status": "FAILED"
+            }
+          ],
+          "tradePermission": {
+            "allowed": false,
+            "reason": "CHECKPOINT_TRUST_REQUIRED"
+          },
+          "trustSource": "PINNED_REGTEST_FIXTURE",
+          "verification": {
+            "chain_ref_id": "f7bcfea4a40c1a859d126fd403528c5111bb35087c78d2212c31b8fdfe70300e",
+            "code": "CHECKPOINTED_HISTORY",
+            "finality_state": null,
+            "history_mode": "CP(c=2)",
+            "lineage_statement_id": "08d1adaefe8c8a0529360210b7a2659c41434d89558f4bda9ce2ae3be987ebef",
+            "message": "the verifier's history is checkpoint-committed and checkpoint trust is not enabled",
+            "mode": "rooted",
+            "obligations": {
+              "chain_context": "PASSED",
+              "context": "PASSED",
+              "design_a": "PASSED",
+              "finality": "FAILED",
+              "parse": "PASSED",
+              "root": "PASSED",
+              "terminal": "PASSED"
+            },
+            "research_code": "CHECKPOINTED_HISTORY",
+            "root_height": 1,
+            "snapshot_id": "CKN",
+            "snapshot_sha256": "3466f0ad69d62559d7ca240ecab88fc8e73e8a24062ed89f098eeabbb5efe232",
+            "status": "CHECKPOINT_TRUST_REQUIRED",
+            "step": null,
+            "steps": 3,
+            "terminal_height": 3,
+            "timing_us": {
+              "chain_context": 1,
+              "decode": 10,
+              "design_a": 12543,
+              "finality": 2,
+              "root_auth": 3518,
+              "steps": [
+                4484,
+                4044,
+                4013
+              ],
+              "terminal_auth": 8051,
+              "total": 24399
+            },
+            "verifier": {
+              "params_k": 11,
+              "params_sha256": "1eab6f93a080ce41b908d935c04bd2e3ed1ac23f277c15d11c499d56d28fa0f7",
+              "proof_system": "halo2_proofs QED-it ef3d0ba (IPA/Vesta), plonk::verify_proof, SingleVerifier, Blake2bRead",
+              "relation": "NormalLineageStepV2",
+              "step_proof_len": 5120,
+              "verifier_id": "lineage-v2-l1",
+              "vk_id": "a2b349d7470504b6b5de3214f1783bc06d28c2f4e73111f9568652d0615b36b3"
+            }
+          },
+          "verificationId": "8d245264c241a7a60228e04401514ff52ae9056a1b76de487686601dc94594d9"
+        },
+        "scenarioId": "checkpoint-ckn",
+        "scenarioName": "CKN checkpoint trust",
+        "snapshot": "CKN"
+      }
+    },
+    {
+      "elapsedMs": 4.968,
+      "errors": [],
+      "folder": "03 Demo Scenarios",
+      "httpStatus": 200,
+      "method": "POST",
+      "passed": true,
+      "path": "/v1/demo/run",
+      "request": "tampered-proof",
+      "responseBody": {
+        "demo": true,
+        "description": "One byte changed inside the authoritative proof",
+        "expected": "REJECTED",
+        "fixture": {
+          "name": "n3-v3.bin",
+          "sha256": "0821a7abafca556bdcf9403ed9e040603194bf5d46650316d42554ee9c96ebb0"
+        },
+        "matchesExpected": true,
+        "observed": "REJECTED",
+        "result": {
+          "actionEvaluated": false,
+          "eligibility": "NOT_EVALUATED",
+          "lineagePermission": "DENIED",
+          "settlement": "NOT_EXECUTED",
+          "timeline": [
+            {
+              "stage": "ISSUANCE_ROOT",
+              "status": "PASSED"
+            },
+            {
+              "stage": "LINEAGE_STEPS",
+              "status": "FAILED"
+            },
+            {
+              "stage": "CHAIN_CONTEXT",
+              "status": "PASSED"
+            },
+            {
+              "stage": "TERMINAL_OUTPUT",
+              "status": "NOT_EVALUATED"
+            },
+            {
+              "stage": "FINALITY",
+              "status": "NOT_EVALUATED"
+            },
+            {
+              "stage": "TRADE_PERMISSION",
+              "status": "FAILED"
+            }
+          ],
+          "tradePermission": {
+            "allowed": false,
+            "reason": "REJECTED"
+          },
+          "trustSource": "PINNED_REGTEST_FIXTURE",
+          "verification": {
+            "chain_ref_id": "ee6075c9caf6e6778b49a683c2e979b6a58fa335ebfbf9231f4a558e799c368f",
+            "code": "INVALID_STEP_PROOF",
+            "finality_state": null,
+            "history_mode": "FV",
+            "lineage_statement_id": "cab5ee103ee86cd682376abd96ac87f1c8313b111563a77149aea60576721455",
+            "message": "a step proof does not verify for its public tuple at step 0",
+            "mode": "rooted",
+            "obligations": {
+              "chain_context": "PASSED",
+              "context": "NOT_EVALUATED",
+              "design_a": "FAILED",
+              "finality": "NOT_EVALUATED",
+              "parse": "PASSED",
+              "root": "PASSED",
+              "terminal": "NOT_EVALUATED"
+            },
+            "research_code": "DA_PROOF(0)",
+            "root_height": 1,
+            "snapshot_id": "A7",
+            "snapshot_sha256": "28651a629cf0d8075c5d0ac7a7f93db45dd10729e5ba0dc48c156f903f3b8300",
+            "status": "REJECTED",
+            "step": 0,
+            "steps": 3,
+            "terminal_height": null,
+            "timing_us": {
+              "chain_context": 1,
+              "decode": 8,
+              "design_a": null,
+              "finality": null,
+              "root_auth": 3495,
+              "steps": [],
+              "terminal_auth": null,
+              "total": 4414
+            },
+            "verifier": {
+              "params_k": 11,
+              "params_sha256": "1eab6f93a080ce41b908d935c04bd2e3ed1ac23f277c15d11c499d56d28fa0f7",
+              "proof_system": "halo2_proofs QED-it ef3d0ba (IPA/Vesta), plonk::verify_proof, SingleVerifier, Blake2bRead",
+              "relation": "NormalLineageStepV2",
+              "step_proof_len": 5120,
+              "verifier_id": "lineage-v2-l1",
+              "vk_id": "a2b349d7470504b6b5de3214f1783bc06d28c2f4e73111f9568652d0615b36b3"
+            }
+          },
+          "verificationId": "31c00a2f21f56568ccf10ea087d8d5f53ede203cd14169f1a23730840bace9db"
+        },
+        "scenarioId": "tampered-proof",
+        "scenarioName": "Tampered proof",
+        "snapshot": "A7"
+      }
+    },
+    {
+      "elapsedMs": 0.869,
+      "errors": [],
+      "folder": "03 Demo Scenarios",
+      "httpStatus": 200,
+      "method": "POST",
+      "passed": true,
+      "path": "/v1/demo/run",
+      "request": "bad-root",
+      "responseBody": {
+        "demo": true,
+        "description": "One byte changed in pinned root evidence",
+        "expected": "REJECTED",
+        "fixture": {
+          "name": "n3-v3.bin",
+          "sha256": "0821a7abafca556bdcf9403ed9e040603194bf5d46650316d42554ee9c96ebb0"
+        },
+        "matchesExpected": true,
+        "observed": "REJECTED",
+        "result": {
+          "actionEvaluated": false,
+          "eligibility": "NOT_EVALUATED",
+          "lineagePermission": "DENIED",
+          "settlement": "NOT_EXECUTED",
+          "timeline": [
+            {
+              "stage": "ISSUANCE_ROOT",
+              "status": "FAILED"
+            },
+            {
+              "stage": "LINEAGE_STEPS",
+              "status": "NOT_EVALUATED"
+            },
+            {
+              "stage": "CHAIN_CONTEXT",
+              "status": "PASSED"
+            },
+            {
+              "stage": "TERMINAL_OUTPUT",
+              "status": "NOT_EVALUATED"
+            },
+            {
+              "stage": "FINALITY",
+              "status": "NOT_EVALUATED"
+            },
+            {
+              "stage": "TRADE_PERMISSION",
+              "status": "FAILED"
+            }
+          ],
+          "tradePermission": {
+            "allowed": false,
+            "reason": "REJECTED"
+          },
+          "trustSource": "PINNED_REGTEST_FIXTURE",
+          "verification": {
+            "chain_ref_id": "ee6075c9caf6e6778b49a683c2e979b6a58fa335ebfbf9231f4a558e799c368f",
+            "code": "ROOT_AUTHENTICATION_FAILED",
+            "finality_state": null,
+            "history_mode": "FV",
+            "lineage_statement_id": "cab5ee103ee86cd682376abd96ac87f1c8313b111563a77149aea60576721455",
+            "message": "root_cmx is not an authorized issuance",
+            "mode": "rooted",
+            "obligations": {
+              "chain_context": "PASSED",
+              "context": "NOT_EVALUATED",
+              "design_a": "NOT_EVALUATED",
+              "finality": "NOT_EVALUATED",
+              "parse": "PASSED",
+              "root": "FAILED",
+              "terminal": "NOT_EVALUATED"
+            },
+            "research_code": "ROOT_OUT_OF_RANGE",
+            "root_height": null,
+            "snapshot_id": "A7",
+            "snapshot_sha256": "28651a629cf0d8075c5d0ac7a7f93db45dd10729e5ba0dc48c156f903f3b8300",
+            "status": "REJECTED",
+            "step": null,
+            "steps": 3,
+            "terminal_height": null,
+            "timing_us": {
+              "chain_context": 1,
+              "decode": 8,
+              "design_a": null,
+              "finality": null,
+              "root_auth": 28,
+              "steps": [],
+              "terminal_auth": null,
+              "total": 326
+            },
+            "verifier": {
+              "params_k": 11,
+              "params_sha256": "1eab6f93a080ce41b908d935c04bd2e3ed1ac23f277c15d11c499d56d28fa0f7",
+              "proof_system": "halo2_proofs QED-it ef3d0ba (IPA/Vesta), plonk::verify_proof, SingleVerifier, Blake2bRead",
+              "relation": "NormalLineageStepV2",
+              "step_proof_len": 5120,
+              "verifier_id": "lineage-v2-l1",
+              "vk_id": "a2b349d7470504b6b5de3214f1783bc06d28c2f4e73111f9568652d0615b36b3"
+            }
+          },
+          "verificationId": "e4009833dce73aef4196ad8ca15f92460975b1438eceb217fe7e0a0684c1b125"
+        },
+        "scenarioId": "bad-root",
+        "scenarioName": "Bad root authentication",
+        "snapshot": "A7"
+      }
+    },
+    {
+      "elapsedMs": 20.751,
+      "errors": [],
+      "folder": "03 Demo Scenarios",
+      "httpStatus": 200,
+      "method": "POST",
+      "passed": true,
+      "path": "/v1/demo/run",
+      "request": "bad-terminal",
+      "responseBody": {
+        "demo": true,
+        "description": "One byte changed in pinned terminal evidence",
+        "expected": "REJECTED",
+        "fixture": {
+          "name": "n3-v3.bin",
+          "sha256": "0821a7abafca556bdcf9403ed9e040603194bf5d46650316d42554ee9c96ebb0"
+        },
+        "matchesExpected": true,
+        "observed": "REJECTED",
+        "result": {
+          "actionEvaluated": false,
+          "eligibility": "NOT_EVALUATED",
+          "lineagePermission": "DENIED",
+          "settlement": "NOT_EXECUTED",
+          "timeline": [
+            {
+              "stage": "ISSUANCE_ROOT",
+              "status": "PASSED"
+            },
+            {
+              "stage": "LINEAGE_STEPS",
+              "status": "PASSED"
+            },
+            {
+              "stage": "CHAIN_CONTEXT",
+              "status": "PASSED"
+            },
+            {
+              "stage": "TERMINAL_OUTPUT",
+              "status": "FAILED"
+            },
+            {
+              "stage": "FINALITY",
+              "status": "NOT_EVALUATED"
+            },
+            {
+              "stage": "TRADE_PERMISSION",
+              "status": "FAILED"
+            }
+          ],
+          "tradePermission": {
+            "allowed": false,
+            "reason": "REJECTED"
+          },
+          "trustSource": "PINNED_REGTEST_FIXTURE",
+          "verification": {
+            "chain_ref_id": "ee6075c9caf6e6778b49a683c2e979b6a58fa335ebfbf9231f4a558e799c368f",
+            "code": "TERMINAL_AUTHENTICATION_FAILED",
+            "finality_state": null,
+            "history_mode": "FV",
+            "lineage_statement_id": "cab5ee103ee86cd682376abd96ac87f1c8313b111563a77149aea60576721455",
+            "message": "terminal_cmx is not an authenticated ZSA Action output",
+            "mode": "rooted",
+            "obligations": {
+              "chain_context": "PASSED",
+              "context": "NOT_EVALUATED",
+              "design_a": "PASSED",
+              "finality": "NOT_EVALUATED",
+              "parse": "PASSED",
+              "root": "PASSED",
+              "terminal": "FAILED"
+            },
+            "research_code": "TERM_MERKLE",
+            "root_height": 1,
+            "snapshot_id": "A7",
+            "snapshot_sha256": "28651a629cf0d8075c5d0ac7a7f93db45dd10729e5ba0dc48c156f903f3b8300",
+            "status": "REJECTED",
+            "step": null,
+            "steps": 3,
+            "terminal_height": null,
+            "timing_us": {
+              "chain_context": 1,
+              "decode": 7,
+              "design_a": 13598,
+              "finality": null,
+              "root_auth": 3527,
+              "steps": [
+                4792,
+                4430,
+                4375
+              ],
+              "terminal_auth": 2690,
+              "total": 20096
+            },
+            "verifier": {
+              "params_k": 11,
+              "params_sha256": "1eab6f93a080ce41b908d935c04bd2e3ed1ac23f277c15d11c499d56d28fa0f7",
+              "proof_system": "halo2_proofs QED-it ef3d0ba (IPA/Vesta), plonk::verify_proof, SingleVerifier, Blake2bRead",
+              "relation": "NormalLineageStepV2",
+              "step_proof_len": 5120,
+              "verifier_id": "lineage-v2-l1",
+              "vk_id": "a2b349d7470504b6b5de3214f1783bc06d28c2f4e73111f9568652d0615b36b3"
+            }
+          },
+          "verificationId": "faa3af21acd5d6d177e9ae030f47258e0fb0efa3385c84d0b905052a7920e4fe"
+        },
+        "scenarioId": "bad-terminal",
+        "scenarioName": "Bad terminal authentication",
+        "snapshot": "A7"
+      }
+    },
+    {
+      "elapsedMs": 0.848,
+      "errors": [],
+      "folder": "03 Demo Scenarios",
+      "httpStatus": 200,
+      "method": "POST",
+      "passed": true,
+      "path": "/v1/demo/run",
+      "request": "reorg",
+      "responseBody": {
+        "demo": true,
+        "description": "A7 observed before switching to pinned B8",
+        "expected": "INVALIDATED_BY_REORG",
+        "fixture": {
+          "name": "n3-v3.bin",
+          "sha256": "0821a7abafca556bdcf9403ed9e040603194bf5d46650316d42554ee9c96ebb0"
+        },
+        "matchesExpected": true,
+        "observed": "INVALIDATED_BY_REORG",
+        "result": {
+          "actionEvaluated": false,
+          "eligibility": "NOT_EVALUATED",
+          "lineagePermission": "DENIED",
+          "settlement": "NOT_EXECUTED",
+          "timeline": [
+            {
+              "stage": "ISSUANCE_ROOT",
+              "status": "NOT_EVALUATED"
+            },
+            {
+              "stage": "LINEAGE_STEPS",
+              "status": "NOT_EVALUATED"
+            },
+            {
+              "stage": "CHAIN_CONTEXT",
+              "status": "FAILED"
+            },
+            {
+              "stage": "TERMINAL_OUTPUT",
+              "status": "NOT_EVALUATED"
+            },
+            {
+              "stage": "FINALITY",
+              "status": "NOT_EVALUATED"
+            },
+            {
+              "stage": "TRADE_PERMISSION",
+              "status": "FAILED"
+            }
+          ],
+          "tradePermission": {
+            "allowed": false,
+            "reason": "INVALIDATED_BY_REORG"
+          },
+          "trustSource": "PINNED_REGTEST_FIXTURE",
+          "verification": {
+            "chain_ref_id": "ee6075c9caf6e6778b49a683c2e979b6a58fa335ebfbf9231f4a558e799c368f",
+            "code": "FINALITY_VIOLATION",
+            "finality_state": "FINALITY_VIOLATION",
+            "history_mode": null,
+            "lineage_statement_id": "cab5ee103ee86cd682376abd96ac87f1c8313b111563a77149aea60576721455",
+            "message": "a finalized chain_ref was reorganized out of the selected chain (alarm)",
+            "mode": "rooted",
+            "obligations": {
+              "chain_context": "FAILED",
+              "context": "NOT_EVALUATED",
+              "design_a": "NOT_EVALUATED",
+              "finality": "NOT_EVALUATED",
+              "parse": "PASSED",
+              "root": "NOT_EVALUATED",
+              "terminal": "NOT_EVALUATED"
+            },
+            "research_code": "FINALITY_VIOLATION",
+            "root_height": null,
+            "snapshot_id": "B8",
+            "snapshot_sha256": "63f671fffdddb844aef3ac935ee56d901e9eaba6f82df04f361f356b68b7adcf",
+            "status": "INVALIDATED_BY_REORG",
+            "step": null,
+            "steps": 3,
+            "terminal_height": null,
+            "timing_us": {
+              "chain_context": 1,
+              "decode": 8,
+              "design_a": null,
+              "finality": null,
+              "root_auth": null,
+              "steps": [],
+              "terminal_auth": null,
+              "total": 278
+            },
+            "verifier": {
+              "params_k": 11,
+              "params_sha256": "1eab6f93a080ce41b908d935c04bd2e3ed1ac23f277c15d11c499d56d28fa0f7",
+              "proof_system": "halo2_proofs QED-it ef3d0ba (IPA/Vesta), plonk::verify_proof, SingleVerifier, Blake2bRead",
+              "relation": "NormalLineageStepV2",
+              "step_proof_len": 5120,
+              "verifier_id": "lineage-v2-l1",
+              "vk_id": "a2b349d7470504b6b5de3214f1783bc06d28c2f4e73111f9568652d0615b36b3"
+            }
+          },
+          "verificationId": "8f898d93cdc45987361b79f86d0760817fea319e1a112bdd6b574ce195845318"
+        },
+        "scenarioId": "reorg",
+        "scenarioName": "Invalidated reference",
+        "snapshot": "B8"
+      }
+    },
+    {
+      "elapsedMs": 25.225,
+      "errors": [],
+      "folder": "04 Rooted Verification",
+      "httpStatus": 200,
+      "method": "POST",
+      "passed": true,
+      "path": "/v1/lineage/verify",
+      "request": "A7 canonical v3 evidence",
+      "responseBody": {
+        "actionEvaluated": false,
+        "eligibility": "NOT_EVALUATED",
+        "lineagePermission": "ALLOWED",
+        "settlement": "NOT_EXECUTED",
+        "timeline": [
+          {
+            "stage": "ISSUANCE_ROOT",
+            "status": "PASSED"
+          },
+          {
+            "stage": "LINEAGE_STEPS",
+            "status": "PASSED"
+          },
+          {
+            "stage": "CHAIN_CONTEXT",
+            "status": "PASSED"
+          },
+          {
+            "stage": "TERMINAL_OUTPUT",
+            "status": "PASSED"
+          },
+          {
+            "stage": "FINALITY",
+            "status": "PASSED"
+          },
+          {
+            "stage": "TRADE_PERMISSION",
+            "status": "PASSED"
+          }
+        ],
+        "totalHandlerUs": 24908,
+        "tradePermission": {
+          "allowed": true,
+          "reason": "VERIFIED"
+        },
+        "transportDecodeUs": 19,
+        "trustSource": "PINNED_REGTEST_FIXTURE",
+        "verification": {
+          "chain_ref_id": "ee6075c9caf6e6778b49a683c2e979b6a58fa335ebfbf9231f4a558e799c368f",
+          "code": null,
+          "finality_state": "FINALIZED",
+          "history_mode": "FV",
+          "lineage_statement_id": "cab5ee103ee86cd682376abd96ac87f1c8313b111563a77149aea60576721455",
+          "message": null,
+          "mode": "rooted",
+          "obligations": {
+            "chain_context": "PASSED",
+            "context": "PASSED",
+            "design_a": "PASSED",
+            "finality": "PASSED",
+            "parse": "PASSED",
+            "root": "PASSED",
+            "terminal": "PASSED"
+          },
+          "research_code": null,
+          "root_height": 1,
+          "snapshot_id": "A7",
+          "snapshot_sha256": "28651a629cf0d8075c5d0ac7a7f93db45dd10729e5ba0dc48c156f903f3b8300",
+          "status": "VERIFIED",
+          "step": null,
+          "steps": 3,
+          "terminal_height": 4,
+          "timing_us": {
+            "chain_context": 1,
+            "decode": 6,
+            "design_a": 12837,
+            "finality": 2,
+            "root_auth": 3515,
+            "steps": [
+              4480,
+              3930,
+              4425
+            ],
+            "terminal_auth": 8007,
+            "total": 24638
+          },
+          "verifier": {
+            "params_k": 11,
+            "params_sha256": "1eab6f93a080ce41b908d935c04bd2e3ed1ac23f277c15d11c499d56d28fa0f7",
+            "proof_system": "halo2_proofs QED-it ef3d0ba (IPA/Vesta), plonk::verify_proof, SingleVerifier, Blake2bRead",
+            "relation": "NormalLineageStepV2",
+            "step_proof_len": 5120,
+            "verifier_id": "lineage-v2-l1",
+            "vk_id": "a2b349d7470504b6b5de3214f1783bc06d28c2f4e73111f9568652d0615b36b3"
+          }
+        },
+        "verificationId": "8f898d93cdc45987361b79f86d0760817fea319e1a112bdd6b574ce195845318"
+      }
+    },
+    {
+      "elapsedMs": 24.94,
+      "errors": [],
+      "folder": "05 Trade Authorization",
+      "httpStatus": 200,
+      "method": "POST",
+      "passed": true,
+      "path": "/v1/trade/authorize",
+      "request": "A7 canonical v3 authorization",
+      "responseBody": {
+        "actionEvaluated": true,
+        "eligibility": "NOT_EVALUATED",
+        "lineagePermission": "ALLOWED",
+        "settlement": "NOT_EXECUTED",
+        "timeline": [
+          {
+            "stage": "ISSUANCE_ROOT",
+            "status": "PASSED"
+          },
+          {
+            "stage": "LINEAGE_STEPS",
+            "status": "PASSED"
+          },
+          {
+            "stage": "CHAIN_CONTEXT",
+            "status": "PASSED"
+          },
+          {
+            "stage": "TERMINAL_OUTPUT",
+            "status": "PASSED"
+          },
+          {
+            "stage": "FINALITY",
+            "status": "PASSED"
+          },
+          {
+            "stage": "TRADE_PERMISSION",
+            "status": "PASSED"
+          }
+        ],
+        "totalHandlerUs": 24625,
+        "tradePermission": {
+          "allowed": true,
+          "reason": "VERIFIED"
+        },
+        "transportDecodeUs": 22,
+        "trustSource": "PINNED_REGTEST_FIXTURE",
+        "verification": {
+          "chain_ref_id": "ee6075c9caf6e6778b49a683c2e979b6a58fa335ebfbf9231f4a558e799c368f",
+          "code": null,
+          "finality_state": "FINALIZED",
+          "history_mode": "FV",
+          "lineage_statement_id": "cab5ee103ee86cd682376abd96ac87f1c8313b111563a77149aea60576721455",
+          "message": null,
+          "mode": "rooted",
+          "obligations": {
+            "chain_context": "PASSED",
+            "context": "PASSED",
+            "design_a": "PASSED",
+            "finality": "PASSED",
+            "parse": "PASSED",
+            "root": "PASSED",
+            "terminal": "PASSED"
+          },
+          "research_code": null,
+          "root_height": 1,
+          "snapshot_id": "A7",
+          "snapshot_sha256": "28651a629cf0d8075c5d0ac7a7f93db45dd10729e5ba0dc48c156f903f3b8300",
+          "status": "VERIFIED",
+          "step": null,
+          "steps": 3,
+          "terminal_height": 4,
+          "timing_us": {
+            "chain_context": 1,
+            "decode": 10,
+            "design_a": 12743,
+            "finality": 2,
+            "root_auth": 3521,
+            "steps": [
+              4620,
+              4067,
+              4054
+            ],
+            "terminal_auth": 7807,
+            "total": 24355
+          },
+          "verifier": {
+            "params_k": 11,
+            "params_sha256": "1eab6f93a080ce41b908d935c04bd2e3ed1ac23f277c15d11c499d56d28fa0f7",
+            "proof_system": "halo2_proofs QED-it ef3d0ba (IPA/Vesta), plonk::verify_proof, SingleVerifier, Blake2bRead",
+            "relation": "NormalLineageStepV2",
+            "step_proof_len": 5120,
+            "verifier_id": "lineage-v2-l1",
+            "vk_id": "a2b349d7470504b6b5de3214f1783bc06d28c2f4e73111f9568652d0615b36b3"
+          }
+        },
+        "verificationId": "8f898d93cdc45987361b79f86d0760817fea319e1a112bdd6b574ce195845318"
+      }
+    },
+    {
+      "elapsedMs": 5.088,
+      "errors": [],
+      "folder": "05 Trade Authorization",
+      "httpStatus": 200,
+      "method": "POST",
+      "passed": true,
+      "path": "/v1/trade/authorize",
+      "request": "Tampered proof authorization denied",
+      "responseBody": {
+        "actionEvaluated": true,
+        "eligibility": "NOT_EVALUATED",
+        "lineagePermission": "DENIED",
+        "settlement": "NOT_EXECUTED",
+        "timeline": [
+          {
+            "stage": "ISSUANCE_ROOT",
+            "status": "PASSED"
+          },
+          {
+            "stage": "LINEAGE_STEPS",
+            "status": "FAILED"
+          },
+          {
+            "stage": "CHAIN_CONTEXT",
+            "status": "PASSED"
+          },
+          {
+            "stage": "TERMINAL_OUTPUT",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "FINALITY",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "TRADE_PERMISSION",
+            "status": "FAILED"
+          }
+        ],
+        "totalHandlerUs": 4791,
+        "tradePermission": {
+          "allowed": false,
+          "reason": "REJECTED"
+        },
+        "transportDecodeUs": 21,
+        "trustSource": "PINNED_REGTEST_FIXTURE",
+        "verification": {
+          "chain_ref_id": "ee6075c9caf6e6778b49a683c2e979b6a58fa335ebfbf9231f4a558e799c368f",
+          "code": "INVALID_STEP_PROOF",
+          "finality_state": null,
+          "history_mode": "FV",
+          "lineage_statement_id": "cab5ee103ee86cd682376abd96ac87f1c8313b111563a77149aea60576721455",
+          "message": "a step proof does not verify for its public tuple at step 0",
+          "mode": "rooted",
+          "obligations": {
+            "chain_context": "PASSED",
+            "context": "NOT_EVALUATED",
+            "design_a": "FAILED",
+            "finality": "NOT_EVALUATED",
+            "parse": "PASSED",
+            "root": "PASSED",
+            "terminal": "NOT_EVALUATED"
+          },
+          "research_code": "DA_PROOF(0)",
+          "root_height": 1,
+          "snapshot_id": "A7",
+          "snapshot_sha256": "28651a629cf0d8075c5d0ac7a7f93db45dd10729e5ba0dc48c156f903f3b8300",
+          "status": "REJECTED",
+          "step": 0,
+          "steps": 3,
+          "terminal_height": null,
+          "timing_us": {
+            "chain_context": 1,
+            "decode": 9,
+            "design_a": null,
+            "finality": null,
+            "root_auth": 3520,
+            "steps": [],
+            "terminal_auth": null,
+            "total": 4519
+          },
+          "verifier": {
+            "params_k": 11,
+            "params_sha256": "1eab6f93a080ce41b908d935c04bd2e3ed1ac23f277c15d11c499d56d28fa0f7",
+            "proof_system": "halo2_proofs QED-it ef3d0ba (IPA/Vesta), plonk::verify_proof, SingleVerifier, Blake2bRead",
+            "relation": "NormalLineageStepV2",
+            "step_proof_len": 5120,
+            "verifier_id": "lineage-v2-l1",
+            "vk_id": "a2b349d7470504b6b5de3214f1783bc06d28c2f4e73111f9568652d0615b36b3"
+          }
+        },
+        "verificationId": "31c00a2f21f56568ccf10ea087d8d5f53ede203cd14169f1a23730840bace9db"
+      }
+    },
+    {
+      "elapsedMs": 0.869,
+      "errors": [],
+      "folder": "05 Trade Authorization",
+      "httpStatus": 200,
+      "method": "POST",
+      "passed": true,
+      "path": "/v1/trade/authorize",
+      "request": "Invalid root authorization denied",
+      "responseBody": {
+        "actionEvaluated": true,
+        "eligibility": "NOT_EVALUATED",
+        "lineagePermission": "DENIED",
+        "settlement": "NOT_EXECUTED",
+        "timeline": [
+          {
+            "stage": "ISSUANCE_ROOT",
+            "status": "FAILED"
+          },
+          {
+            "stage": "LINEAGE_STEPS",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "CHAIN_CONTEXT",
+            "status": "PASSED"
+          },
+          {
+            "stage": "TERMINAL_OUTPUT",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "FINALITY",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "TRADE_PERMISSION",
+            "status": "FAILED"
+          }
+        ],
+        "totalHandlerUs": 558,
+        "tradePermission": {
+          "allowed": false,
+          "reason": "REJECTED"
+        },
+        "transportDecodeUs": 17,
+        "trustSource": "PINNED_REGTEST_FIXTURE",
+        "verification": {
+          "chain_ref_id": "ee6075c9caf6e6778b49a683c2e979b6a58fa335ebfbf9231f4a558e799c368f",
+          "code": "ROOT_AUTHENTICATION_FAILED",
+          "finality_state": null,
+          "history_mode": "FV",
+          "lineage_statement_id": "cab5ee103ee86cd682376abd96ac87f1c8313b111563a77149aea60576721455",
+          "message": "root_cmx is not an authorized issuance",
+          "mode": "rooted",
+          "obligations": {
+            "chain_context": "PASSED",
+            "context": "NOT_EVALUATED",
+            "design_a": "NOT_EVALUATED",
+            "finality": "NOT_EVALUATED",
+            "parse": "PASSED",
+            "root": "FAILED",
+            "terminal": "NOT_EVALUATED"
+          },
+          "research_code": "ROOT_OUT_OF_RANGE",
+          "root_height": null,
+          "snapshot_id": "A7",
+          "snapshot_sha256": "28651a629cf0d8075c5d0ac7a7f93db45dd10729e5ba0dc48c156f903f3b8300",
+          "status": "REJECTED",
+          "step": null,
+          "steps": 3,
+          "terminal_height": null,
+          "timing_us": {
+            "chain_context": 1,
+            "decode": 7,
+            "design_a": null,
+            "finality": null,
+            "root_auth": 27,
+            "steps": [],
+            "terminal_auth": null,
+            "total": 299
+          },
+          "verifier": {
+            "params_k": 11,
+            "params_sha256": "1eab6f93a080ce41b908d935c04bd2e3ed1ac23f277c15d11c499d56d28fa0f7",
+            "proof_system": "halo2_proofs QED-it ef3d0ba (IPA/Vesta), plonk::verify_proof, SingleVerifier, Blake2bRead",
+            "relation": "NormalLineageStepV2",
+            "step_proof_len": 5120,
+            "verifier_id": "lineage-v2-l1",
+            "vk_id": "a2b349d7470504b6b5de3214f1783bc06d28c2f4e73111f9568652d0615b36b3"
+          }
+        },
+        "verificationId": "e4009833dce73aef4196ad8ca15f92460975b1438eceb217fe7e0a0684c1b125"
+      }
+    },
+    {
+      "elapsedMs": 0.425,
+      "errors": [],
+      "folder": "05 Trade Authorization",
+      "httpStatus": 200,
+      "method": "POST",
+      "passed": true,
+      "path": "/v1/trade/authorize",
+      "request": "Foreign VK authorization denied",
+      "responseBody": {
+        "actionEvaluated": true,
+        "eligibility": "NOT_EVALUATED",
+        "lineagePermission": "DENIED",
+        "settlement": "NOT_EXECUTED",
+        "timeline": [
+          {
+            "stage": "ISSUANCE_ROOT",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "LINEAGE_STEPS",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "CHAIN_CONTEXT",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "TERMINAL_OUTPUT",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "FINALITY",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "TRADE_PERMISSION",
+            "status": "FAILED"
+          }
+        ],
+        "totalHandlerUs": 115,
+        "tradePermission": {
+          "allowed": false,
+          "reason": "REJECTED"
+        },
+        "transportDecodeUs": 19,
+        "trustSource": "PINNED_REGTEST_FIXTURE",
+        "verification": {
+          "chain_ref_id": null,
+          "code": "FOREIGN_VERIFIER",
+          "finality_state": null,
+          "history_mode": null,
+          "lineage_statement_id": null,
+          "message": "the request names a verifying key other than VK*",
+          "mode": "rooted",
+          "obligations": {
+            "chain_context": "NOT_EVALUATED",
+            "context": "NOT_EVALUATED",
+            "design_a": "NOT_EVALUATED",
+            "finality": "NOT_EVALUATED",
+            "parse": "FAILED",
+            "root": "NOT_EVALUATED",
+            "terminal": "NOT_EVALUATED"
+          },
+          "research_code": "DA_FOREIGN_VK",
+          "root_height": null,
+          "snapshot_id": "A7",
+          "snapshot_sha256": "28651a629cf0d8075c5d0ac7a7f93db45dd10729e5ba0dc48c156f903f3b8300",
+          "status": "REJECTED",
+          "step": null,
+          "steps": null,
+          "terminal_height": null,
+          "timing_us": {
+            "chain_context": null,
+            "decode": 3,
+            "design_a": null,
+            "finality": null,
+            "root_auth": null,
+            "steps": [],
+            "terminal_auth": null,
+            "total": 3
+          },
+          "verifier": {
+            "params_k": 11,
+            "params_sha256": "1eab6f93a080ce41b908d935c04bd2e3ed1ac23f277c15d11c499d56d28fa0f7",
+            "proof_system": "halo2_proofs QED-it ef3d0ba (IPA/Vesta), plonk::verify_proof, SingleVerifier, Blake2bRead",
+            "relation": "NormalLineageStepV2",
+            "step_proof_len": 5120,
+            "verifier_id": "lineage-v2-l1",
+            "vk_id": "a2b349d7470504b6b5de3214f1783bc06d28c2f4e73111f9568652d0615b36b3"
+          }
+        },
+        "verificationId": "e20f0b9f9ac834303f636caa7359e2df3b26c47c472e9ee063e4bf82c9f2057c"
+      }
+    },
+    {
+      "elapsedMs": 4.816,
+      "errors": [],
+      "folder": "06 Negative / Security Tests",
+      "httpStatus": 200,
+      "method": "POST",
+      "passed": true,
+      "path": "/v1/lineage/verify",
+      "request": "Tampered proof",
+      "responseBody": {
+        "actionEvaluated": false,
+        "eligibility": "NOT_EVALUATED",
+        "lineagePermission": "DENIED",
+        "settlement": "NOT_EXECUTED",
+        "timeline": [
+          {
+            "stage": "ISSUANCE_ROOT",
+            "status": "PASSED"
+          },
+          {
+            "stage": "LINEAGE_STEPS",
+            "status": "FAILED"
+          },
+          {
+            "stage": "CHAIN_CONTEXT",
+            "status": "PASSED"
+          },
+          {
+            "stage": "TERMINAL_OUTPUT",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "FINALITY",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "TRADE_PERMISSION",
+            "status": "FAILED"
+          }
+        ],
+        "totalHandlerUs": 4480,
+        "tradePermission": {
+          "allowed": false,
+          "reason": "REJECTED"
+        },
+        "transportDecodeUs": 18,
+        "trustSource": "PINNED_REGTEST_FIXTURE",
+        "verification": {
+          "chain_ref_id": "ee6075c9caf6e6778b49a683c2e979b6a58fa335ebfbf9231f4a558e799c368f",
+          "code": "INVALID_STEP_PROOF",
+          "finality_state": null,
+          "history_mode": "FV",
+          "lineage_statement_id": "cab5ee103ee86cd682376abd96ac87f1c8313b111563a77149aea60576721455",
+          "message": "a step proof does not verify for its public tuple at step 0",
+          "mode": "rooted",
+          "obligations": {
+            "chain_context": "PASSED",
+            "context": "NOT_EVALUATED",
+            "design_a": "FAILED",
+            "finality": "NOT_EVALUATED",
+            "parse": "PASSED",
+            "root": "PASSED",
+            "terminal": "NOT_EVALUATED"
+          },
+          "research_code": "DA_PROOF(0)",
+          "root_height": 1,
+          "snapshot_id": "A7",
+          "snapshot_sha256": "28651a629cf0d8075c5d0ac7a7f93db45dd10729e5ba0dc48c156f903f3b8300",
+          "status": "REJECTED",
+          "step": 0,
+          "steps": 3,
+          "terminal_height": null,
+          "timing_us": {
+            "chain_context": 1,
+            "decode": 7,
+            "design_a": null,
+            "finality": null,
+            "root_auth": 3302,
+            "steps": [],
+            "terminal_auth": null,
+            "total": 4218
+          },
+          "verifier": {
+            "params_k": 11,
+            "params_sha256": "1eab6f93a080ce41b908d935c04bd2e3ed1ac23f277c15d11c499d56d28fa0f7",
+            "proof_system": "halo2_proofs QED-it ef3d0ba (IPA/Vesta), plonk::verify_proof, SingleVerifier, Blake2bRead",
+            "relation": "NormalLineageStepV2",
+            "step_proof_len": 5120,
+            "verifier_id": "lineage-v2-l1",
+            "vk_id": "a2b349d7470504b6b5de3214f1783bc06d28c2f4e73111f9568652d0615b36b3"
+          }
+        },
+        "verificationId": "31c00a2f21f56568ccf10ea087d8d5f53ede203cd14169f1a23730840bace9db"
+      }
+    },
+    {
+      "elapsedMs": 17.156,
+      "errors": [],
+      "folder": "06 Negative / Security Tests",
+      "httpStatus": 200,
+      "method": "POST",
+      "passed": true,
+      "path": "/v1/lineage/verify",
+      "request": "Broken continuity",
+      "responseBody": {
+        "actionEvaluated": false,
+        "eligibility": "NOT_EVALUATED",
+        "lineagePermission": "DENIED",
+        "settlement": "NOT_EXECUTED",
+        "timeline": [
+          {
+            "stage": "ISSUANCE_ROOT",
+            "status": "PASSED"
+          },
+          {
+            "stage": "LINEAGE_STEPS",
+            "status": "FAILED"
+          },
+          {
+            "stage": "CHAIN_CONTEXT",
+            "status": "PASSED"
+          },
+          {
+            "stage": "TERMINAL_OUTPUT",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "FINALITY",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "TRADE_PERMISSION",
+            "status": "FAILED"
+          }
+        ],
+        "totalHandlerUs": 16879,
+        "tradePermission": {
+          "allowed": false,
+          "reason": "REJECTED"
+        },
+        "transportDecodeUs": 21,
+        "trustSource": "PINNED_REGTEST_FIXTURE",
+        "verification": {
+          "chain_ref_id": "ee6075c9caf6e6778b49a683c2e979b6a58fa335ebfbf9231f4a558e799c368f",
+          "code": "BROKEN_CONTINUITY",
+          "finality_state": null,
+          "history_mode": "FV",
+          "lineage_statement_id": "386efb9579268c540825f1bdcd07982a7e6534e199a3e69ae2fe192ef0e507cb",
+          "message": "a step's cmx_new is not the next step's cmx_old at step 0",
+          "mode": "rooted",
+          "obligations": {
+            "chain_context": "PASSED",
+            "context": "NOT_EVALUATED",
+            "design_a": "FAILED",
+            "finality": "NOT_EVALUATED",
+            "parse": "PASSED",
+            "root": "PASSED",
+            "terminal": "NOT_EVALUATED"
+          },
+          "research_code": "DA_JOIN(0)",
+          "root_height": 1,
+          "snapshot_id": "A7",
+          "snapshot_sha256": "28651a629cf0d8075c5d0ac7a7f93db45dd10729e5ba0dc48c156f903f3b8300",
+          "status": "REJECTED",
+          "step": 0,
+          "steps": 3,
+          "terminal_height": null,
+          "timing_us": {
+            "chain_context": 1,
+            "decode": 7,
+            "design_a": null,
+            "finality": null,
+            "root_auth": 3304,
+            "steps": [],
+            "terminal_auth": null,
+            "total": 16618
+          },
+          "verifier": {
+            "params_k": 11,
+            "params_sha256": "1eab6f93a080ce41b908d935c04bd2e3ed1ac23f277c15d11c499d56d28fa0f7",
+            "proof_system": "halo2_proofs QED-it ef3d0ba (IPA/Vesta), plonk::verify_proof, SingleVerifier, Blake2bRead",
+            "relation": "NormalLineageStepV2",
+            "step_proof_len": 5120,
+            "verifier_id": "lineage-v2-l1",
+            "vk_id": "a2b349d7470504b6b5de3214f1783bc06d28c2f4e73111f9568652d0615b36b3"
+          }
+        },
+        "verificationId": "20ec4fb8416b37ce00916f98bb704d97d1f659f244a7e1be89710fa3dd6b9d4f"
+      }
+    },
+    {
+      "elapsedMs": 0.853,
+      "errors": [],
+      "folder": "06 Negative / Security Tests",
+      "httpStatus": 200,
+      "method": "POST",
+      "passed": true,
+      "path": "/v1/lineage/verify",
+      "request": "Invalid root",
+      "responseBody": {
+        "actionEvaluated": false,
+        "eligibility": "NOT_EVALUATED",
+        "lineagePermission": "DENIED",
+        "settlement": "NOT_EXECUTED",
+        "timeline": [
+          {
+            "stage": "ISSUANCE_ROOT",
+            "status": "FAILED"
+          },
+          {
+            "stage": "LINEAGE_STEPS",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "CHAIN_CONTEXT",
+            "status": "PASSED"
+          },
+          {
+            "stage": "TERMINAL_OUTPUT",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "FINALITY",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "TRADE_PERMISSION",
+            "status": "FAILED"
+          }
+        ],
+        "totalHandlerUs": 559,
+        "tradePermission": {
+          "allowed": false,
+          "reason": "REJECTED"
+        },
+        "transportDecodeUs": 17,
+        "trustSource": "PINNED_REGTEST_FIXTURE",
+        "verification": {
+          "chain_ref_id": "ee6075c9caf6e6778b49a683c2e979b6a58fa335ebfbf9231f4a558e799c368f",
+          "code": "ROOT_AUTHENTICATION_FAILED",
+          "finality_state": null,
+          "history_mode": "FV",
+          "lineage_statement_id": "cab5ee103ee86cd682376abd96ac87f1c8313b111563a77149aea60576721455",
+          "message": "root_cmx is not an authorized issuance",
+          "mode": "rooted",
+          "obligations": {
+            "chain_context": "PASSED",
+            "context": "NOT_EVALUATED",
+            "design_a": "NOT_EVALUATED",
+            "finality": "NOT_EVALUATED",
+            "parse": "PASSED",
+            "root": "FAILED",
+            "terminal": "NOT_EVALUATED"
+          },
+          "research_code": "ROOT_OUT_OF_RANGE",
+          "root_height": null,
+          "snapshot_id": "A7",
+          "snapshot_sha256": "28651a629cf0d8075c5d0ac7a7f93db45dd10729e5ba0dc48c156f903f3b8300",
+          "status": "REJECTED",
+          "step": null,
+          "steps": 3,
+          "terminal_height": null,
+          "timing_us": {
+            "chain_context": 1,
+            "decode": 6,
+            "design_a": null,
+            "finality": null,
+            "root_auth": 27,
+            "steps": [],
+            "terminal_auth": null,
+            "total": 308
+          },
+          "verifier": {
+            "params_k": 11,
+            "params_sha256": "1eab6f93a080ce41b908d935c04bd2e3ed1ac23f277c15d11c499d56d28fa0f7",
+            "proof_system": "halo2_proofs QED-it ef3d0ba (IPA/Vesta), plonk::verify_proof, SingleVerifier, Blake2bRead",
+            "relation": "NormalLineageStepV2",
+            "step_proof_len": 5120,
+            "verifier_id": "lineage-v2-l1",
+            "vk_id": "a2b349d7470504b6b5de3214f1783bc06d28c2f4e73111f9568652d0615b36b3"
+          }
+        },
+        "verificationId": "e4009833dce73aef4196ad8ca15f92460975b1438eceb217fe7e0a0684c1b125"
+      }
+    },
+    {
+      "elapsedMs": 20.871,
+      "errors": [],
+      "folder": "06 Negative / Security Tests",
+      "httpStatus": 200,
+      "method": "POST",
+      "passed": true,
+      "path": "/v1/lineage/verify",
+      "request": "Invalid terminal",
+      "responseBody": {
+        "actionEvaluated": false,
+        "eligibility": "NOT_EVALUATED",
+        "lineagePermission": "DENIED",
+        "settlement": "NOT_EXECUTED",
+        "timeline": [
+          {
+            "stage": "ISSUANCE_ROOT",
+            "status": "PASSED"
+          },
+          {
+            "stage": "LINEAGE_STEPS",
+            "status": "PASSED"
+          },
+          {
+            "stage": "CHAIN_CONTEXT",
+            "status": "PASSED"
+          },
+          {
+            "stage": "TERMINAL_OUTPUT",
+            "status": "FAILED"
+          },
+          {
+            "stage": "FINALITY",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "TRADE_PERMISSION",
+            "status": "FAILED"
+          }
+        ],
+        "totalHandlerUs": 20476,
+        "tradePermission": {
+          "allowed": false,
+          "reason": "REJECTED"
+        },
+        "transportDecodeUs": 17,
+        "trustSource": "PINNED_REGTEST_FIXTURE",
+        "verification": {
+          "chain_ref_id": "ee6075c9caf6e6778b49a683c2e979b6a58fa335ebfbf9231f4a558e799c368f",
+          "code": "TERMINAL_AUTHENTICATION_FAILED",
+          "finality_state": null,
+          "history_mode": "FV",
+          "lineage_statement_id": "cab5ee103ee86cd682376abd96ac87f1c8313b111563a77149aea60576721455",
+          "message": "terminal_cmx is not an authenticated ZSA Action output",
+          "mode": "rooted",
+          "obligations": {
+            "chain_context": "PASSED",
+            "context": "NOT_EVALUATED",
+            "design_a": "PASSED",
+            "finality": "NOT_EVALUATED",
+            "parse": "PASSED",
+            "root": "PASSED",
+            "terminal": "FAILED"
+          },
+          "research_code": "TERM_MERKLE",
+          "root_height": 1,
+          "snapshot_id": "A7",
+          "snapshot_sha256": "28651a629cf0d8075c5d0ac7a7f93db45dd10729e5ba0dc48c156f903f3b8300",
+          "status": "REJECTED",
+          "step": null,
+          "steps": 3,
+          "terminal_height": null,
+          "timing_us": {
+            "chain_context": 1,
+            "decode": 6,
+            "design_a": 13647,
+            "finality": null,
+            "root_auth": 3485,
+            "steps": [
+              4788,
+              4571,
+              4285
+            ],
+            "terminal_auth": 2794,
+            "total": 20194
+          },
+          "verifier": {
+            "params_k": 11,
+            "params_sha256": "1eab6f93a080ce41b908d935c04bd2e3ed1ac23f277c15d11c499d56d28fa0f7",
+            "proof_system": "halo2_proofs QED-it ef3d0ba (IPA/Vesta), plonk::verify_proof, SingleVerifier, Blake2bRead",
+            "relation": "NormalLineageStepV2",
+            "step_proof_len": 5120,
+            "verifier_id": "lineage-v2-l1",
+            "vk_id": "a2b349d7470504b6b5de3214f1783bc06d28c2f4e73111f9568652d0615b36b3"
+          }
+        },
+        "verificationId": "faa3af21acd5d6d177e9ae030f47258e0fb0efa3385c84d0b905052a7920e4fe"
+      }
+    },
+    {
+      "elapsedMs": 0.864,
+      "errors": [],
+      "folder": "06 Negative / Security Tests",
+      "httpStatus": 200,
+      "method": "POST",
+      "passed": true,
+      "path": "/v1/lineage/verify",
+      "request": "Wrong chain reference",
+      "responseBody": {
+        "actionEvaluated": false,
+        "eligibility": "NOT_EVALUATED",
+        "lineagePermission": "DENIED",
+        "settlement": "NOT_EXECUTED",
+        "timeline": [
+          {
+            "stage": "ISSUANCE_ROOT",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "LINEAGE_STEPS",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "CHAIN_CONTEXT",
+            "status": "FAILED"
+          },
+          {
+            "stage": "TERMINAL_OUTPUT",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "FINALITY",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "TRADE_PERMISSION",
+            "status": "FAILED"
+          }
+        ],
+        "totalHandlerUs": 543,
+        "tradePermission": {
+          "allowed": false,
+          "reason": "REJECTED"
+        },
+        "transportDecodeUs": 19,
+        "trustSource": "PINNED_REGTEST_FIXTURE",
+        "verification": {
+          "chain_ref_id": "d5febf01acc71f2a01849aa92a5d74d8340d870c3a8d6c249ca98206c10c55bc",
+          "code": "CHAIN_CONTEXT_REJECTED",
+          "finality_state": null,
+          "history_mode": null,
+          "lineage_statement_id": "e409485c8fb27489ab06d2ba3e1c61533e829c8a994d45ace8b395accf516220",
+          "message": "the verifier's chain view rejects chain_ref",
+          "mode": "rooted",
+          "obligations": {
+            "chain_context": "FAILED",
+            "context": "NOT_EVALUATED",
+            "design_a": "NOT_EVALUATED",
+            "finality": "NOT_EVALUATED",
+            "parse": "PASSED",
+            "root": "NOT_EVALUATED",
+            "terminal": "NOT_EVALUATED"
+          },
+          "research_code": "UNKNOWN",
+          "root_height": null,
+          "snapshot_id": "A7",
+          "snapshot_sha256": "28651a629cf0d8075c5d0ac7a7f93db45dd10729e5ba0dc48c156f903f3b8300",
+          "status": "REJECTED",
+          "step": null,
+          "steps": 3,
+          "terminal_height": null,
+          "timing_us": {
+            "chain_context": 2,
+            "decode": 11,
+            "design_a": null,
+            "finality": null,
+            "root_auth": null,
+            "steps": [],
+            "terminal_auth": null,
+            "total": 291
+          },
+          "verifier": {
+            "params_k": 11,
+            "params_sha256": "1eab6f93a080ce41b908d935c04bd2e3ed1ac23f277c15d11c499d56d28fa0f7",
+            "proof_system": "halo2_proofs QED-it ef3d0ba (IPA/Vesta), plonk::verify_proof, SingleVerifier, Blake2bRead",
+            "relation": "NormalLineageStepV2",
+            "step_proof_len": 5120,
+            "verifier_id": "lineage-v2-l1",
+            "vk_id": "a2b349d7470504b6b5de3214f1783bc06d28c2f4e73111f9568652d0615b36b3"
+          }
+        },
+        "verificationId": "5c4c40f60d5d10c2592ef9c778a8ff61dc73c94bff651c8305fe353b5969478c"
+      }
+    },
+    {
+      "elapsedMs": 0.344,
+      "errors": [],
+      "folder": "06 Negative / Security Tests",
+      "httpStatus": 200,
+      "method": "POST",
+      "passed": true,
+      "path": "/v1/lineage/verify",
+      "request": "Foreign VK inside evidence",
+      "responseBody": {
+        "actionEvaluated": false,
+        "eligibility": "NOT_EVALUATED",
+        "lineagePermission": "DENIED",
+        "settlement": "NOT_EXECUTED",
+        "timeline": [
+          {
+            "stage": "ISSUANCE_ROOT",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "LINEAGE_STEPS",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "CHAIN_CONTEXT",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "TERMINAL_OUTPUT",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "FINALITY",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "TRADE_PERMISSION",
+            "status": "FAILED"
+          }
+        ],
+        "totalHandlerUs": 108,
+        "tradePermission": {
+          "allowed": false,
+          "reason": "REJECTED"
+        },
+        "transportDecodeUs": 17,
+        "trustSource": "PINNED_REGTEST_FIXTURE",
+        "verification": {
+          "chain_ref_id": null,
+          "code": "FOREIGN_VERIFIER",
+          "finality_state": null,
+          "history_mode": null,
+          "lineage_statement_id": null,
+          "message": "the request names a verifying key other than VK*",
+          "mode": "rooted",
+          "obligations": {
+            "chain_context": "NOT_EVALUATED",
+            "context": "NOT_EVALUATED",
+            "design_a": "NOT_EVALUATED",
+            "finality": "NOT_EVALUATED",
+            "parse": "FAILED",
+            "root": "NOT_EVALUATED",
+            "terminal": "NOT_EVALUATED"
+          },
+          "research_code": "DA_FOREIGN_VK",
+          "root_height": null,
+          "snapshot_id": "A7",
+          "snapshot_sha256": "28651a629cf0d8075c5d0ac7a7f93db45dd10729e5ba0dc48c156f903f3b8300",
+          "status": "REJECTED",
+          "step": null,
+          "steps": null,
+          "terminal_height": null,
+          "timing_us": {
+            "chain_context": null,
+            "decode": 2,
+            "design_a": null,
+            "finality": null,
+            "root_auth": null,
+            "steps": [],
+            "terminal_auth": null,
+            "total": 3
+          },
+          "verifier": {
+            "params_k": 11,
+            "params_sha256": "1eab6f93a080ce41b908d935c04bd2e3ed1ac23f277c15d11c499d56d28fa0f7",
+            "proof_system": "halo2_proofs QED-it ef3d0ba (IPA/Vesta), plonk::verify_proof, SingleVerifier, Blake2bRead",
+            "relation": "NormalLineageStepV2",
+            "step_proof_len": 5120,
+            "verifier_id": "lineage-v2-l1",
+            "vk_id": "a2b349d7470504b6b5de3214f1783bc06d28c2f4e73111f9568652d0615b36b3"
+          }
+        },
+        "verificationId": "e20f0b9f9ac834303f636caa7359e2df3b26c47c472e9ee063e4bf82c9f2057c"
+      }
+    },
+    {
+      "elapsedMs": 0.261,
+      "errors": [],
+      "folder": "06 Negative / Security Tests",
+      "httpStatus": 200,
+      "method": "POST",
+      "passed": true,
+      "path": "/v1/lineage/verify",
+      "request": "Malformed binary evidence",
+      "responseBody": {
+        "actionEvaluated": false,
+        "eligibility": "NOT_EVALUATED",
+        "lineagePermission": "DENIED",
+        "settlement": "NOT_EXECUTED",
+        "timeline": [
+          {
+            "stage": "ISSUANCE_ROOT",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "LINEAGE_STEPS",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "CHAIN_CONTEXT",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "TERMINAL_OUTPUT",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "FINALITY",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "TRADE_PERMISSION",
+            "status": "FAILED"
+          }
+        ],
+        "totalHandlerUs": 52,
+        "tradePermission": {
+          "allowed": false,
+          "reason": "REJECTED"
+        },
+        "transportDecodeUs": 2,
+        "trustSource": "PINNED_REGTEST_FIXTURE",
+        "verification": {
+          "chain_ref_id": null,
+          "code": "INVALID_ENCODING",
+          "finality_state": null,
+          "history_mode": null,
+          "lineage_statement_id": null,
+          "message": "the lineage request is not a well-formed container",
+          "mode": "rooted",
+          "obligations": {
+            "chain_context": "NOT_EVALUATED",
+            "context": "NOT_EVALUATED",
+            "design_a": "NOT_EVALUATED",
+            "finality": "NOT_EVALUATED",
+            "parse": "FAILED",
+            "root": "NOT_EVALUATED",
+            "terminal": "NOT_EVALUATED"
+          },
+          "research_code": "MALFORMED",
+          "root_height": null,
+          "snapshot_id": "A7",
+          "snapshot_sha256": "28651a629cf0d8075c5d0ac7a7f93db45dd10729e5ba0dc48c156f903f3b8300",
+          "status": "REJECTED",
+          "step": null,
+          "steps": null,
+          "terminal_height": null,
+          "timing_us": {
+            "chain_context": null,
+            "decode": 0,
+            "design_a": null,
+            "finality": null,
+            "root_auth": null,
+            "steps": [],
+            "terminal_auth": null,
+            "total": 0
+          },
+          "verifier": {
+            "params_k": 11,
+            "params_sha256": "1eab6f93a080ce41b908d935c04bd2e3ed1ac23f277c15d11c499d56d28fa0f7",
+            "proof_system": "halo2_proofs QED-it ef3d0ba (IPA/Vesta), plonk::verify_proof, SingleVerifier, Blake2bRead",
+            "relation": "NormalLineageStepV2",
+            "step_proof_len": 5120,
+            "verifier_id": "lineage-v2-l1",
+            "vk_id": "a2b349d7470504b6b5de3214f1783bc06d28c2f4e73111f9568652d0615b36b3"
+          }
+        },
+        "verificationId": "9b59e4f7033472f0596edeb2780e86009f33875803fa40899b8785757721c3ff"
+      }
+    },
+    {
+      "elapsedMs": 0.321,
+      "errors": [],
+      "folder": "06 Negative / Security Tests",
+      "httpStatus": 200,
+      "method": "POST",
+      "passed": true,
+      "path": "/v1/lineage/verify",
+      "request": "Truncated evidence",
+      "responseBody": {
+        "actionEvaluated": false,
+        "eligibility": "NOT_EVALUATED",
+        "lineagePermission": "DENIED",
+        "settlement": "NOT_EXECUTED",
+        "timeline": [
+          {
+            "stage": "ISSUANCE_ROOT",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "LINEAGE_STEPS",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "CHAIN_CONTEXT",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "TERMINAL_OUTPUT",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "FINALITY",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "TRADE_PERMISSION",
+            "status": "FAILED"
+          }
+        ],
+        "totalHandlerUs": 108,
+        "tradePermission": {
+          "allowed": false,
+          "reason": "REJECTED"
+        },
+        "transportDecodeUs": 18,
+        "trustSource": "PINNED_REGTEST_FIXTURE",
+        "verification": {
+          "chain_ref_id": null,
+          "code": "INVALID_ENCODING",
+          "finality_state": null,
+          "history_mode": null,
+          "lineage_statement_id": null,
+          "message": "the lineage request is not a well-formed container",
+          "mode": "rooted",
+          "obligations": {
+            "chain_context": "NOT_EVALUATED",
+            "context": "NOT_EVALUATED",
+            "design_a": "NOT_EVALUATED",
+            "finality": "NOT_EVALUATED",
+            "parse": "FAILED",
+            "root": "NOT_EVALUATED",
+            "terminal": "NOT_EVALUATED"
+          },
+          "research_code": "MALFORMED",
+          "root_height": null,
+          "snapshot_id": "A7",
+          "snapshot_sha256": "28651a629cf0d8075c5d0ac7a7f93db45dd10729e5ba0dc48c156f903f3b8300",
+          "status": "REJECTED",
+          "step": null,
+          "steps": null,
+          "terminal_height": null,
+          "timing_us": {
+            "chain_context": null,
+            "decode": 3,
+            "design_a": null,
+            "finality": null,
+            "root_auth": null,
+            "steps": [],
+            "terminal_auth": null,
+            "total": 3
+          },
+          "verifier": {
+            "params_k": 11,
+            "params_sha256": "1eab6f93a080ce41b908d935c04bd2e3ed1ac23f277c15d11c499d56d28fa0f7",
+            "proof_system": "halo2_proofs QED-it ef3d0ba (IPA/Vesta), plonk::verify_proof, SingleVerifier, Blake2bRead",
+            "relation": "NormalLineageStepV2",
+            "step_proof_len": 5120,
+            "verifier_id": "lineage-v2-l1",
+            "vk_id": "a2b349d7470504b6b5de3214f1783bc06d28c2f4e73111f9568652d0615b36b3"
+          }
+        },
+        "verificationId": "be0dc77a91f11acf73f14d53736e22f6d44c15e7afff9c707cdc5b95ddd94b11"
+      }
+    },
+    {
+      "elapsedMs": 0.309,
+      "errors": [],
+      "folder": "06 Negative / Security Tests",
+      "httpStatus": 200,
+      "method": "POST",
+      "passed": true,
+      "path": "/v1/lineage/verify",
+      "request": "Trailing bytes",
+      "responseBody": {
+        "actionEvaluated": false,
+        "eligibility": "NOT_EVALUATED",
+        "lineagePermission": "DENIED",
+        "settlement": "NOT_EXECUTED",
+        "timeline": [
+          {
+            "stage": "ISSUANCE_ROOT",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "LINEAGE_STEPS",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "CHAIN_CONTEXT",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "TERMINAL_OUTPUT",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "FINALITY",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "TRADE_PERMISSION",
+            "status": "FAILED"
+          }
+        ],
+        "totalHandlerUs": 109,
+        "tradePermission": {
+          "allowed": false,
+          "reason": "REJECTED"
+        },
+        "transportDecodeUs": 18,
+        "trustSource": "PINNED_REGTEST_FIXTURE",
+        "verification": {
+          "chain_ref_id": null,
+          "code": "INVALID_ENCODING",
+          "finality_state": null,
+          "history_mode": null,
+          "lineage_statement_id": null,
+          "message": "the lineage request is not a well-formed container",
+          "mode": "rooted",
+          "obligations": {
+            "chain_context": "NOT_EVALUATED",
+            "context": "NOT_EVALUATED",
+            "design_a": "NOT_EVALUATED",
+            "finality": "NOT_EVALUATED",
+            "parse": "FAILED",
+            "root": "NOT_EVALUATED",
+            "terminal": "NOT_EVALUATED"
+          },
+          "research_code": "MALFORMED",
+          "root_height": null,
+          "snapshot_id": "A7",
+          "snapshot_sha256": "28651a629cf0d8075c5d0ac7a7f93db45dd10729e5ba0dc48c156f903f3b8300",
+          "status": "REJECTED",
+          "step": null,
+          "steps": null,
+          "terminal_height": null,
+          "timing_us": {
+            "chain_context": null,
+            "decode": 3,
+            "design_a": null,
+            "finality": null,
+            "root_auth": null,
+            "steps": [],
+            "terminal_auth": null,
+            "total": 3
+          },
+          "verifier": {
+            "params_k": 11,
+            "params_sha256": "1eab6f93a080ce41b908d935c04bd2e3ed1ac23f277c15d11c499d56d28fa0f7",
+            "proof_system": "halo2_proofs QED-it ef3d0ba (IPA/Vesta), plonk::verify_proof, SingleVerifier, Blake2bRead",
+            "relation": "NormalLineageStepV2",
+            "step_proof_len": 5120,
+            "verifier_id": "lineage-v2-l1",
+            "vk_id": "a2b349d7470504b6b5de3214f1783bc06d28c2f4e73111f9568652d0615b36b3"
+          }
+        },
+        "verificationId": "45ece1ba87c31fb418c14b742c6b2830d54a12f7bff9011f0ac18e56591a506b"
+      }
+    },
+    {
+      "elapsedMs": 0.301,
+      "errors": [],
+      "folder": "06 Negative / Security Tests",
+      "httpStatus": 200,
+      "method": "POST",
+      "passed": true,
+      "path": "/v1/lineage/verify",
+      "request": "Unsupported version",
+      "responseBody": {
+        "actionEvaluated": false,
+        "eligibility": "NOT_EVALUATED",
+        "lineagePermission": "DENIED",
+        "settlement": "NOT_EXECUTED",
+        "timeline": [
+          {
+            "stage": "ISSUANCE_ROOT",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "LINEAGE_STEPS",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "CHAIN_CONTEXT",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "TERMINAL_OUTPUT",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "FINALITY",
+            "status": "NOT_EVALUATED"
+          },
+          {
+            "stage": "TRADE_PERMISSION",
+            "status": "FAILED"
+          }
+        ],
+        "totalHandlerUs": 107,
+        "tradePermission": {
+          "allowed": false,
+          "reason": "UNSUPPORTED"
+        },
+        "transportDecodeUs": 17,
+        "trustSource": "PINNED_REGTEST_FIXTURE",
+        "verification": {
+          "chain_ref_id": null,
+          "code": "UNSUPPORTED_VERSION",
+          "finality_state": null,
+          "history_mode": null,
+          "lineage_statement_id": null,
+          "message": "the lineage request version is not supported",
+          "mode": "rooted",
+          "obligations": {
+            "chain_context": "NOT_EVALUATED",
+            "context": "NOT_EVALUATED",
+            "design_a": "NOT_EVALUATED",
+            "finality": "NOT_EVALUATED",
+            "parse": "FAILED",
+            "root": "NOT_EVALUATED",
+            "terminal": "NOT_EVALUATED"
+          },
+          "research_code": "UNSUPPORTED_VERSION",
+          "root_height": null,
+          "snapshot_id": "A7",
+          "snapshot_sha256": "28651a629cf0d8075c5d0ac7a7f93db45dd10729e5ba0dc48c156f903f3b8300",
+          "status": "UNSUPPORTED",
+          "step": null,
+          "steps": null,
+          "terminal_height": null,
+          "timing_us": {
+            "chain_context": null,
+            "decode": 0,
+            "design_a": null,
+            "finality": null,
+            "root_auth": null,
+            "steps": [],
+            "terminal_auth": null,
+            "total": 0
+          },
+          "verifier": {
+            "params_k": 11,
+            "params_sha256": "1eab6f93a080ce41b908d935c04bd2e3ed1ac23f277c15d11c499d56d28fa0f7",
+            "proof_system": "halo2_proofs QED-it ef3d0ba (IPA/Vesta), plonk::verify_proof, SingleVerifier, Blake2bRead",
+            "relation": "NormalLineageStepV2",
+            "step_proof_len": 5120,
+            "verifier_id": "lineage-v2-l1",
+            "vk_id": "a2b349d7470504b6b5de3214f1783bc06d28c2f4e73111f9568652d0615b36b3"
+          }
+        },
+        "verificationId": "285f766a217e5bda5a6d17987cad9c6e1dbb791288c7a4b534118eb8b10f1d50"
+      }
+    },
+    {
+      "elapsedMs": 0.215,
+      "errors": [],
+      "folder": "06 Negative / Security Tests",
+      "httpStatus": 400,
+      "method": "POST",
+      "passed": true,
+      "path": "/v1/lineage/verify",
+      "request": "Zero-byte payload",
+      "responseBody": {
+        "error": {
+          "code": "INVALID_JSON",
+          "message": "INVALID_JSON"
+        }
+      }
+    },
+    {
+      "elapsedMs": 0.192,
+      "errors": [],
+      "folder": "06 Negative / Security Tests",
+      "httpStatus": 400,
+      "method": "POST",
+      "passed": true,
+      "path": "/v1/lineage/verify",
+      "request": "Empty JSON object",
+      "responseBody": {
+        "error": {
+          "code": "INVALID_JSON",
+          "message": "INVALID_JSON"
+        }
+      }
+    },
+    {
+      "elapsedMs": 0.19,
+      "errors": [],
+      "folder": "06 Negative / Security Tests",
+      "httpStatus": 400,
+      "method": "POST",
+      "passed": true,
+      "path": "/v1/lineage/verify",
+      "request": "Malformed JSON",
+      "responseBody": {
+        "error": {
+          "code": "INVALID_JSON",
+          "message": "INVALID_JSON"
+        }
+      }
+    },
+    {
+      "elapsedMs": 0.187,
+      "errors": [],
+      "folder": "06 Negative / Security Tests",
+      "httpStatus": 400,
+      "method": "POST",
+      "passed": true,
+      "path": "/v1/lineage/verify",
+      "request": "Invalid base64",
+      "responseBody": {
+        "error": {
+          "code": "INVALID_BASE64",
+          "message": "INVALID_BASE64"
+        }
+      }
+    },
+    {
+      "elapsedMs": 0.233,
+      "errors": [],
+      "folder": "06 Negative / Security Tests",
+      "httpStatus": 400,
+      "method": "POST",
+      "passed": true,
+      "path": "/v1/lineage/verify",
+      "request": "Caller chain view override rejected",
+      "responseBody": {
+        "error": {
+          "code": "INVALID_JSON",
+          "message": "INVALID_JSON"
+        }
+      }
+    },
+    {
+      "elapsedMs": 0.214,
+      "errors": [],
+      "folder": "06 Negative / Security Tests",
+      "httpStatus": 400,
+      "method": "POST",
+      "passed": true,
+      "path": "/v1/lineage/verify",
+      "request": "Caller VK override rejected",
+      "responseBody": {
+        "error": {
+          "code": "INVALID_JSON",
+          "message": "INVALID_JSON"
+        }
+      }
+    },
+    {
+      "elapsedMs": 0.21,
+      "errors": [],
+      "folder": "06 Negative / Security Tests",
+      "httpStatus": 400,
+      "method": "POST",
+      "passed": true,
+      "path": "/v1/lineage/verify",
+      "request": "Caller checkpoint trust rejected",
+      "responseBody": {
+        "error": {
+          "code": "INVALID_JSON",
+          "message": "INVALID_JSON"
+        }
+      }
+    },
+    {
+      "elapsedMs": 0.223,
+      "errors": [],
+      "folder": "06 Negative / Security Tests",
+      "httpStatus": 400,
+      "method": "POST",
+      "passed": true,
+      "path": "/v1/lineage/verify",
+      "request": "Caller finality override rejected",
+      "responseBody": {
+        "error": {
+          "code": "INVALID_JSON",
+          "message": "INVALID_JSON"
+        }
+      }
+    },
+    {
+      "elapsedMs": 0.197,
+      "errors": [],
+      "folder": "06 Negative / Security Tests",
+      "httpStatus": 400,
+      "method": "POST",
+      "passed": true,
+      "path": "/v1/lineage/verify",
+      "request": "Caller verified flag rejected",
+      "responseBody": {
+        "error": {
+          "code": "INVALID_JSON",
+          "message": "INVALID_JSON"
+        }
+      }
+    },
+    {
+      "elapsedMs": 3.514,
+      "errors": [],
+      "folder": "06 Negative / Security Tests",
+      "httpStatus": 413,
+      "method": "POST",
+      "passed": true,
+      "path": "/v1/lineage/verify",
+      "request": "Oversized request",
+      "responseBody": {
+        "error": {
+          "code": "REQUEST_TOO_LARGE",
+          "message": "REQUEST_TOO_LARGE"
+        }
+      }
+    }
+  ]
+}
