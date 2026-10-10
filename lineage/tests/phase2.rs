@@ -367,6 +367,74 @@ fn gate_allows_only_verified() {
     }
 }
 
+/// PRODUCTION NEGATIVE TEST; NOT RESEARCH DIFFERENTIAL EVIDENCE.
+/// A minimally corrupted A7 issuance claim is rejected at the production
+/// root-authentication boundary and cannot permit a trade. This tests the
+/// boundary's fail-closed behavior, not historical C5a bad-issued-rho consensus.
+#[test]
+fn corrupted_issuance_claim_does_not_trade() {
+    let mut req = request(SnapshotId::A7, "n3");
+    req.root_evidence[65] ^= 1; // public asset description hash in R1 evidence
+    let result = verifier(SnapshotId::A7).verify_v3(&req.encode().unwrap());
+    assert_eq!(result.status, LineageStatus::Rejected);
+    assert_eq!(
+        result.failure.unwrap().research_code(),
+        "ROOT_ASSET_MISMATCH"
+    );
+    assert!(!TradePermission::from_result(&result).allowed);
+}
+
+/// PRODUCTION NEGATIVE TEST; NOT A LAYER-B RESEARCH DIFFERENTIAL CASE.
+/// The frozen A2b-V V5 view supplies a real vanilla Action leaf. The imported
+/// production terminal authenticator refuses that leaf before ZSA proof use.
+/// V5 is deliberately not one of the five production-pinned Phase-2 snapshots.
+#[test]
+fn vanilla_v5_action_is_not_a_zwa_terminal() {
+    use orchard::circuit::VerifyingKey;
+    use zwa_layer_b::view::LeafKind;
+    use zwa_layer_b_core as core;
+
+    let bytes = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../ZWA-Lineage-Research/post-h1f/a2bv/raw/runs/run2/chain/views/V5.json"
+    ));
+    assert_eq!(
+        hex::encode(Sha256::digest(bytes)),
+        "fd76315b73167a1868fbee992608c36bd112a6e711fe13b781c5fcc72216c341"
+    );
+    let vk_id: [u8; 32] = hex::decode(ACTION_VK_ID).unwrap().try_into().unwrap();
+    let frozen = ChainView::load(bytes, NetworkKind::Regtest, vk_id, RULESET_TAG).unwrap();
+    let view = core::view::ChainView::load(
+        bytes,
+        core::chainref::NetworkKind::Regtest,
+        vk_id,
+        RULESET_TAG,
+    )
+    .unwrap();
+    let leaf = frozen
+        .leaves
+        .iter()
+        .find(|l| {
+            matches!(l.kind, LeafKind::Action { .. })
+                && frozen.tx(l.height, l.tx_index).version().has_orchard()
+                && !frozen.tx(l.height, l.tx_index).version().has_orchard_zsa()
+        })
+        .expect("V5 vanilla Action in pinned A2b-V view");
+    let reference = core::chainref::ChainRef {
+        network_id: view.network_id,
+        height: view.tip,
+        block_hash: view.hashes[view.tip as usize],
+        orchard_root: view.roots[view.tip as usize].unwrap(),
+    };
+    let evidence = terminal_evidence(&frozen, leaf.position, view.tip).encode();
+    let vk = VerifyingKey::build::<orchard::flavor::OrchardZSA>();
+    let result =
+        core::terminal::authenticate_terminal(&leaf.cmx, &evidence, &reference, &view, &vk);
+    assert_eq!(result.unwrap_err(), core::policy::Code::TermNotZsaAction);
+    // The adapter maps this code to UNSUPPORTED, which the matcher gate denies.
+    assert!(!LineageStatus::Unsupported.is_rooted_lineage_verified());
+}
+
 #[test]
 fn selected_layer_b_rows_match_frozen_matrix() {
     let matrix: serde_json::Value = serde_json::from_str(include_str!(concat!(
