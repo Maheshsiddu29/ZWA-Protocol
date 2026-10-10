@@ -22,7 +22,7 @@ The Zcash/ZSA layer owns shielded value movement and transaction atomicity. Two 
 
 ## Current status
 
-Phase 0 demonstrated the experimental ZSA lifecycle, an atomic ZSA-to-ZSA swap, a shielded ZEC matcher payment in that transaction, authorized issuance provenance, exact trade binding, and recipient-specific private eligibility. The protocol-core crates provide canonical types, encodings, `TradeCommitmentV1`, signed-root envelope payloads, proof interfaces, and in-memory replay state. The matcher, RFQ workflow, root-signature verification, recipient-control mechanism, settlement adapter, and UI have not been implemented in this repository.
+Phase 0 demonstrated the experimental ZSA lifecycle, an atomic ZSA-to-ZSA swap, a shielded ZEC matcher payment in that transaction, authorized issuance provenance, exact trade binding, and recipient-specific private eligibility. The protocol-core crates provide canonical types, encodings, `TradeCommitmentV1`, signed-root envelope payloads, proof interfaces, and in-memory replay state. The matcher, RFQ workflow, credential root-signature verification, recipient-control mechanism, settlement adapter, and UI have not been implemented in this repository. The separate lineage workspace has a rooted verifier and fixture-backed API; its lineage permission gate is not a settlement engine.
 
 > The ZIP-227/ZIP-228 and ZSA capabilities used here are experimental QEDIT branches. They are not generally available production Zcash mainnet features, and this project is not production ready.
 
@@ -34,7 +34,7 @@ The demo will use one RWA class, one issuer, one credential authority, and one a
 
 - `circuits/`: migrated provenance and eligibility circuits plus attributed ZK-ORIGIN helpers
 - `crates/`: `zwa-protocol`, `zwa-commitments`, and `zwa-credentials` libraries; `zcash-adapter` remains a reserved settlement boundary
-- `lineage/`: separate Cargo workspace verifying frozen rooted-lineage evidence (Design A over `NormalLineageStepV2`); root, terminal and chain authentication are not wired yet, so it cannot return `VERIFIED` ([integration notes](docs/lineage-integration.md))
+- `lineage/`: separate Cargo workspace verifying frozen rooted-lineage evidence (Design A over `NormalLineageStepV2`); Phase 2 root, terminal and chain authentication are wired; Phase 3 exposes a local pinned-regtest API ([integration notes](docs/lineage-integration.md))
 - `matcher/`: compliant matcher boundary
 - `rfq/`: private RFQ and order-intent boundary
 - `frontend/`: demo application boundary
@@ -75,3 +75,7 @@ ZSA lifecycle validation, atomic swap validation, ZEC matcher-fee validation, th
 Clean protocol integration, matcher, RFQ workflow, root authentication, replay protection, settlement adapter, frontend/demo, and production-oriented testing and documentation.
 
 No ZWA Protocol project license has been selected. **PROJECT LICENSE DECISION REQUIRED.**
+
+## Phase 3 lineage service
+
+The standalone verifier source and minimal Rust API are in [`lineage/`](lineage/README.md). See the [Phase 3 API contract](docs/phase3-api.md) for setup, endpoints, demo scenarios, trust limits, and real HTTP examples. The API uses pinned regtest snapshots, not live chain data; investor eligibility is not evaluated and settlement is not executed. Independent human review remains pending.

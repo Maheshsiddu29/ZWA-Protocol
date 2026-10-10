@@ -1,5 +1,10 @@
 # Rooted lineage verifier: production integration (Phase 1)
 
+> Historical Phase 1 design record. Root, terminal, chain history, and finality
+> authentication were implemented in Phase 2. Phase 3 packages R2B-L1 locally
+> and adds the fixture-backed HTTP API. For the current architecture and
+> application contract, see [Phase 3 rooted-lineage API](phase3-api.md).
+
 ```text
 PRODUCTION ZWA INTEGRATION PHASE 1: CORE LINEAGE VERIFIER
 ROOT, TERMINAL AND CHAIN AUTHENTICATION: INTERFACES ONLY (NOT WIRED)
