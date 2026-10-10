@@ -19,7 +19,7 @@ echo "== frozen Layer-B core provenance"
 scripts/verify-layer-b-core-source.sh
 
 echo "== cargo fmt --check"
-cargo fmt --all --check
+cargo fmt --check
 
 echo "== cargo clippy (all targets, -D warnings)"
 cargo clippy --offline --locked --workspace --all-targets -- -D warnings
