@@ -1,0 +1,177 @@
+{
+ "comment": "Public Design-A data copied byte for byte from the frozen research fixtures (ZWA-Lineage-Research, branch research/post-h1f-engineering-baseline, head 3e7115d). Tuples and proof hashes come from the research proof manifests; nothing here is a witness or private note data. Block hashes are internal byte order (display order reversed). Orchard roots are canonical LE.",
+ "lineages": {
+  "branch_b": {
+   "doc": "post-h1f/layer-b/fixtures/FIXTURES.md (chain B, x0 -> out1 -> out2b -> out3b)",
+   "research_rows": [
+    "CB-00c",
+    "CB-14a"
+   ],
+   "root_cmx": "3480bccf0baa4eef0fcbfc4070d9559393deac4af74311fce82e8cba59086b11",
+   "steps": [
+    "lb-s1",
+    "lb-s2b",
+    "lb-s3b"
+   ],
+   "terminal_cmx": "fb39e3b72ff81651229b1da56377493fe9f626359c66cf3ae5e26a065385ba01"
+  },
+  "ckn": {
+   "chain_ref": {
+    "block_hash_internal": "86d1dfc45f2a195c6032c4391739b1428f74e104c3f14a56c64238680454f0e4",
+    "height": 3,
+    "network_id": "29487e34e8a5e0e26b99ae2eff39d567ab9d48fca08f2321e18e7c997326b8c4",
+    "orchard_root": "ae63e79605f3df6b2a5690e4172c26aa933bac44087004895b36935011777c30"
+   },
+   "doc": "post-h1f/freeze/CKN_CHECKPOINT_COUNTEREXAMPLE.md",
+   "research_rows": [
+    "CKN-JOINS",
+    "CK-OBJ-CP (ACCEPT under old CP premise)",
+    "RP-OBJ-CP-FVMODE / CK-OBJ-FVNODE (rejected at Layer B)"
+   ],
+   "root_cmx": "82a89f7ea77c94189ff148ce5eab15a27d9eada9915057d5ca6ed06548829c37",
+   "steps": [
+    "ckn-s0",
+    "ckn-s1",
+    "ckn-s2"
+   ],
+   "terminal_cmx": "876fbaaaf410ccf283aa411c271d1b3e49084c710fc31a77708e229359ba8711"
+  },
+  "foreign": {
+   "doc": "R3-E F-FOREIGN: a Design-A valid, wholly synthetic N=4 chain (layer-b fforeign*)",
+   "research_rows": [
+    "CB-02b"
+   ],
+   "root_cmx": "c29cbfb9de0e2fa0fe9d928afa66a8e15848114e20903715923adf712fb75e28",
+   "steps": [
+    "lb-fforeign0",
+    "lb-fforeign1",
+    "lb-fforeign2",
+    "lb-fforeign3"
+   ],
+   "terminal_cmx": "d9832d34540dfbf749503a371dde7e16b15be8b22d0b241cdf8f1859f99f9a00"
+  },
+  "n3": {
+   "chain_ref": {
+    "block_hash_internal": "d517e5831fc8f4597f24cf9c0221ba24f82269623ac4124c02f44416563fee88",
+    "height": 4,
+    "network_id": "29487e34e8a5e0e26b99ae2eff39d567ab9d48fca08f2321e18e7c997326b8c4",
+    "orchard_root": "e27b31d544c04a79d3e1b84170cdc8d12eca5c2807dbe63d16562d3a4d2dd838"
+   },
+   "doc": "post-h1f/freeze/FROZEN_ROOTED_FIXTURE.md",
+   "research_rows": [
+    "RP-DA",
+    "DA-01",
+    "DA-02",
+    "CB-00",
+    "RP-OBJ-FV"
+   ],
+   "root_cmx": "3480bccf0baa4eef0fcbfc4070d9559393deac4af74311fce82e8cba59086b11",
+   "steps": [
+    "lb-s1",
+    "lb-s2",
+    "lb-s3"
+   ],
+   "terminal_cmx": "261f17308aa5a3f29674bfc992dfed28e0e202939f709063ce258bd47404d422"
+  }
+ },
+ "research_head": "3e7115d0e4c2f1cf36355f028447fc1b58290583",
+ "steps": {
+  "ckn-s0": {
+   "cmx_new": "f7f2c1b67c05198d0b8c084b231de8b3ec952cfe9295e573a03934179cc7c030",
+   "cmx_old": "82a89f7ea77c94189ff148ce5eab15a27d9eada9915057d5ca6ed06548829c37",
+   "nf_old": "2bd69d611d76a999962bd40836ca3d22ade8b1ceadf679188c1aa83537d3ee23",
+   "proof_len": 5120,
+   "proof_sha256": "a3be204a5a72014f4d9823f9df5ef40c6278f6491dc4ca6d095141721cbabbb0",
+   "source": "post-h1f/h1-rooted/fixtures/ckn/proofs/s0.bin"
+  },
+  "ckn-s1": {
+   "cmx_new": "9287f11d3f573bec88c57c8d085d1377117226122bae4f4f487457de79e1540d",
+   "cmx_old": "f7f2c1b67c05198d0b8c084b231de8b3ec952cfe9295e573a03934179cc7c030",
+   "nf_old": "06fcccd875b3bc620c28f24be406ac286f5c4cd8ed9bd7ff1327cda93e2a571c",
+   "proof_len": 5120,
+   "proof_sha256": "79ddb495541d421d85447d574dec854433e174673dcce0f130928eb9b8b97579",
+   "source": "post-h1f/h1-rooted/fixtures/ckn/proofs/s1.bin"
+  },
+  "ckn-s2": {
+   "cmx_new": "876fbaaaf410ccf283aa411c271d1b3e49084c710fc31a77708e229359ba8711",
+   "cmx_old": "9287f11d3f573bec88c57c8d085d1377117226122bae4f4f487457de79e1540d",
+   "nf_old": "85bcd42a2f3607f54208c6d228c4688070e30dd23dbc7b3a86a78ce11af7112e",
+   "proof_len": 5120,
+   "proof_sha256": "d65e152b48b7d652c28a54a097a6a058015a878fd896c6bc4b2e1b0c95221d89",
+   "source": "post-h1f/h1-rooted/fixtures/ckn/proofs/s2.bin"
+  },
+  "lb-fforeign0": {
+   "cmx_new": "144fe7a72cc6d40b7dc2387d56ee7ed4bcae34486c57b9373fd1ec7ea0280108",
+   "cmx_old": "c29cbfb9de0e2fa0fe9d928afa66a8e15848114e20903715923adf712fb75e28",
+   "nf_old": "8b7d890014491ed39c802fe348e80ab9c2bd591d65784a8b80650f324191e726",
+   "proof_len": 5120,
+   "proof_sha256": "1387f871614f86c8a7d779166620754ccc1f768954f77dbe62555b66a7c98518",
+   "source": "post-h1f/layer-b/fixtures/new/proofs/fforeign0.bin"
+  },
+  "lb-fforeign1": {
+   "cmx_new": "ff0e739c3f9402db27bc06cf7f49e83893e7127da63ee9829b56fd1de0445e0c",
+   "cmx_old": "144fe7a72cc6d40b7dc2387d56ee7ed4bcae34486c57b9373fd1ec7ea0280108",
+   "nf_old": "01dcecae6a274aa79da62530d868763fe30ae245535ea731572b880c5d371b26",
+   "proof_len": 5120,
+   "proof_sha256": "bca8d25b9be59a7476b579d5218b1b1363ba872f0d9b85ab216394a0c164d447",
+   "source": "post-h1f/layer-b/fixtures/new/proofs/fforeign1.bin"
+  },
+  "lb-fforeign2": {
+   "cmx_new": "75c95333d72d60ac4482882182fad153b5607bf5bb94cf169dd902414cc09c25",
+   "cmx_old": "ff0e739c3f9402db27bc06cf7f49e83893e7127da63ee9829b56fd1de0445e0c",
+   "nf_old": "cadeb0a4db1295fb1c527e299545945c8d2b11e57f3160b0a4b6bab806139c27",
+   "proof_len": 5120,
+   "proof_sha256": "4401f87126d28fe86a019e6d1237c1cb88dab5ddfdb69e51f59f9d4316184be6",
+   "source": "post-h1f/layer-b/fixtures/new/proofs/fforeign2.bin"
+  },
+  "lb-fforeign3": {
+   "cmx_new": "d9832d34540dfbf749503a371dde7e16b15be8b22d0b241cdf8f1859f99f9a00",
+   "cmx_old": "75c95333d72d60ac4482882182fad153b5607bf5bb94cf169dd902414cc09c25",
+   "nf_old": "6910b44521071469ae58af7d5948aee6d08f88d110965570ea56caa0a774320e",
+   "proof_len": 5120,
+   "proof_sha256": "c370405717914a60b637790084eeac276089734f941ff2bdffa489af7b125dce",
+   "source": "post-h1f/layer-b/fixtures/new/proofs/fforeign3.bin"
+  },
+  "lb-s1": {
+   "cmx_new": "af15792c2441c03a6685d3f69fcb9a8d2050ff16cd6f1cc3c122879b53291c2f",
+   "cmx_old": "3480bccf0baa4eef0fcbfc4070d9559393deac4af74311fce82e8cba59086b11",
+   "nf_old": "263f54bb1d54147bae9f56328c99786d2a57ecb6c13e2bd780ae9e1e50ca042d",
+   "proof_len": 5120,
+   "proof_sha256": "7f37249493f7a605d721dc9a04a9f4d987a4c54fab92d5aee3e6c9c0d235f3f0",
+   "source": "post-h1f/layer-b/fixtures/new/proofs/s1.bin"
+  },
+  "lb-s2": {
+   "cmx_new": "30690033b14a7a919371e5b0413741b15a31794e4909c1b26bc52f660cd91a1d",
+   "cmx_old": "af15792c2441c03a6685d3f69fcb9a8d2050ff16cd6f1cc3c122879b53291c2f",
+   "nf_old": "45a653797da4d7a759ca665cb839b5f9fc847ea8373f9b38d1e72142e40c782f",
+   "proof_len": 5120,
+   "proof_sha256": "d33a785f21ccdba73f369f3639d14498d085df914541f9f33729343d17f1b807",
+   "source": "post-h1f/layer-b/fixtures/new/proofs/s2.bin"
+  },
+  "lb-s2b": {
+   "cmx_new": "be3dfde3f2246a3668af6bd1e2a057dc278ae8510fc331b94ec3bf07c97c6529",
+   "cmx_old": "af15792c2441c03a6685d3f69fcb9a8d2050ff16cd6f1cc3c122879b53291c2f",
+   "nf_old": "45a653797da4d7a759ca665cb839b5f9fc847ea8373f9b38d1e72142e40c782f",
+   "proof_len": 5120,
+   "proof_sha256": "75d45a3ee956e373de0b4f0205bca6700313deb6b022e97b3326535992d651e6",
+   "source": "post-h1f/layer-b/fixtures/new/proofs/s2b.bin"
+  },
+  "lb-s3": {
+   "cmx_new": "261f17308aa5a3f29674bfc992dfed28e0e202939f709063ce258bd47404d422",
+   "cmx_old": "30690033b14a7a919371e5b0413741b15a31794e4909c1b26bc52f660cd91a1d",
+   "nf_old": "862dcdb2d4b1ab444a58b381de33df16e9ae1a1c26cfb2eb6b2a3131d0d04f18",
+   "proof_len": 5120,
+   "proof_sha256": "f6b44d74522a93f7cd02d4dff5e42a75ee0ea43f621e1d76ac6e3e58e8952207",
+   "source": "post-h1f/layer-b/fixtures/new/proofs/s3.bin"
+  },
+  "lb-s3b": {
+   "cmx_new": "fb39e3b72ff81651229b1da56377493fe9f626359c66cf3ae5e26a065385ba01",
+   "cmx_old": "be3dfde3f2246a3668af6bd1e2a057dc278ae8510fc331b94ec3bf07c97c6529",
+   "nf_old": "4ccbd93549f2ef18341ce1f0a7c56d6ce9c8c27bab8e10ff9ac9098bab74ac35",
+   "proof_len": 5120,
+   "proof_sha256": "47b15c2f1cf5f7dfd33c6c2738020e7d1584ccf565fdd133ae10b10e7e388795",
+   "source": "post-h1f/layer-b/fixtures/new/proofs/s3b.bin"
+  }
+ },
+ "vk_id": "a2b349d7470504b6b5de3214f1783bc06d28c2f4e73111f9568652d0615b36b3"
+}

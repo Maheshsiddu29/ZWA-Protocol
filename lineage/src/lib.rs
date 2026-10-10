@@ -19,10 +19,12 @@
 //! verifier sees every `cmx_old`, `nf_old`, `cmx_new` and `N`, and therefore
 //! the on-chain path. Nothing in this crate hides the path.
 //!
-//! # Status
+//! # Status in this build (Phase 1)
 //!
-//! Work in progress: domain model, request container and Design A over the
-//! frozen verifier. No authentication layer yet.
+//! Design A runs the frozen verifier. Root, terminal and chain-context
+//! authentication are interfaces with `NotWired` adapters only, so the rooted
+//! path stops at `PENDING_AUTHENTICATION` and cannot return `VERIFIED`.
+//! See `docs/lineage-integration.md` in the repository root.
 
 #![cfg_attr(
     test,
@@ -34,14 +36,22 @@
     )
 )]
 
+pub mod auth;
 pub mod chain_ref;
 pub mod container;
 pub mod design_a;
 pub mod evidence;
 pub mod field;
+pub mod finality;
 pub mod frozen;
+pub mod service;
 pub mod verdict;
 
+pub use auth::{
+    AuthenticatedChainContext, AuthenticatedRoot, AuthenticatedTerminal, ChainContextAuthenticator,
+    ChainIdentityResult, RootAuthenticationResult, RootAuthenticator, TerminalAuthenticationResult,
+    TerminalAuthenticator, UnavailableReason,
+};
 pub use chain_ref::{ChainRef, ChainRefError};
 pub use container::{decode_request, encode_request, LineageRequest};
 pub use design_a::{verify_design_a, DesignAReport, DesignAResult};
@@ -50,7 +60,12 @@ pub use evidence::{
     RootedLineageEvidence, MAX_STEPS, STEP_PROOF_LEN,
 };
 pub use field::{CanonicalCmx, CanonicalFieldElement, CanonicalNullifier, CanonicalOrchardRoot};
+pub use finality::{FinalityResult, FinalizedReference, HistoryMode, ReferenceState};
 pub use frozen::{FrozenStepVerifier, VerifierIdentity, VerifierInitError};
+pub use service::{
+    LineageResult, LineageVerificationService, ObligationStatus, Obligations, Phase1LineageService,
+    VerificationEvidence, VerificationMode,
+};
 pub use verdict::{FailureCode, FieldRole, LineageStatus, VerificationFailure};
 
 /// BLAKE2b-256 with a 16-byte personalization.
