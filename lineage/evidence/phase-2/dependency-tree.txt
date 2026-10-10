@@ -1,0 +1,480 @@
+## production normal reverse tree: h2
+$ cargo tree --offline --locked --edges normal -i h2
+exit 0
+
+warning: nothing to print.
+
+## production normal reverse tree: reqwest
+$ cargo tree --offline --locked --edges normal -i reqwest
+exit 0
+
+warning: nothing to print.
+
+## production normal reverse tree: hyper
+$ cargo tree --offline --locked --edges normal -i hyper
+exit 0
+
+warning: nothing to print.
+
+## production normal forward tree
+$ cargo tree --offline --locked --edges normal -p zwa-lineage
+exit 0
+zwa-lineage v0.1.0 (/Users/mahesh/Desktop/Colosseum/ZWA/ZWA-Protocol/lineage)
+├── blake2b_simd v1.0.1
+│   ├── arrayref v0.3.9
+│   ├── arrayvec v0.7.8
+│   └── constant_time_eq v0.2.6
+├── ff v0.13.1
+│   ├── bitvec v1.1.1
+│   │   ├── funty v2.0.0
+│   │   ├── radium v0.7.0
+│   │   ├── tap v1.0.1
+│   │   └── wyz v0.5.1
+│   │       └── tap v1.0.1
+│   ├── rand_core v0.6.4
+│   │   └── getrandom v0.2.17
+│   │       ├── cfg-if v1.0.5
+│   │       └── libc v0.2.189
+│   └── subtle v2.6.1
+├── halo2_proofs v0.3.2 (https://github.com/QED-it/halo2?rev=ef3d0ba2e9a513658f8d3d00294ddebd92cc649e#ef3d0ba2)
+│   ├── blake2b_simd v1.0.1 (*)
+│   ├── ff v0.13.1 (*)
+│   ├── group v0.13.0
+│   │   ├── ff v0.13.1 (*)
+│   │   ├── memuse v0.2.2
+│   │   ├── rand_core v0.6.4 (*)
+│   │   └── subtle v2.6.1
+│   ├── halo2_legacy_pdqsort v0.1.0
+│   ├── indexmap v1.9.3
+│   │   └── hashbrown v0.12.3
+│   ├── maybe-rayon v0.1.1
+│   │   ├── cfg-if v1.0.5
+│   │   └── rayon v1.12.0
+│   │       ├── either v1.18.0
+│   │       └── rayon-core v1.13.0
+│   │           ├── crossbeam-deque v0.8.8
+│   │           │   ├── crossbeam-epoch v0.9.21
+│   │           │   │   └── crossbeam-utils v0.8.23
+│   │           │   └── crossbeam-utils v0.8.23
+│   │           └── crossbeam-utils v0.8.23
+│   ├── pasta_curves v0.5.2
+│   │   ├── blake2b_simd v1.0.1 (*)
+│   │   ├── ff v0.13.1 (*)
+│   │   ├── group v0.13.0 (*)
+│   │   ├── lazy_static v1.5.0
+│   │   │   └── spin v0.9.9
+│   │   ├── rand v0.8.8
+│   │   │   ├── libc v0.2.189
+│   │   │   ├── rand_chacha v0.3.1
+│   │   │   │   ├── ppv-lite86 v0.2.21
+│   │   │   │   │   └── zerocopy v0.8.59
+│   │   │   │   └── rand_core v0.6.4 (*)
+│   │   │   └── rand_core v0.6.4 (*)
+│   │   ├── static_assertions v1.1.0
+│   │   └── subtle v2.6.1
+│   ├── rand_core v0.6.4 (*)
+│   └── tracing v0.1.44
+│       ├── pin-project-lite v0.2.17
+│       ├── tracing-attributes v0.1.31 (proc-macro)
+│       │   ├── proc-macro2 v1.0.107
+│       │   │   └── unicode-ident v1.0.26
+│       │   ├── quote v1.0.47
+│       │   │   └── proc-macro2 v1.0.107 (*)
+│       │   └── syn v2.0.119
+│       │       ├── proc-macro2 v1.0.107 (*)
+│       │       ├── quote v1.0.47 (*)
+│       │       └── unicode-ident v1.0.26
+│       └── tracing-core v0.1.36
+│           └── once_cell v1.21.4
+├── hex v0.4.3
+├── orchard v0.14.0 (https://github.com/QED-it/orchard?rev=cf801a5d6701bc128e21678ba0034564af4a2aca#cf801a5d)
+│   ├── aes v0.8.4
+│   │   ├── cfg-if v1.0.5
+│   │   ├── cipher v0.4.4
+│   │   │   ├── crypto-common v0.1.7
+│   │   │   │   ├── generic-array v0.14.7
+│   │   │   │   │   └── typenum v1.20.1
+│   │   │   │   └── typenum v1.20.1
+│   │   │   ├── inout v0.1.4
+│   │   │   │   └── generic-array v0.14.7 (*)
+│   │   │   └── zeroize v1.9.0
+│   │   │       └── zeroize_derive v1.5.0 (proc-macro)
+│   │   │           ├── proc-macro2 v1.0.107 (*)
+│   │   │           ├── quote v1.0.47 (*)
+│   │   │           └── syn v2.0.119 (*)
+│   │   └── cpufeatures v0.2.17
+│   │       └── libc v0.2.189
+│   ├── bitvec v1.1.1 (*)
+│   ├── blake2b_simd v1.0.1 (*)
+│   ├── corez v0.1.1
+│   ├── ff v0.13.1 (*)
+│   ├── fpe v0.6.1
+│   │   ├── cbc v0.1.2
+│   │   │   └── cipher v0.4.4 (*)
+│   │   ├── cipher v0.4.4 (*)
+│   │   ├── libm v0.2.16
+│   │   ├── num-bigint v0.4.8
+│   │   │   ├── num-integer v0.1.47
+│   │   │   │   └── num-traits v0.2.19
+│   │   │   └── num-traits v0.2.19
+│   │   ├── num-integer v0.1.47 (*)
+│   │   └── num-traits v0.2.19
+│   ├── getset v0.1.7 (proc-macro)
+│   │   ├── proc-macro2 v1.0.107 (*)
+│   │   ├── quote v1.0.47 (*)
+│   │   └── syn v2.0.119 (*)
+│   ├── group v0.13.0 (*)
+│   ├── halo2_gadgets v0.5.0 (https://github.com/QED-it/halo2?rev=ef3d0ba2e9a513658f8d3d00294ddebd92cc649e#ef3d0ba2)
+│   │   ├── arrayvec v0.7.8
+│   │   ├── bitvec v1.1.1 (*)
+│   │   ├── ff v0.13.1 (*)
+│   │   ├── group v0.13.0 (*)
+│   │   ├── halo2_poseidon v0.1.0 (https://github.com/QED-it/halo2?rev=ef3d0ba2e9a513658f8d3d00294ddebd92cc649e#ef3d0ba2)
+│   │   │   ├── bitvec v1.1.1 (*)
+│   │   │   ├── ff v0.13.1 (*)
+│   │   │   ├── group v0.13.0 (*)
+│   │   │   └── pasta_curves v0.5.2 (*)
+│   │   ├── halo2_proofs v0.3.2 (https://github.com/QED-it/halo2?rev=ef3d0ba2e9a513658f8d3d00294ddebd92cc649e#ef3d0ba2) (*)
+│   │   ├── lazy_static v1.5.0 (*)
+│   │   ├── pasta_curves v0.5.2 (*)
+│   │   ├── rand v0.8.8 (*)
+│   │   ├── sinsemilla v0.1.0 (https://github.com/zcash/sinsemilla?rev=aabb707e862bc3d7b803c77d14e5a771bcee3e8c#aabb707e)
+│   │   │   ├── group v0.13.0 (*)
+│   │   │   ├── pasta_curves v0.5.2 (*)
+│   │   │   └── subtle v2.6.1
+│   │   ├── subtle v2.6.1
+│   │   └── uint v0.9.5
+│   │       ├── byteorder v1.5.0
+│   │       ├── crunchy v0.2.4
+│   │       ├── hex v0.4.3
+│   │       └── static_assertions v1.1.0
+│   ├── halo2_poseidon v0.1.0 (https://github.com/QED-it/halo2?rev=ef3d0ba2e9a513658f8d3d00294ddebd92cc649e#ef3d0ba2) (*)
+│   ├── halo2_proofs v0.3.2 (https://github.com/QED-it/halo2?rev=ef3d0ba2e9a513658f8d3d00294ddebd92cc649e#ef3d0ba2) (*)
+│   ├── hex v0.4.3
+│   ├── incrementalmerkletree v0.8.2
+│   │   └── either v1.18.0
+│   ├── lazy_static v1.5.0 (*)
+│   ├── memuse v0.2.2
+│   ├── nonempty v0.11.0
+│   ├── pasta_curves v0.5.2 (*)
+│   ├── rand v0.8.8 (*)
+│   ├── rand_core v0.6.4 (*)
+│   ├── reddsa v0.5.2
+│   │   ├── blake2b_simd v1.0.1 (*)
+│   │   ├── byteorder v1.5.0
+│   │   ├── group v0.13.0 (*)
+│   │   ├── hex v0.4.3
+│   │   ├── jubjub v0.10.0
+│   │   │   ├── bitvec v1.1.1 (*)
+│   │   │   ├── bls12_381 v0.8.0
+│   │   │   │   ├── ff v0.13.1 (*)
+│   │   │   │   ├── group v0.13.0 (*)
+│   │   │   │   ├── pairing v0.23.0
+│   │   │   │   │   └── group v0.13.0 (*)
+│   │   │   │   ├── rand_core v0.6.4 (*)
+│   │   │   │   └── subtle v2.6.1
+│   │   │   ├── ff v0.13.1 (*)
+│   │   │   ├── group v0.13.0 (*)
+│   │   │   ├── rand_core v0.6.4 (*)
+│   │   │   └── subtle v2.6.1
+│   │   ├── pasta_curves v0.5.2 (*)
+│   │   ├── rand_core v0.6.4 (*)
+│   │   ├── serde v1.0.229
+│   │   │   ├── serde_core v1.0.229
+│   │   │   └── serde_derive v1.0.229 (proc-macro)
+│   │   │       ├── proc-macro2 v1.0.107 (*)
+│   │   │       ├── quote v1.0.47 (*)
+│   │   │       └── syn v3.0.6
+│   │   │           ├── proc-macro2 v1.0.107 (*)
+│   │   │           ├── quote v1.0.47 (*)
+│   │   │           └── unicode-ident v1.0.26
+│   │   ├── thiserror v2.0.21
+│   │   │   └── thiserror-impl v2.0.21 (proc-macro)
+│   │   │       ├── proc-macro2 v1.0.107 (*)
+│   │   │       ├── quote v1.0.47 (*)
+│   │   │       └── syn v3.0.6 (*)
+│   │   └── zeroize v1.9.0 (*)
+│   ├── secp256k1 v0.29.1
+│   │   ├── rand v0.8.8 (*)
+│   │   └── secp256k1-sys v0.10.1
+│   ├── serde v1.0.229 (*)
+│   ├── sinsemilla v0.1.0 (https://github.com/zcash/sinsemilla?rev=aabb707e862bc3d7b803c77d14e5a771bcee3e8c#aabb707e) (*)
+│   ├── subtle v2.6.1
+│   ├── tracing v0.1.44 (*)
+│   ├── visibility v0.1.1 (proc-macro)
+│   │   ├── proc-macro2 v1.0.107 (*)
+│   │   ├── quote v1.0.47 (*)
+│   │   └── syn v2.0.119 (*)
+│   ├── zcash_note_encryption v0.4.1 (https://github.com/zcash/zcash_note_encryption?rev=9f7e93d42cef839d02b9d75918117941d453f8cb#9f7e93d4)
+│   │   ├── chacha20 v0.9.1
+│   │   │   ├── cfg-if v1.0.5
+│   │   │   └── cipher v0.4.4 (*)
+│   │   ├── chacha20poly1305 v0.10.1
+│   │   │   ├── aead v0.5.2
+│   │   │   │   ├── crypto-common v0.1.7 (*)
+│   │   │   │   └── generic-array v0.14.7 (*)
+│   │   │   ├── chacha20 v0.9.1 (*)
+│   │   │   ├── cipher v0.4.4 (*)
+│   │   │   ├── poly1305 v0.8.0
+│   │   │   │   ├── opaque-debug v0.3.1
+│   │   │   │   └── universal-hash v0.5.1
+│   │   │   │       ├── crypto-common v0.1.7 (*)
+│   │   │   │       └── subtle v2.6.1
+│   │   │   └── zeroize v1.9.0 (*)
+│   │   ├── cipher v0.4.4 (*)
+│   │   ├── rand_core v0.6.4 (*)
+│   │   └── subtle v2.6.1
+│   ├── zcash_spec v0.2.1 (https://github.com/QED-it/zcash_spec?rev=d5e84264d2ad0646b587a837f4e2424ca64d3a05#d5e84264)
+│   │   └── blake2b_simd v1.0.1 (*)
+│   └── zip32 v0.2.1
+│       ├── bech32 v0.11.1
+│       ├── blake2b_simd v1.0.1 (*)
+│       ├── memuse v0.2.2
+│       ├── subtle v2.6.1
+│       └── zcash_spec v0.2.1 (https://github.com/QED-it/zcash_spec?rev=d5e84264d2ad0646b587a837f4e2424ca64d3a05#d5e84264) (*)
+├── pasta_curves v0.5.2 (*)
+├── serde_json v1.0.151
+│   ├── itoa v1.0.18
+│   ├── memchr v2.8.3
+│   ├── serde_core v1.0.229
+│   └── zmij v1.0.23
+├── sha2 v0.10.9
+│   ├── cfg-if v1.0.5
+│   ├── cpufeatures v0.2.17 (*)
+│   └── digest v0.10.7
+│       ├── block-buffer v0.10.4
+│       │   └── generic-array v0.14.7 (*)
+│       └── crypto-common v0.1.7 (*)
+├── thiserror v2.0.21 (*)
+├── zwa-layer-b-core v0.0.0 (/Users/mahesh/Desktop/Colosseum/ZWA/ZWA-Protocol/lineage/vendor/layer-b-core)
+│   ├── blake2b_simd v1.0.1 (*)
+│   ├── bridgetree v0.7.1
+│   │   └── incrementalmerkletree v0.8.2 (*)
+│   ├── ff v0.13.1 (*)
+│   ├── hex v0.4.3
+│   ├── orchard v0.14.0 (https://github.com/QED-it/orchard?rev=cf801a5d6701bc128e21678ba0034564af4a2aca#cf801a5d) (*)
+│   ├── pasta_curves v0.5.2 (*)
+│   ├── serde_json v1.0.151 (*)
+│   ├── sha2 v0.10.9 (*)
+│   ├── zcash_encoding v0.4.0 (https://github.com/QED-it/librustzcash?rev=c5c232db9c54eeb8bc1d0f4dc1b8a0e40f981bb0#c5c232db)
+│   │   ├── corez v0.1.1
+│   │   ├── hex v0.4.3
+│   │   └── nonempty v0.11.0
+│   ├── zcash_primitives v0.28.0 (https://github.com/QED-it/librustzcash?rev=c5c232db9c54eeb8bc1d0f4dc1b8a0e40f981bb0#c5c232db)
+│   │   ├── blake2b_simd v1.0.1 (*)
+│   │   ├── block-buffer v0.11.0-rc.3
+│   │   │   └── hybrid-array v0.2.3
+│   │   │       └── typenum v1.20.1
+│   │   ├── corez v0.1.1
+│   │   ├── crypto-common v0.2.0-rc.1
+│   │   │   └── hybrid-array v0.2.3 (*)
+│   │   ├── document-features v0.2.12 (proc-macro)
+│   │   │   └── litrs v1.0.0
+│   │   ├── equihash v0.3.0 (https://github.com/QED-it/librustzcash?rev=c5c232db9c54eeb8bc1d0f4dc1b8a0e40f981bb0#c5c232db)
+│   │   │   ├── blake2b_simd v1.0.1 (*)
+│   │   │   └── corez v0.1.1
+│   │   ├── ff v0.13.1 (*)
+│   │   ├── hex v0.4.3
+│   │   ├── incrementalmerkletree v0.8.2 (*)
+│   │   ├── jubjub v0.10.0 (*)
+│   │   ├── memuse v0.2.2
+│   │   ├── nonempty v0.11.0
+│   │   ├── orchard v0.14.0 (https://github.com/QED-it/orchard?rev=cf801a5d6701bc128e21678ba0034564af4a2aca#cf801a5d) (*)
+│   │   ├── rand_core v0.6.4 (*)
+│   │   ├── redjubjub v0.8.0
+│   │   │   ├── rand_core v0.6.4 (*)
+│   │   │   ├── reddsa v0.5.2 (*)
+│   │   │   ├── thiserror v1.0.69
+│   │   │   │   └── thiserror-impl v1.0.69 (proc-macro)
+│   │   │   │       ├── proc-macro2 v1.0.107 (*)
+│   │   │   │       ├── quote v1.0.47 (*)
+│   │   │   │       └── syn v2.0.119 (*)
+│   │   │   └── zeroize v1.9.0 (*)
+│   │   ├── sapling-crypto v0.7.0 (https://github.com/QED-it/sapling-crypto?rev=e785faaa5eaf67bd2cb328fdd82a345df44e5754#e785faaa)
+│   │   │   ├── aes v0.8.4 (*)
+│   │   │   ├── bellman v0.14.0
+│   │   │   │   ├── bitvec v1.1.1 (*)
+│   │   │   │   ├── blake2s_simd v1.0.5
+│   │   │   │   │   ├── arrayvec v0.7.8
+│   │   │   │   │   └── constant_time_eq v0.4.2
+│   │   │   │   ├── byteorder v1.5.0
+│   │   │   │   ├── crossbeam-channel v0.5.17
+│   │   │   │   │   └── crossbeam-utils v0.8.23
+│   │   │   │   ├── ff v0.13.1 (*)
+│   │   │   │   ├── group v0.13.0 (*)
+│   │   │   │   ├── lazy_static v1.5.0 (*)
+│   │   │   │   ├── log v0.4.34
+│   │   │   │   ├── num_cpus v1.17.0
+│   │   │   │   │   └── libc v0.2.189
+│   │   │   │   ├── pairing v0.23.0 (*)
+│   │   │   │   ├── rand_core v0.6.4 (*)
+│   │   │   │   ├── rayon v1.12.0 (*)
+│   │   │   │   └── subtle v2.6.1
+│   │   │   ├── bitvec v1.1.1 (*)
+│   │   │   ├── blake2b_simd v1.0.1 (*)
+│   │   │   ├── blake2s_simd v1.0.5 (*)
+│   │   │   ├── bls12_381 v0.8.0 (*)
+│   │   │   ├── corez v0.1.1
+│   │   │   ├── document-features v0.2.12 (proc-macro) (*)
+│   │   │   ├── ff v0.13.1 (*)
+│   │   │   ├── fpe v0.6.1 (*)
+│   │   │   ├── getset v0.1.7 (proc-macro) (*)
+│   │   │   ├── group v0.13.0 (*)
+│   │   │   ├── hex v0.4.3
+│   │   │   ├── incrementalmerkletree v0.8.2 (*)
+│   │   │   ├── jubjub v0.10.0 (*)
+│   │   │   ├── lazy_static v1.5.0 (*)
+│   │   │   ├── memuse v0.2.2
+│   │   │   ├── rand v0.8.8 (*)
+│   │   │   ├── rand_core v0.6.4 (*)
+│   │   │   ├── redjubjub v0.8.0 (*)
+│   │   │   ├── subtle v2.6.1
+│   │   │   ├── tracing v0.1.44 (*)
+│   │   │   ├── zcash_note_encryption v0.4.1 (https://github.com/zcash/zcash_note_encryption?rev=9f7e93d42cef839d02b9d75918117941d453f8cb#9f7e93d4) (*)
+│   │   │   ├── zcash_spec v0.2.1 (https://github.com/QED-it/zcash_spec?rev=d5e84264d2ad0646b587a837f4e2424ca64d3a05#d5e84264) (*)
+│   │   │   └── zip32 v0.2.1 (*)
+│   │   ├── secp256k1 v0.29.1 (*)
+│   │   ├── sha2 v0.10.9 (*)
+│   │   ├── zcash_encoding v0.4.0 (https://github.com/QED-it/librustzcash?rev=c5c232db9c54eeb8bc1d0f4dc1b8a0e40f981bb0#c5c232db) (*)
+│   │   ├── zcash_note_encryption v0.4.1 (https://github.com/zcash/zcash_note_encryption?rev=9f7e93d42cef839d02b9d75918117941d453f8cb#9f7e93d4) (*)
+│   │   ├── zcash_protocol v0.9.0 (https://github.com/QED-it/librustzcash?rev=c5c232db9c54eeb8bc1d0f4dc1b8a0e40f981bb0#c5c232db)
+│   │   │   ├── corez v0.1.1
+│   │   │   ├── document-features v0.2.12 (proc-macro) (*)
+│   │   │   ├── hex v0.4.3
+│   │   │   ├── memuse v0.2.2
+│   │   │   └── zcash_encoding v0.4.0 (https://github.com/QED-it/librustzcash?rev=c5c232db9c54eeb8bc1d0f4dc1b8a0e40f981bb0#c5c232db) (*)
+│   │   ├── zcash_script v0.4.5
+│   │   │   ├── bip32 v0.6.0-pre.1
+│   │   │   │   ├── bs58 v0.5.1
+│   │   │   │   │   └── sha2 v0.10.9 (*)
+│   │   │   │   ├── hmac v0.13.0-pre.4
+│   │   │   │   │   └── digest v0.11.0-pre.9
+│   │   │   │   │       ├── block-buffer v0.11.0-rc.3 (*)
+│   │   │   │   │       ├── crypto-common v0.2.0-rc.1 (*)
+│   │   │   │   │       └── subtle v2.6.1
+│   │   │   │   ├── rand_core v0.6.4 (*)
+│   │   │   │   ├── ripemd v0.2.0-pre.4
+│   │   │   │   │   └── digest v0.11.0-pre.9 (*)
+│   │   │   │   ├── secp256k1 v0.29.1 (*)
+│   │   │   │   ├── sha2 v0.11.0-pre.4
+│   │   │   │   │   ├── cfg-if v1.0.5
+│   │   │   │   │   ├── cpufeatures v0.2.17 (*)
+│   │   │   │   │   └── digest v0.11.0-pre.9 (*)
+│   │   │   │   ├── subtle v2.6.1
+│   │   │   │   └── zeroize v1.9.0 (*)
+│   │   │   ├── bitflags v2.13.2
+│   │   │   ├── bounded-vec v0.9.0
+│   │   │   │   └── thiserror v2.0.21 (*)
+│   │   │   ├── hex v0.4.3
+│   │   │   ├── ripemd v0.1.3
+│   │   │   │   └── digest v0.10.7 (*)
+│   │   │   ├── secp256k1 v0.29.1 (*)
+│   │   │   ├── sha1 v0.10.7
+│   │   │   │   ├── cfg-if v1.0.5
+│   │   │   │   ├── cpufeatures v0.2.17 (*)
+│   │   │   │   └── digest v0.10.7 (*)
+│   │   │   ├── sha2 v0.10.9 (*)
+│   │   │   └── thiserror v2.0.21 (*)
+│   │   └── zcash_transparent v0.8.0 (https://github.com/QED-it/librustzcash?rev=c5c232db9c54eeb8bc1d0f4dc1b8a0e40f981bb0#c5c232db)
+│   │       ├── bip32 v0.6.0-pre.1 (*)
+│   │       ├── bs58 v0.5.1 (*)
+│   │       ├── corez v0.1.1
+│   │       ├── document-features v0.2.12 (proc-macro) (*)
+│   │       ├── getset v0.1.7 (proc-macro) (*)
+│   │       ├── hex v0.4.3
+│   │       ├── nonempty v0.11.0
+│   │       ├── ripemd v0.1.3 (*)
+│   │       ├── secp256k1 v0.29.1 (*)
+│   │       ├── sha2 v0.10.9 (*)
+│   │       ├── subtle v2.6.1
+│   │       ├── zcash_address v0.12.0 (https://github.com/QED-it/librustzcash?rev=c5c232db9c54eeb8bc1d0f4dc1b8a0e40f981bb0#c5c232db)
+│   │       │   ├── bech32 v0.11.1
+│   │       │   ├── bs58 v0.5.1 (*)
+│   │       │   ├── corez v0.1.1
+│   │       │   ├── f4jumble v0.1.1 (https://github.com/QED-it/librustzcash?rev=c5c232db9c54eeb8bc1d0f4dc1b8a0e40f981bb0#c5c232db)
+│   │       │   │   └── blake2b_simd v1.0.1 (*)
+│   │       │   ├── zcash_encoding v0.4.0 (https://github.com/QED-it/librustzcash?rev=c5c232db9c54eeb8bc1d0f4dc1b8a0e40f981bb0#c5c232db) (*)
+│   │       │   └── zcash_protocol v0.9.0 (https://github.com/QED-it/librustzcash?rev=c5c232db9c54eeb8bc1d0f4dc1b8a0e40f981bb0#c5c232db) (*)
+│   │       ├── zcash_encoding v0.4.0 (https://github.com/QED-it/librustzcash?rev=c5c232db9c54eeb8bc1d0f4dc1b8a0e40f981bb0#c5c232db) (*)
+│   │       ├── zcash_protocol v0.9.0 (https://github.com/QED-it/librustzcash?rev=c5c232db9c54eeb8bc1d0f4dc1b8a0e40f981bb0#c5c232db) (*)
+│   │       ├── zcash_script v0.4.5 (*)
+│   │       ├── zcash_spec v0.2.1 (https://github.com/QED-it/zcash_spec?rev=d5e84264d2ad0646b587a837f4e2424ca64d3a05#d5e84264) (*)
+│   │       └── zip32 v0.2.1 (*)
+│   ├── zcash_protocol v0.9.0 (https://github.com/QED-it/librustzcash?rev=c5c232db9c54eeb8bc1d0f4dc1b8a0e40f981bb0#c5c232db) (*)
+│   └── zcash_transparent v0.8.0 (https://github.com/QED-it/librustzcash?rev=c5c232db9c54eeb8bc1d0f4dc1b8a0e40f981bb0#c5c232db) (*)
+└── zwa-lineage-r2b-l1 v0.0.0 (/Users/mahesh/Desktop/Colosseum/ZWA/ZWA-Lineage-Research/r2c-h1d/r2b-l1)
+    ├── ff v0.13.1 (*)
+    ├── group v0.13.0 (*)
+    ├── halo2_gadgets v0.5.0 (https://github.com/QED-it/halo2?rev=ef3d0ba2e9a513658f8d3d00294ddebd92cc649e#ef3d0ba2) (*)
+    ├── halo2_proofs v0.3.2 (https://github.com/QED-it/halo2?rev=ef3d0ba2e9a513658f8d3d00294ddebd92cc649e#ef3d0ba2) (*)
+    ├── hex v0.4.3
+    ├── orchard v0.14.0 (https://github.com/QED-it/orchard?rev=cf801a5d6701bc128e21678ba0034564af4a2aca#cf801a5d) (*)
+    ├── pasta_curves v0.5.2 (*)
+    ├── rand v0.8.8 (*)
+    ├── serde_json v1.0.151 (*)
+    ├── sha2 v0.10.9 (*)
+    ├── sinsemilla v0.1.0 (https://github.com/zcash/sinsemilla?rev=aabb707e862bc3d7b803c77d14e5a771bcee3e8c#aabb707e) (*)
+    ├── subtle v2.6.1
+    ├── zcash_primitives v0.28.0 (https://github.com/QED-it/librustzcash?rev=c5c232db9c54eeb8bc1d0f4dc1b8a0e40f981bb0#c5c232db) (*)
+    ├── zcash_protocol v0.9.0 (https://github.com/QED-it/librustzcash?rev=c5c232db9c54eeb8bc1d0f4dc1b8a0e40f981bb0#c5c232db) (*)
+    └── zcash_spec v0.2.1 (https://github.com/QED-it/zcash_spec?rev=d5e84264d2ad0646b587a837f4e2424ca64d3a05#d5e84264) (*)
+
+## lineage all edges reverse tree: h2
+$ cargo tree --offline --locked --edges all -i h2
+exit 0
+h2 v0.3.27
+└── h2 feature "default"
+    ├── hyper v0.14.32
+    │   ├── hyper feature "client"
+    │   │   ├── hyper-tls v0.5.0
+    │   │   │   └── hyper-tls feature "default"
+    │   │   │       └── reqwest v0.11.27
+    │   │   │           ├── reqwest feature "__tls"
+    │   │   │           │   └── reqwest feature "default-tls"
+    │   │   │           │       └── reqwest feature "default"
+    │   │   │           │           └── zwa-layer-b v0.0.0 (/Users/mahesh/Desktop/Colosseum/ZWA/ZWA-Lineage-Research/post-h1f/layer-b/experiments)
+    │   │   │           │               └── zwa-layer-b feature "default"
+    │   │   │           │                   [dev-dependencies]
+    │   │   │           │                   └── zwa-lineage v0.1.0 (/Users/mahesh/Desktop/Colosseum/ZWA/ZWA-Protocol/lineage)
+    │   │   │           │                       └── zwa-lineage feature "default" (command-line)
+    │   │   │           ├── reqwest feature "blocking"
+    │   │   │           │   └── zwa-layer-b v0.0.0 (/Users/mahesh/Desktop/Colosseum/ZWA/ZWA-Lineage-Research/post-h1f/layer-b/experiments) (*)
+    │   │   │           ├── reqwest feature "default" (*)
+    │   │   │           ├── reqwest feature "default-tls" (*)
+    │   │   │           ├── reqwest feature "hyper-tls"
+    │   │   │           │   └── reqwest feature "default-tls" (*)
+    │   │   │           ├── reqwest feature "json"
+    │   │   │           │   └── zwa-layer-b v0.0.0 (/Users/mahesh/Desktop/Colosseum/ZWA/ZWA-Lineage-Research/post-h1f/layer-b/experiments) (*)
+    │   │   │           ├── reqwest feature "native-tls-crate"
+    │   │   │           │   └── reqwest feature "default-tls" (*)
+    │   │   │           ├── reqwest feature "serde_json"
+    │   │   │           │   └── reqwest feature "json" (*)
+    │   │   │           └── reqwest feature "tokio-native-tls"
+    │   │   │               └── reqwest feature "default-tls" (*)
+    │   │   └── reqwest v0.11.27 (*)
+    │   ├── hyper feature "h2"
+    │   │   └── hyper feature "http2"
+    │   │       └── reqwest v0.11.27 (*)
+    │   ├── hyper feature "http1"
+    │   │   └── reqwest v0.11.27 (*)
+    │   ├── hyper feature "http2" (*)
+    │   ├── hyper feature "runtime"
+    │   │   └── reqwest v0.11.27 (*)
+    │   ├── hyper feature "socket2"
+    │   │   └── hyper feature "tcp"
+    │   │       ├── hyper-tls v0.5.0 (*)
+    │   │       └── reqwest v0.11.27 (*)
+    │   │       └── hyper feature "runtime" (*)
+    │   └── hyper feature "tcp" (*)
+    └── reqwest v0.11.27 (*)
+
+## frozen research adapter normal reverse tree: h2
+$ cargo tree --offline --locked --edges normal -i h2
+exit 0
+h2 v0.3.27
+├── hyper v0.14.32
+│   ├── hyper-tls v0.5.0
+│   │   └── reqwest v0.11.27
+│   │       └── zwa-layer-b v0.0.0 (/Users/mahesh/Desktop/Colosseum/ZWA/ZWA-Lineage-Research/post-h1f/layer-b/experiments)
+│   └── reqwest v0.11.27 (*)
+└── reqwest v0.11.27 (*)
