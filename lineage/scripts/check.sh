@@ -39,6 +39,9 @@ if [ -n "${LAYER_B_EVIDENCE_DIR:-}" ]; then
   python3 scripts/build-phase-2-matrix.py
 fi
 
+echo "== Phase 2 differential inventory consistency"
+python3 scripts/build-phase-2-matrix.py --check
+
 echo "== lock unchanged"
 git diff --exit-code -- Cargo.lock
 

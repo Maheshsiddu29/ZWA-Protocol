@@ -9,6 +9,7 @@ frozen rejection. It does not classify research facts as verifier calls.
 import collections
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parents[1]
@@ -62,36 +63,66 @@ ROOTED_REASONS = {
     "C5-CP-NOT-COMMITTED": "The invalid issued-rho CASE1 block never became a committed snapshot; production cannot authenticate it as a chain view.",
     "C5-CP-REASON": "Zebra finalized-state writer fail-stop observation, not a production root-authentication request.",
 }
+ROOTED_TESTS = {
+    "RP-LB-VIEWS": "tests/phase2.rs::snapshots_hash_and_rederive",
+    "RP-LB-MATRIX": "tests/full_layer_b_core.rs::full_layer_b_core_differential",
+    "RP-OBJ-FV": "tests/phase2.rs::n3_a7_a4_and_reorg",
+    "RP-OBJ-CP": "tests/phase2.rs::checkpoint_mode_is_explicit_and_carries_its_scope",
+    "CK-OBJ-CP": "tests/phase2.rs::checkpoint_mode_is_explicit_and_carries_its_scope",
+    "CK-OBJ-FV": "tests/phase2.rs::ckn_needs_checkpoint_trust",
+}
+PRIMARY = (
+    "DIRECT_REPLAY", "ROOTED_MAPPING", "INTENTIONAL_STRICTER_REJECTION",
+    "NOT_PORTABLE", "MISSING_AUTHORITATIVE_INPUT", "DIVERGES",
+)
 
 
 def main() -> None:
+    assert sys.argv[1:] in ([], ["--check"]), "usage: build-phase-2-matrix.py [--check]"
     assert subprocess.check_output(["git", "-C", str(RESEARCH), "rev-parse", "HEAD"], text=True).strip() == HEAD
     frozen = json.loads((RESEARCH / "post-h1f/layer-b/layer-b-result.json").read_text())
     rooted = json.loads((RESEARCH / "post-h1f/h1-rooted/h1-rooted-result.json").read_text())
-    replay = {r["id"]: r for r in map(json.loads, (HERE / "evidence/phase-2/layer-b-core-replay.jsonl").read_text().splitlines())}
+    replay_rows = list(map(json.loads, (HERE / "evidence/phase-2/layer-b-core-replay.jsonl").read_text().splitlines()))
+    replay_ids = [r["id"] for r in replay_rows]
+    assert len(replay_ids) == len(set(replay_ids)), "duplicate core replay ID"
+    replay = {r["id"]: (line, r) for line, r in enumerate(replay_rows, 1)}
     rows = []
     ids = set()
+    source_ids = [r["id"] for group in GROUPS for r in frozen[group]] + [r["id"] for r in rooted["key_rows"]]
+    duplicates = sorted(k for k, v in collections.Counter(source_ids).items() if v > 1)
+    assert not duplicates, f"duplicate authoritative case IDs: {duplicates}"
+    assert set(replay) - set(source_ids) == {"KEY-R2B", "POL-ASSET-NETINDEP", "POL-H1C-ASSET"}, "unexpected replay setup IDs"
     for group in GROUPS:
         for src in frozen[group]:
             case_id = src["id"]
             assert case_id not in ids, case_id
             ids.add(case_id)
-            observed = replay[case_id]
+            assert case_id in replay, f"missing core replay: {case_id}"
+            replay_line, observed = replay[case_id]
             assert observed["actual"] == src["actual"], case_id
             production = observed.get("production_result")
             reason = None
             if production is None:
                 status = "NOT_PORTABLE"
                 reason = REASONS[case_id]
+                primary = "NOT_PORTABLE"
+                location = f"{RESEARCH.name}/post-h1f/layer-b/layer-b-result.json#{group}[id={case_id}]"
             elif production == src["actual"]:
                 status = "AGREES"
+                primary = "DIRECT_REPLAY"
+                location = f"tests/full_layer_b_core.rs::full_layer_b_core_differential; evidence/phase-2/layer-b-core-replay.jsonl:{replay_line}"
             elif production == "ACCEPT" and src["actual"] != "ACCEPT":
                 status = "DIVERGES"
+                primary = "DIVERGES"
+                location = f"evidence/phase-2/layer-b-core-replay.jsonl:{replay_line}"
             else:
                 status = "DIVERGES"
+                primary = "DIVERGES"
+                location = f"evidence/phase-2/layer-b-core-replay.jsonl:{replay_line}"
             rows.append({"case_id": case_id, "category": observed["group"], "research_expected": src["expected"],
-                         "research_actual": src["actual"], "production_result": production,
-                         "status": status, "reason_if_not_portable": reason,
+                         "research_category": group, "research_actual": src["actual"], "production_result": production,
+                         "status": status, "primary_classification": primary,
+                         "test_evidence_location": location, "reason_if_not_portable": reason,
                          "source": f"post-h1f/layer-b/layer-b-result.json#{group}"})
     assert len(ids) == 218, len(ids)
     for src in rooted["key_rows"]:
@@ -101,28 +132,56 @@ def main() -> None:
         if case_id in ROOTED:
             production, status, note = ROOTED[case_id]
             reason = None
+            primary = "INTENTIONAL_STRICTER_REJECTION" if status == "INTENTIONAL_STRICTER_REJECTION" else "ROOTED_MAPPING"
+            location = ROOTED_TESTS[case_id]
         else:
             production, status, note = None, "NOT_PORTABLE", ""
             reason = ROOTED_REASONS[case_id]
+            primary = "NOT_PORTABLE"
+            location = f"{RESEARCH.name}/post-h1f/h1-rooted/h1-rooted-result.json#key_rows[id={case_id}]"
         rows.append({"case_id": case_id, "category": "h1-rooted-key", "research_expected": src["expected"],
-                     "research_actual": src["actual"], "production_result": production,
-                     "status": status, "reason_if_not_portable": reason, "note": note,
+                     "research_category": "key_rows", "research_actual": src["actual"], "production_result": production,
+                     "status": status, "primary_classification": primary,
+                     "test_evidence_location": location, "reason_if_not_portable": reason, "note": note,
                      "source": "post-h1f/h1-rooted/h1-rooted-result.json#key_rows"})
-    assert len(rows) == 236, len(rows)
+    manifest_ids = [r["case_id"] for r in rows]
+    missing = sorted(set(source_ids) - set(manifest_ids))
+    unclassified = sorted(r["case_id"] for r in rows if r.get("primary_classification") not in PRIMARY)
+    assert len(rows) == 236 and not missing and not unclassified, (len(rows), missing, unclassified)
     counts = collections.Counter(r["status"] for r in rows)
-    assert counts["DIVERGES"] == 0, counts
-    applicable = len(rows) - counts["NOT_PORTABLE"] - counts["MISSING_AUTHORITATIVE_INPUT"]
-    core_replayed = sum(r["category"] != "h1-rooted-key" and r["status"] == "AGREES" for r in rows)
-    rooted_mapped = applicable - core_replayed
-    assert core_replayed == 196 and rooted_mapped == 6
+    primary_counts = collections.Counter(r["primary_classification"] for r in rows)
+    primary_counts = {key: primary_counts[key] for key in PRIMARY}
+    assert len(set(manifest_ids)) == len(rows) == sum(primary_counts.values())
+    assert not primary_counts["DIVERGES"], "unexplained divergence"
+    assert not primary_counts["MISSING_AUTHORITATIVE_INPUT"], "missing authoritative input"
+    for r in rows:
+        if r["production_result"] == "ACCEPT" and r["research_actual"] != "ACCEPT":
+            raise AssertionError(f"production ACCEPT after research rejection: {r['case_id']}")
+        if r["primary_classification"] == "NOT_PORTABLE":
+            assert r["reason_if_not_portable"], r["case_id"]
+        if r["primary_classification"] == "INTENTIONAL_STRICTER_REJECTION":
+            assert r["note"] and r["production_result"] != "ACCEPT", r["case_id"]
+        assert r["test_evidence_location"], r["case_id"]
+    applicable = len(rows) - primary_counts["NOT_PORTABLE"] - primary_counts["MISSING_AUTHORITATIVE_INPUT"]
+    core_replayed = primary_counts["DIRECT_REPLAY"]
+    rooted_mapped = primary_counts["ROOTED_MAPPING"] + primary_counts["INTENTIONAL_STRICTER_REJECTION"]
+    assert core_replayed == 196 and rooted_mapped == 6 and applicable == 202
     manifest = {"research_commit": HEAD, "scope": "218 frozen Layer-B vectors plus 18 H1-rooted key rows",
-                "total_authoritative_cases": len(rows), "applicable_cases": applicable,
+                "total_authoritative_cases": len(rows), "unique_authoritative_case_count": len(set(source_ids)),
+                "total_manifest_entries": len(rows), "unique_case_ids": len(set(manifest_ids)),
+                "duplicate_case_ids": duplicates, "missing_case_ids": missing, "unclassified_case_ids": unclassified,
+                "primary_classification_counts": primary_counts,
+                "applicable_cases": applicable,
                 "core_replayed_cases": core_replayed, "rooted_mapped_cases": rooted_mapped,
                 "agreements": counts["AGREES"], "intentional_stricter_rejections": counts["INTENTIONAL_STRICTER_REJECTION"],
                 "not_portable": counts["NOT_PORTABLE"], "missing_authoritative_input": counts["MISSING_AUTHORITATIVE_INPUT"],
                 "divergences": counts["DIVERGES"], "cases": rows}
-    OUT.write_text(json.dumps(manifest, indent=2) + "\n")
-    print({k: manifest[k] for k in ("total_authoritative_cases", "applicable_cases", "core_replayed_cases", "rooted_mapped_cases", "agreements", "intentional_stricter_rejections", "not_portable", "missing_authoritative_input", "divergences")})
+    rendered = json.dumps(manifest, indent=2) + "\n"
+    if sys.argv[1:] == ["--check"]:
+        assert OUT.read_text() == rendered, "committed Phase-2 case manifest differs from frozen research/replay inventory"
+    else:
+        OUT.write_text(rendered)
+    print({k: manifest[k] for k in ("total_authoritative_cases", "total_manifest_entries", "unique_case_ids", "duplicate_case_ids", "missing_case_ids", "unclassified_case_ids", "primary_classification_counts", "agreements", "divergences")})
 
 
 if __name__ == "__main__":
