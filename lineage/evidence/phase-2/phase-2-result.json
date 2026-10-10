@@ -2,8 +2,8 @@
   "phase": "production-integration-phase-2",
   "phase_2_verdict": "COMPLETE",
   "start_commit": "aa7e45ca0ca5796436977f5591823c663bd64dc6",
-  "end_commit": "00b660a233db120819d0d7b87a6e99850cfe032f",
-  "verification_commit": "00b660a233db120819d0d7b87a6e99850cfe032f",
+  "end_commit": "7d52e2881e42898e0d7009a5dc64ef647247f8d6",
+  "verification_commit": "7d52e2881e42898e0d7009a5dc64ef647247f8d6",
   "commit_field_note": "end_commit and verification_commit identify the final validated implementation/test tree; this closure evidence is committed afterward",
   "branch": "integration/lineage-phase-2",
   "research_baseline_unchanged": true,
@@ -97,7 +97,14 @@
     "npm test: PASS (15 tests)",
     "secret pattern scan: PASS (0 matches)",
     "cargo audit --no-fetch --stale --file Cargo.lock: UNAVAILABLE (local advisory database absent)",
-    "post-h1f/engineering-baseline/scripts/baseline-hash.sh: PASS, before equals after"
+    "post-h1f/engineering-baseline/scripts/baseline-hash.sh: PASS, before equals after",
+    "python3 lineage/scripts/build-phase-2-matrix.py --check: PASS (236 unique IDs; primary classifications sum to 236)",
+    "cargo fmt --check (protocol core, final reconciliation): PASS",
+    "cargo clippy --offline --locked --workspace -- -D warnings (protocol core, final reconciliation): PASS",
+    "cargo test --offline --locked --workspace (protocol core, final reconciliation): PASS (95 tests)",
+    "npm test (final reconciliation): PASS (15 tests)",
+    "cargo tree --offline --locked --edges normal -i h2/reqwest/hyper (final reconciliation): NO REACHABLE PATH",
+    "frozen research baseline hash (final reconciliation): PASS (1699 files; expected aggregate unchanged)"
   ],
   "local_commits": [
     "4417c381ac49e2383c38703fd39ce2003540ec24",
@@ -106,9 +113,10 @@
     "d1f3e1695725760fd61992e05b3981e580a39d92",
     "71ba12cb7a057df08a57013b07c1f1a4b425053a",
     "ef9ba8932db7a48395329fde3285925a71f07406",
-    "00b660a233db120819d0d7b87a6e99850cfe032f"
+    "00b660a233db120819d0d7b87a6e99850cfe032f",
+    "7d52e2881e42898e0d7009a5dc64ef647247f8d6"
   ],
-  "next_stage": "READY FOR PHASE 3 AFTER USER REVIEW; NOT STARTED",
+  "next_stage": "READY FOR OWNER PUSH AND PHASE 3 AFTER OWNER REVIEW; NOT PUSHED OR STARTED",
   "closure_scope": "Phase-2 rooted verifier release gate; standalone deployment packaging and independent human review remain outstanding",
   "start_commit_phase_2_2": "99b2b8dd152a485d50a11b8e662e5cc7cdd72f10",
   "layer_b_differential_intentional_stricter_rejections": 1,
@@ -130,5 +138,23 @@
   "vanilla_non_zsa_terminal_coverage": "PRODUCTION NEGATIVE TEST, NOT A LAYER-B RESEARCH DIFFERENTIAL CASE: pinned A2b-V V5 vanilla Action gets TERM_NOT_ZSA_ACTION; UNSUPPORTED denies trade",
   "layer_b_differential_applicable": 202,
   "layer_b_differential_core_replayed": 196,
-  "layer_b_differential_rooted_mapped": 6
+  "layer_b_differential_rooted_mapped": 5,
+  "phase_2_final_evidence_reconciliation": "PASS",
+  "differential_inventory": {
+    "total_manifest_entries": 236,
+    "unique_case_ids": 236,
+    "duplicate_case_ids": [],
+    "missing_case_ids": [],
+    "unclassified_case_ids": [],
+    "primary_classification_counts": {
+      "DIRECT_REPLAY": 196,
+      "ROOTED_MAPPING": 5,
+      "INTENTIONAL_STRICTER_REJECTION": 1,
+      "NOT_PORTABLE": 34,
+      "MISSING_AUTHORITATIVE_INPUT": 0,
+      "DIVERGES": 0
+    }
+  },
+  "differential_accounting_note": "Previous descriptive rooted_mapped_cases=6 included CK-OBJ-CP, which is also the one intentional stricter rejection; summing both counted that ID twice. Exclusive primary counts are 196 direct + 5 rooted + 1 stricter + 34 not portable = 236.",
+  "layer_b_differential_rooted_mapped_including_stricter": 6
 }
