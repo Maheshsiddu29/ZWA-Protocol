@@ -278,7 +278,11 @@ def handler_for(engine: Engine, port: int):
 
         def _security(self) -> bool:
             origin = self.headers.get("Origin")
-            if (self.headers.get("Host") != f"127.0.0.1:{port}"
+            if (len(self.headers.get_all("Host", [])) != 1
+                    or len(self.headers.get_all("Origin", [])) > 1
+                    or len(self.headers.get_all("Content-Length", [])) > 1
+                    or len(self.headers.get_all("Sec-Fetch-Site", [])) > 1
+                    or self.headers.get("Host") != f"127.0.0.1:{port}"
                     or origin not in (None, f"http://127.0.0.1:{port}")
                     or self.headers.get("Sec-Fetch-Site") not in (None, "same-origin", "none")
                     or len(self.headers) > 20

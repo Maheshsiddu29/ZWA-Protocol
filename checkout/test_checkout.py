@@ -6,6 +6,7 @@ from copy import deepcopy
 import http.client
 import json
 from pathlib import Path
+import socket
 import tempfile
 import threading
 import unittest
@@ -212,6 +213,11 @@ class BrowserTests(unittest.TestCase):
         self.assertEqual(self.request(method="POST")[0], 405)
         self.assertEqual(self.request(path="/v1/checkout/info?x=1")[0], 400)
         self.assertIsNone(self.request()[2])
+        with socket.create_connection(("127.0.0.1", self.port), timeout=2) as raw:
+            raw.sendall((f"GET /v1/checkout/info HTTP/1.1\r\n"
+                         f"Host: 127.0.0.1:{self.port}\r\n"
+                         "Host: evil.example\r\n\r\n").encode())
+            self.assertIn(b" 403 ", raw.recv(256))
 
 
 if __name__ == "__main__":
