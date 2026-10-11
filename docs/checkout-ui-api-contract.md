@@ -15,6 +15,8 @@ python3 -m checkout.api --demo --port 18735 --rpc-port 18243 \
 
 The browser must access the API through the same origin, or a local development proxy that forwards `Host: 127.0.0.1:18735` and does not forward a foreign `Origin`. Direct cross-origin browser access is intentionally rejected. No CORS permission is sent.
 
+Phase 3.5H adds a separate **local terminal** demonstration at `scripts/phase35h-human-checkout.sh` in the isolated tx-tool worktree. The buyer and seller each review and type their own approval inside their sandboxed wallet process. The GET routes and response schema below are unchanged; `signingMode` describes test-wallet custody and does not attest to the human event. The UI must not show an actionable Buy button. A future wallet-owned UI needs an authenticated approval path within the wallet, independent review of the wallet's actual transaction effects, and a safe way to report the result without exposing keys or signed groups through this HTTP service.
+
 ## Routes
 
 Only `GET` is supported. Every response is JSON with `Cache-Control: no-store`; unknown routes return `404`. There is no HTTP signing, session creation, purchase, transaction submission or shell-command route.

@@ -1,0 +1,53 @@
+# Phase 3.5H: human-controlled local wallet approval
+
+## Verdict
+
+**PARTIAL pending a person approving one fresh regtest purchase in each wallet's terminal.** The signer now has an interactive, default-reject approval path, and the prepared demo never supplies an approval string. No human purchase, new transaction acceptance, or wallet scan is claimed in this record until that run completes. The earlier Phase 3.5F and 3.5G accepted purchases remain historical scripted evidence.
+
+This is a disposable regtest experiment. It is not an external wallet integration, production checkout, mainnet capability, compliant security, or redeemable asset.
+
+| Independent status | Current Phase 3.5H result |
+| --- | --- |
+| `PURCHASE_SETTLEMENT_STATUS` | `NOT_RUN_WITH_HUMAN_APPROVAL` |
+| `ROOTED_LINEAGE_STATUS` | `UNSUPPORTED_RECEIVED_SWAP_NOTE_NOT_V2_REACHABLE` |
+| `ELIGIBILITY_STATUS` | `NOT_EVALUATED` |
+| `FINALITY_STATUS` | `NOT_OBSERVED` |
+
+## Starting state and custody
+
+`ZWA-Protocol/AGENTS.md` was read. Product checkout: `integration/zwa-checkout-poc` at `9b1610d716a86f2d15d78e5061c09c0b93d65b87`, with only pre-existing untracked `.cursor/` preserved. Isolated QED-it tx-tool checkout: `phase35f/independent-wallet-signing` at `8961be1a3cd6a1c1c3c6d984e4ef8767a91000c2`, clean. Original QED-it tx-tool checkout remains detached at `217b979ee01afb844190a162fb77874135aef587` with its pre-existing edits and quarantined `fetch-params.sh` deletion untouched. Frozen Zebra, cryptographic source pins, Phase 3 verifier, and `NormalLineageStepV2` were not changed. **PRE-EXISTING ZK-ORIGIN** source and QED-it notices retain their attribution; the edits described here are **NEW ZWA PROTOCOL WORK**.
+
+The buyer and seller still run as separate processes, each with a private home, seed, wallet database, and macOS sandbox profile denying the other role's home. The disposable coordinator holds the sponsor key but never receives either wallet seed, spending key, viewing key, private note witness, or wallet database. It receives only each signed Action Group plus its binding-key share over a mode-0600 local Unix socket. Those bytes are bearer authorization and are kept only in the disposable coordinator's memory during the normal live path. The read-only API receives public session and receipt data only.
+
+## Actual approval path
+
+`wallet-signer --role buyer|seller authorize-interactive` independently loads the terms and scans its own wallet. It checks network and SWAP branch, own receiving address, the other address, exact asset, quantity, native price, zero matcher fee, sponsor fee arithmetic, local target height, and available funds. Its review prints the quote digest, asset and units, exact own debit and credit, both receiving identities, fee payer and fee amounts, network, heights, and the unenforced group-expiry warning. It then opens **its own controlling terminal** and requires the person to type `APPROVE <the exact 64-character digest>`. EOF, absent terminal, empty input, `REJECT`, or any other text rejects before group construction. The two approvals occur separately in the buyer and seller processes. There is no default acceptance.
+
+After that event, the wallet reloads its local chain view, revalidates the same in-memory terms and approval digest, builds and signs only its own Action Group, verifies its proof and SpendAuth signatures, checks group expiry, burns, native balance, chain anchor, and derives its own effects from selected nullifiers and recovered outputs. It requires those actual effects to equal the approved terms before journaling and releasing a group. A changed quote has a different canonical digest; a changed file cannot silently change the terms held by the signer. The coordinator rechecks the envelope digest, commitments, proofs, signatures, anchor, nullifier disjointness, sponsor outpoint and change, exact 5,000-zatoshi fee, and serialized final transaction. These coordinator checks are local policy, not buyer or seller consensus-signature coverage.
+
+The older `authorize` file output and `authorize-live --approve` paths are marked **scripted test mode** and require `--scripted-test-mode`; they are excluded from `phase35h-human-checkout.sh`. They remain for disposable historical regression and adversarial probes, never as standing seller orders. The script requires a real terminal and calls both `authorize-interactive` commands in the foreground; it never generates or pipes approval text. An agent, harness, or terminal automation typing the phrase would **not** count as a human-approved run.
+
+## Transaction review for the planned one-purchase run
+
+- Buyer: debit exactly 10,000 native ZEC zatoshis and receive exactly 7 units of the freshly issued custom ZSA at the buyer wallet's own raw Orchard address.
+- Seller: debit exactly 7 units of that asset and receive exactly 10,000 native ZEC zatoshis at the seller wallet's own raw Orchard address.
+- Matcher fee: 0. The disposable sponsor pays the 5,000-zatoshi network fee; the buyer's maximum debit remains 10,000 zatoshis.
+- Network: pinned disposable Zebra regtest on loopback, SWAP branch. The per-run asset base, addresses, quote digest, target height, and expiry heights are displayed by the two signers and recorded only when the run exists.
+
+**Signature boundaries:** Each party's SpendAuth signs its own Action Group commitment. It does not cover the counterparty's separate group, sponsor-added inputs, the final network fee, transaction expiry, or network branch ID. The coordinator's aggregate binding signature and sponsor transparent signature have different signers and do not enlarge either party's SpendAuth coverage. The quote digest is an off-chain review token, not a consensus signature for the missing fields.
+
+Pinned Zebra does **not** enforce the Action Group expiry. The script uses a new one-time local session, next-block target, a maximum 300-second coordinator wait, wallet nonce journal, and a socket removed on completion. These limit the honest local workflow only. An already disclosed group plus binding-key share can remain executable in another final transaction until its input notes are spent; a local timeout, rejection after the other party released a group, coordinator crash, or API status cannot revoke it. No guaranteed cancellation or offline reusable seller approval is claimed.
+
+## Test and evidence record
+
+The existing Phase 3.5F/3.5G records retain their transaction IDs and wallet scan evidence. Phase 3.5H tests the exact approval phrase and default rejection, plus the inherited term mutation, recipient, network, amount, fee, nonce replay, and signed-envelope validation. The live IPC tests cover absent signer and socket removal. The historical scripted regtest run is not relabeled as human approval. A fresh human regtest run must independently query Zebra inclusion, rescan both wallet balances, observe confirmation depths 1 and 3, check the receipt's separate lineage and eligibility fields, and run buyer and seller secret-leak audits before `HUMAN_APPROVED_PURCHASE_ACCEPTED` is justified.
+
+The manual run is `scripts/phase35h-human-checkout.sh` in the isolated tx-tool worktree. It requires `PRODUCT_DIR` to name this checkout, `PARAMS_DATA_HOME` to name the existing local proving-parameter data home, and a freshly built pinned tx-tool binary. It refuses an existing `ROOT`; use a fresh private `/private/tmp` path. It starts a pinned disposable Zebra container on loopback, prints both wallet reviews, accepts two direct terminal decisions, and checks the chain and read-only API. On a rejection it exits without intentionally submitting; if a group had already been released, the replay limitation above still applies. Do not copy its private wallet homes, logs, or exchange files into Git.
+
+## UI handoff
+
+The Phase 3.5G GET routes and response schema stay unchanged. No wallet command, shell bridge, or signing endpoint was added to HTTP. `signingMode: INDEPENDENT_LOCAL_TEST_WALLETS` identifies test custody, not proof that a person approved; the receipt cannot attest to a terminal event. The UI may display the quote, price, sponsor fee, and observed receipt, but must not present a working Buy button. A future wallet-owned UI needs an authenticated approval channel inside the wallet boundary, a transaction-effects review sourced by that wallet, and a trustworthy way to represent the resulting state without sending keys or signed groups to the browser/API.
+
+## Validation and review gate
+
+Record final tests, runtime evidence, file changes, local commits, dependency and secret checks, `git diff --stat`, and both repository statuses after the human run or on stopping for owner review. No push, merge, PR, deployment, publication, or remote modification is authorized.
