@@ -80,12 +80,16 @@ Local product commits on `integration/zwa-checkout-poc`:
 
 - `c722edd` Add read-only local checkout status API and quote contract
 - `091ba16` Document the local checkout UI API contract
-- The final results-document commit closes this local phase record; its hash is listed in the owner handoff.
+- `4331017` Record Phase 3.5G security audit and regtest evidence
+- `c4c5ea8` Reject ambiguous browser security headers
+- The final record-update commit closes this local phase; its hash is listed in the owner handoff.
 
 The final working-tree `git diff --stat` is empty in both changed repositories after committing. The product `git status --short` still shows only the **pre-existing** untracked `.cursor/`; the isolated tx-tool worktree is clean. No files were deleted or staged from `.cursor/`. No push, merge, pull request, deployment, publication or remote-state change occurred.
 
 ## Limits and next risks
 
 Pinned Zebra does not enforce Action Group expiry; a retained signed group remains a bearer authorization until the input note is spent. The sponsor controls final transaction expiry and fee-bearing fields. The API's digest and local checks cannot eliminate that risk. Same-user macOS sandbox profiles are weaker than independent machines or hardware wallets. No human wallet UI, explicit note-spend cancellation, production wallet support, mainnet compatibility, legally authenticated RWA ownership, rooted-lineage proof of the received note or investor-eligibility decision exists. The separate Phase 3 rooted verifier must continue to report its own evidence independently.
+
+The new checkout suite simulates an uncertain submission and proves the API will not promote it to accepted after restart; it did **not** deliberately induce a failed block submission in the final fresh-node purchase run. A same-user process able to replace the trusted local session-result file could forge off-chain quote/receipt metadata; the API still requires an actual matching regtest block and txid, but it does not independently decode all Orchard transaction effects. The pinned coordinator is the trusted producer of that file in this test-only design.
 
 **Stop for owner review.**
