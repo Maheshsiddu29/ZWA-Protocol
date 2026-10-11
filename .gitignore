@@ -5,6 +5,10 @@ target/
 # Node
 node_modules/
 
+# Python checkout API
+__pycache__/
+*.pyc
+
 # Circom and snarkjs generated artifacts
 *.r1cs
 *.wtns
