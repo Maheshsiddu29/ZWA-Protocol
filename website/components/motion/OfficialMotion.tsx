@@ -7,6 +7,11 @@ const paths = {
   fingerprint: "/animations/privacy-fingerprint.json",
   rings: "/animations/verification-rings.json",
 } as const;
+const fallbacks = {
+  logo: "/brand/zwa-logo-light.svg",
+  fingerprint: "/illustrations/privacy-fingerprint.svg",
+  rings: "/illustrations/verification-rings.svg",
+} as const;
 
 export function OfficialMotion({ kind, className = "" }: { kind: keyof typeof paths; className?: string }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -27,5 +32,5 @@ export function OfficialMotion({ kind, className = "" }: { kind: keyof typeof pa
     observer.observe(node);
     return () => { disposed = true; observer.disconnect(); animation?.destroy(); };
   }, [kind]);
-  return <div className={className} aria-hidden="true"><div ref={ref} className="motion-canvas" />{kind === "logo" && !ready && <img className="motion-fallback" src="/brand/zwa-logo-light.svg" alt="" />}</div>;
+  return <div className={className} aria-hidden="true"><div ref={ref} className="motion-canvas" />{!ready && <img className="motion-fallback" src={fallbacks[kind]} alt="" />}</div>;
 }
