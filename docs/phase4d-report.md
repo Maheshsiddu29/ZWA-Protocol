@@ -24,9 +24,20 @@ The sanitized [recorded evidence](../exchange/recorded-runs.json) includes each 
 
 The current checkout's QuoteV1 and combined proof bind AssetBase, quantity, exact native-ZEC payment, receivers, sponsor fee, height expiry, and nonce through the quote digest. They do **not** commit a market snapshot reference, a wall-clock quote timestamp, spread, or an authenticated NAV/private-quote record. There is no trusted ZEC/USD conversion path in this phase. Thus no price is advertised as oracle-executable. The new pricing adapters are provenance-aware read/reference components, not a claim of price-to-settlement attestation.
 
+## Milestone status
+
+- **M1:** Complete for this demo: three separately issued AssetBases and actual seller wallet inventory in every validation chain.
+- **M2:** Adapter and negative tests complete; a live Pyth fetch was unavailable without an API key, and no real issuer NAV was published.
+- **M3:** Asset-specific exact native-ZEC QuoteV1 amounts are executable; authenticated price snapshot to settlement binding remains open.
+- **M4:** Complete in scripted test mode for all three asset classes, each using the same Phase 4C.1 Groth16 gate with newly generated issuance evidence.
+- **M5:** Current-session buyer scan, seller scan, order, activity, and portfolio views exist. Persistent multi-asset holdings across several purchases on the same chain remain open.
+- **M6:** Four server-authorized role areas exist; issuer issuance/NAV controls and transaction-specific auditor privacy are not implemented.
+- **M7:** Optional private RFQ rooms are not implemented.
+- **M8:** Judge sequence, sanitized real txids, and responsive screenshots are complete for historical scripted test runs. No new human-approved Phase 4D purchase or live market-feed screenshot is claimed.
+
 ## Access and privacy
 
-Portal accounts are operator-provisioned with scrypt password hashes and a separate 256-bit session secret. Four-hour HttpOnly, SameSite=Strict cookies carry a server-verified role; role pages check the role on every request. The loopback-only login/logout endpoints reject cross-origin requests and cannot grant a role by URL parameter. Auditor receipt visibility requires an explicit txid allowlist. A live HTTP test exercised anonymous denial, wrong-origin denial, all four positive roles, cross-role denial, and auditor scope.
+Portal accounts are operator-provisioned with scrypt password hashes and a separate 256-bit session secret. Four-hour HttpOnly, SameSite=Strict cookies carry a server-verified role; role pages check the role on every request. The loopback-only login/logout endpoints reject cross-origin requests and cannot grant a role by URL parameter. Auditor portal receipt visibility requires an explicit txid allowlist. A live HTTP test exercised anonymous denial, wrong-origin denial, all four positive roles, cross-role denial, and auditor scope. The allowlisted records are also deliberately published as sanitized historical test evidence on the public judge page; this check does **not** establish privacy for individual investor transactions.
 
 Portal access is **not wallet pairing**. It does not grant issuer mint authority, custody, or wallet signing. The buyer/seller wallet processes still own their keys and approve independently in the Phase 4C.1 path. The legacy `/demo` and checkout read-only API publish public local test evidence; they are not a private investor transaction API. Private deal rooms and participant-specific wallet scan isolation are not implemented.
 
