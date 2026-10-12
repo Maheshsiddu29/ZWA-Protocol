@@ -37,7 +37,7 @@ credential subject secret are never written to disk. The proving key is a
 local development key and is unsuitable for production trust.
 
 The Phase 4C.1 transaction-tool worktree is `/private/tmp/zwa4c1-tx-tool`,
-locally committed at `90ac4cfe4105bc0fca5e3176f9709bfb5fb0d226`.
+locally committed at `16052323904be8efbb9e0f92d059fa57c9198f8a`.
 Its `execute-live` checks authorization before opening the approval socket and
 again after both signer messages, before transaction construction. Legacy
 file-based `assemble` and `submit` routes are disabled in that binary.
