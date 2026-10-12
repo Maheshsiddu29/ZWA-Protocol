@@ -27,6 +27,24 @@ for parameter in sapling-spend.params sapling-output.params; do
     }
 done
 test "$(docker image inspect --format '{{.Id}}' "$IMAGE")" = "$IMAGE"
+if docker container inspect "$CONTAINER" > /dev/null 2>&1; then
+    echo "container name already exists: $CONTAINER" >&2
+    exit 2
+fi
+python3 - "$PORT" "$API_PORT" <<'PY'
+import socket, sys
+if len(set(sys.argv[1:])) != 2:
+    raise SystemExit('Zebra and checkout API ports must differ')
+for raw in sys.argv[1:]:
+    port = int(raw)
+    if not 1 <= port <= 65535:
+        raise SystemExit('invalid loopback port')
+    with socket.socket() as probe:
+        try:
+            probe.bind(('127.0.0.1', port))
+        except OSError as exc:
+            raise SystemExit(f'loopback port {port} is unavailable: {exc}') from exc
+PY
 umask 077
 mkdir -p "$ROOT"/{buyer,seller,coordinator,exchange,logs,profiles}
 BUYER="$ROOT/buyer"; SELLER="$ROOT/seller"; COORD="$ROOT/coordinator"
