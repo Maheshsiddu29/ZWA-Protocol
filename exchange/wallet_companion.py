@@ -173,7 +173,9 @@ class Companion:
                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         captured = []
         for line in process.stdout:
-            _say(line.rstrip("\n"))
+            # Show the signer's structured review and result, not its tracing.
+            if line.startswith(("PHASE35F_REVIEW ", "PHASE35F_AUTHORIZED ", "PHASE35F_SIGNER_REJECTED ")):
+                _say(line.rstrip("\n"))
             captured.append(line)
         status = process.wait()
         lines = phase_lines("".join(captured))

@@ -92,9 +92,11 @@ class OrderLedger:
         if database.is_symlink():
             raise OrderError("database cannot be a symlink")
         database.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        if not database.exists():
+        try:
             descriptor = os.open(database, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             os.close(descriptor)
+        except FileExistsError:
+            pass  # Another local process created it first.
         if database.stat().st_mode & 0o077:
             raise OrderError("database must be owner-only")
         self.database = database
@@ -115,10 +117,12 @@ class OrderLedger:
         allowed = ",".join("'" + state + "'" for state in ALL_STATES)
         db.execute("PRAGMA foreign_keys=OFF")
         try:
-            # executescript() commits any pending transaction before it runs,
-            # so the whole migration is one script that opens its own.
-            db.executescript("""
-                BEGIN IMMEDIATE;
+            db.execute("BEGIN IMMEDIATE")
+            # Another process may have migrated while this one waited for the lock.
+            if db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION:
+                db.execute("COMMIT")
+                return
+            script = ("""
                 CREATE TABLE IF NOT EXISTS offers (
                   id TEXT PRIMARY KEY, seller_id TEXT NOT NULL, instrument_id TEXT NOT NULL,
                   asset_base TEXT NOT NULL, chain_genesis TEXT NOT NULL,
@@ -215,8 +219,13 @@ class OrderLedger:
                 CREATE TABLE order_notes (
                   order_id TEXT PRIMARY KEY REFERENCES orders(id),
                   note TEXT NOT NULL, updated_at INTEGER NOT NULL
-                );
+                )
             """)
+            # execute() keeps the explicit transaction open; executescript()
+            # would commit it first. The DDL contains no literal semicolons.
+            for statement in script.split(";"):
+                if statement.strip():
+                    db.execute(statement)
             if db.execute("PRAGMA foreign_key_check").fetchall():
                 raise OrderError("ledger migration would break references")
             db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")

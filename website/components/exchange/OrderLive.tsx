@@ -60,6 +60,11 @@ export function OrderLive({ initial, csrf }: { initial: PrivateOrder; csrf: stri
         <small className="exchange-footnote">Requesting the purchase starts eligibility verification. You will still approve the exact trade in your wallet.</small>
       </div>}
 
+      {order.viewer === "buyer" && !order.executionMode &&
+        ["BUYER_REQUESTED", "BUYER_CONFIRMED", "PROOF_VERIFIED", "TRADE_AUTHORIZED"].includes(order.state) &&
+        <div className="exchange-actions"><button className="exchange-link-button" type="button" disabled={busy}
+          onClick={() => act(`/api/exchange/orders/${order.id}/cancel`)}>Cancel before wallet approval</button></div>}
+
       {order.awaitingWallet && <div className={`exchange-alert ${mine ? "is-action" : ""}`}>
         {mine ? <>
           <strong>Approve in your wallet companion</strong>
@@ -84,7 +89,7 @@ export function OrderLive({ initial, csrf }: { initial: PrivateOrder; csrf: stri
           <div><span>Transaction</span><strong className="exchange-hash">{order.receipt.txid}</strong></div>
           <div><span>Block</span><strong>Height {order.receipt.height.toLocaleString("en-US")} · {order.receipt.confirmations} confirmations</strong></div>
           <div><span>Approval</span><strong>{mode(order.receipt.approvalMode)}</strong></div>
-          {order.effects && <div><span>Your wallet change</span><strong>{order.effects.assetUnits > 0 ? "+" : ""}{order.effects.assetUnits} units{order.effects.nativeZat !== null ? ` · ${order.effects.nativeZat > 0 ? "+" : ""}${zat(order.effects.nativeZat)}` : ""}</strong></div>}
+          {order.effects && <div><span>Your wallet change</span><strong>{order.effects.assetUnits > 0 ? "+" : ""}{order.effects.assetUnits} unit{Math.abs(order.effects.assetUnits) === 1 ? "" : "s"}{order.effects.nativeZat !== null ? ` · ${order.effects.nativeZat > 0 ? "+" : ""}${zat(order.effects.nativeZat)}` : ""}</strong></div>}
           <div><span>Restart durability</span><strong>{order.receipt.durability ? "Covered by the node's stable anchor (not consensus finality)" : "Pending"}</strong></div>
         </div>
         <Link href={order.viewer === "buyer" ? "/exchange/portfolio" : "/seller"}>View {order.viewer === "buyer" ? "portfolio" : "seller desk"} ↗</Link>

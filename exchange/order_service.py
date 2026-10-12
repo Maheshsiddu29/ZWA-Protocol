@@ -24,9 +24,10 @@ import json
 import os
 from pathlib import Path
 import signal
+import secrets
+import string
 import subprocess
 import sys
-import tempfile
 import time
 
 from checkout.api import SessionError, read_authorization, read_scans, read_session
@@ -623,7 +624,16 @@ class OrderService:
         """Fresh independent buyer and seller scans for every issued asset."""
         scans = self.config.exchange / "rescans"
         scans.mkdir(mode=0o700, exist_ok=True)
-        scan_dir = Path(tempfile.mkdtemp(prefix="scan.", dir=scans))
+        # Same shape as the operator rescan's mktemp scan.XXXXXX, which the
+        # portal requires before it will consider a scan directory.
+        alphabet = string.ascii_letters + string.digits
+        while True:
+            scan_dir = scans / ("scan." + "".join(secrets.choice(alphabet) for _ in range(6)))
+            try:
+                scan_dir.mkdir(mode=0o700)
+                break
+            except FileExistsError:
+                continue
         for instrument in INSTRUMENTS:
             for role in ("buyer", "seller"):
                 self._scan(role, self.assets[instrument], scan_dir / f"{instrument}-{role}.log")

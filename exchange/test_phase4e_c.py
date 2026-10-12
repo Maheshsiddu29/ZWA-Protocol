@@ -563,6 +563,19 @@ class PortalTests(Phase4ECBase):
 
 
 class MigrationTests(unittest.TestCase):
+    def test_concurrent_first_open_creates_and_migrates_once(self):
+        from concurrent.futures import ThreadPoolExecutor
+        root = Path("/private/tmp/zwa4e-test-" + secrets.token_hex(6))
+        root.mkdir(mode=0o700)
+        self.addCleanup(shutil.rmtree, root, True)
+        path = root / "exchange.sqlite"
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            ledgers = list(pool.map(lambda _: OrderLedger(path), range(6)))
+        self.assertEqual(len(ledgers), 6)
+        db = sqlite3.connect(path)
+        self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 3)
+        self.assertEqual(db.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+
     def test_v2_ledger_rows_and_history_survive_v3_migration(self):
         root = Path("/private/tmp/zwa4e-test-" + secrets.token_hex(6))
         root.mkdir(mode=0o700)
