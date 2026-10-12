@@ -215,3 +215,42 @@ h1,h2,h3,h4 { font-optical-sizing:auto; }
 .fingerprint-motion { position:relative; left:auto; top:auto; width:94px; height:94px; flex:none; }
 .rings-motion { position:relative; width:min(78%,490px); height:auto; aspect-ratio:1; }
 @media(max-width:390px) { .fingerprint-motion { width:66px; height:66px; } .footer-bottom span { display:block; margin-top:6px; } }
+.checkout-live { border:1px solid #e1e2e6; box-shadow:0 20px 70px rgba(20,30,55,.04); }
+.checkout-live-head { margin-bottom:30px; }
+.checkout-live-head>div { max-width:710px; }
+.checkout-live-head h2 { margin:12px 0 18px; }
+.checkout-live h3 { font-size:clamp(24px,2.4vw,34px); margin:8px 0 14px; }
+.checkout-empty { display:grid; grid-template-columns:180px 1fr; align-items:center; gap:36px; padding:35px; background:#f4f5f7; }
+.checkout-empty img { width:100%; max-height:160px; object-fit:contain; }
+.checkout-empty p { color:var(--body); }
+.checkout-progress { display:grid; grid-template-columns:repeat(6,1fr); border-block:1px solid var(--line); margin:24px 0 36px; }
+.checkout-progress span { padding:16px 8px; border-right:1px solid var(--line); font-size:11px; font-weight:700; color:#8b8c92; text-transform:uppercase; letter-spacing:.04em; }
+.checkout-progress span.reached { color:var(--blue); background:#f1f5ff; }
+.checkout-product-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; margin:18px 0; }
+.checkout-product-grid>section,.checkout-quote,.checkout-receipt { padding:30px; background:#f7f8fa; min-width:0; }
+.checkout-asset img { display:block; height:130px; max-width:100%; margin:8px 0; }
+.checkout-asset p,.checkout-approval p,.checkout-verification p,.checkout-receipt p { color:var(--body); }
+.checkout-data { border-top:1px solid var(--line); padding:13px 0; }
+.checkout-data span,.checkout-quote-grid span { display:block; color:#777; font-size:12px; }
+.checkout-data strong { display:block; margin-top:5px; overflow-wrap:anywhere; }
+.verification-note { border-left:3px solid #d4941a; padding:12px 17px; background:#fff7e8; }
+.verification-note strong { color:#754d00; }
+.verification-note p { margin:8px 0 0; font-size:13px; }
+.checkout-facts { margin:20px 0 0; }
+.checkout-facts div { display:flex; justify-content:space-between; gap:20px; padding:11px 0; border-bottom:1px solid var(--line); font-size:12px; }
+.checkout-facts dt { color:#777; }.checkout-facts dd { margin:0; font-weight:650; text-align:right; }
+.checkout-quote-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:0 24px; }
+.checkout-quote-grid div { padding:14px 0; border-top:1px solid var(--line); }
+.checkout-quote-grid strong { display:block; font-size:20px; letter-spacing:-.03em; }
+.checkout-quote-grid .total { grid-column:1/-1; color:var(--blue); }
+.checkout-quote details,.checkout-history { margin-top:18px; padding-top:14px; border-top:1px solid var(--line); font-size:13px; }
+.checkout-quote code,.checkout-history code { overflow-wrap:anywhere; }
+.checkout-stage { display:block; padding:12px; margin:20px 0; background:#eaf0ff; color:#0044bc; font-size:12px; letter-spacing:.07em; }
+.checkout-approval small { color:#777; }
+.checkout-settlement ol { padding:0; margin:0; list-style:none; }
+.checkout-settlement li { display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-top:1px solid var(--line); color:#888; font-size:12px; }
+.checkout-settlement li.done { color:#0354ce; }.checkout-settlement li strong { font-size:10px; text-transform:uppercase; }
+.checkout-receipt { background:#eef3ff; }
+.checkout-receipt .checkout-live-grid { margin-top:18px; }
+@media(max-width:900px) { .checkout-progress { grid-template-columns:repeat(3,1fr); }.checkout-product-grid { grid-template-columns:1fr; } }
+@media(max-width:520px) { .checkout-empty { grid-template-columns:1fr; padding:20px; }.checkout-empty img { width:130px; }.checkout-quote-grid { grid-template-columns:1fr; }.checkout-quote-grid .total { grid-column:auto; }.checkout-progress { grid-template-columns:repeat(2,1fr); }.checkout-product-grid>section,.checkout-quote,.checkout-receipt { padding:20px; } }

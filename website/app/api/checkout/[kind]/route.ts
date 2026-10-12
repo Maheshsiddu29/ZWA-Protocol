@@ -6,6 +6,7 @@ const paths: Record<string, string> = {
   quote: "/v1/checkout/sample-quote",
   session: "/v1/checkout/sessions/recorded-phase35h",
   receipt: "/v1/checkout/sessions/recorded-phase35h/receipt",
+  active: "/v1/checkout/active",
 };
 export async function GET(_request: Request, { params }: { params: Promise<{ kind: string }> }) {
   const { kind } = await params;
