@@ -1,73 +1,39 @@
-# ZWA Protocol — website
+# ZWA Protocol website (Phase 4 local integration)
 
-Marketing site for ZWA Protocol: *Prove what is permitted. Keep everything else private.*
+This Next.js site is a local-only, review-stage redesign on `integration/phase4-brand-website`. It imports the team website subtree from `origin/fix/m3-remediation` onto the checkout/verifier backend HEAD and integrates selected official assets from the untracked `design-assets/` package. It does not publish, sign, purchase, or broadcast.
 
-Next.js 15 (App Router, static pages) · React 19 · TypeScript · Tailwind CSS 4 · Motion · React Bits · Lucide.
+## Start
 
-```bash
-cd website
+From this directory:
+
+```sh
 npm ci
-npm run dev      # http://localhost:3000
-npm run build && npm run start
-npm run lint     # tsc --noEmit
+npm run lint
+npm run build
+./node_modules/.bin/next start -H 127.0.0.1 -p 3210
 ```
 
-This is separate from `frontend/`, which is reserved for the Colosseum demo.
+For the live verifier demo, in a second terminal from the **original backend checkout**:
 
-## Pages
+```sh
+cd lineage
+ZWA_CHAIN_VIEW=A7 ZWA_DEMO_ENABLED=true ./target/debug/zwa-lineage-api
+```
 
-| Route | What it answers |
-|---|---|
-| `/` | The 8-section homepage: hero, problem, how it works, privacy model (with the scroll-driven Privacy Boundary), lineage, architecture, research, final call to action |
-| `/protocol` | What ZWA is, in four chapters: issuance, compliance, private market coordination, settlement |
-| `/research` | Research archive with topic filters |
-| `/developers` | Illustrative interface (two-line code block, clearly labelled) |
-| `/demo` | Simulated settlement walkthrough. No proofs, no network calls, no transactions |
-| `/about` | Brand personality traits |
-| `/privacy`, `/terms` | Legal pages linked from the footer |
+For read-only checkout evidence, in a third terminal from the original backend checkout:
 
-## Design tokens
+```sh
+python3 -m checkout.api --demo --port 18745
+```
 
-| Role | Colour | Use |
-|---|---|---|
-| Void Navy | `#070A12` | Main page background |
-| Deep Navy | `#0B1020` | Alternate sections |
-| Surface | `#111827` | Cards / panels |
-| Elevated Surface | `#172033` | Interactive components |
-| Border | `#253047` | Hairlines / card borders |
-| Cobalt Blue | `#2563EB` | Primary brand accent |
-| Bright Cobalt | `#3B82F6` | Hover / active / animated states |
-| Electric Blue | `#60A5FA` | Highlights / proof flows |
-| Primary White | `#F8FAFC` | Main headings |
-| Secondary Gray | `#94A3B8` | Body copy |
-| Muted Gray | `#64748B` | Labels / metadata |
+The website proxies the verifier on `http://127.0.0.1:3000` and checkout on `http://127.0.0.1:18745`. Override only to another loopback HTTP origin with `ZWA_VERIFIER_URL` or `ZWA_CHECKOUT_URL` before starting Next.js. A local verifier binary must be built from `lineage/` if it is not already present; see `docs/phase3-api.md`. The checkout API can serve the recorded session without a running regtest node, but then live node availability is unavailable and recorded receipt finality is `UNKNOWN`.
 
-Research status colours (Established `#60A5FA`, Conditional `#A5B4FC`, Research `#D8B568`, Open `#64748B`) are always shown with a text label, never as colour alone. Tokens live in `app/globals.css` (`@theme`).
+## Scope and trust boundaries
 
-Type: Manrope for UI and headings, IBM Plex Mono for hashes, labels and status. Both are self-hosted through Fontsource, so there are no external font requests.
+- The verifier demo uses `/v1/demo/scenarios`, `/v1/demo/run`, and `/v1/lineage/verify` through explicit server routes. The browser cannot select arbitrary upstream paths.
+- The checkout panel uses exactly four read-only GET paths. It has no buy, wallet, signer, or dispatch control.
+- A `VERIFIED` verdict concerns the supported rooted-lineage relation in the configured pinned research view. The API separately returns investor eligibility `NOT_EVALUATED` and settlement `NOT_EXECUTED`.
+- The recorded checkout receipt is historical disposable regtest evidence. Purchased-note rooted lineage is `UNSUPPORTED`, investor eligibility `NOT_EVALUATED`, and current finality `UNKNOWN` when the node is stopped.
+- Source brand files stay in the original `design-assets/`; only selected production copies are in `public/`.
 
-## Logo
-
-`components/ui/Logo.tsx` holds the ZWA mark as a vector, redrawn from the supplied artwork. Brand blue is `#0055FF`. Standalone files are `public/zwa-mark.svg` and `public/zwa-mark-white.svg`; the favicon is `app/icon.svg`.
-
-## Motion
-
-There are four animation classes: **Reveal** (`components/motion/Reveal`), **Proof** (the hero `ProofBoundary`), **Privacy** (`FieldStack`, `PrivacyBoundary`) and **Chain** (`LineageGraph`, `ProtocolFlow`).
-
-- Everything respects `prefers-reduced-motion` and renders a meaningful static state.
-- The hero background (`EncryptedField`) is Canvas 2D, pauses when off-screen, and uses no WebGL.
-
-React Bits components used (adapted, see `THIRD_PARTY_NOTICES.md`):
-- `BlurText`: two headings only;
-- `SpotlightCard`: research cards, low intensity;
-- `Magnet`: primary call to action, disabled on touch and reduced motion;
-
-## Claim discipline
-
-The copy follows the repository's `AGENTS.md`:
-- no production or mainnet ZSA claims;
-- no claim that consensus enforces compliance;
-- no claim of full recursive lineage;
-- no SDK presented as published.
-
-Statuses come from `lib/research.ts`. Update them there when a milestone changes.
+See `docs/ASSET-INVENTORY.md` for source-to-site mapping and missing video files.
