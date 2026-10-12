@@ -11,7 +11,7 @@ import tempfile
 import threading
 import unittest
 
-from .api import Engine, NodeUnavailable, PINNED_GENESIS, RECORDED_HUMAN_ID, RECORDED_ID, SessionError, handler_for, read_events, read_scans, read_session, recorded
+from .api import Engine, NodeUnavailable, PINNED_GENESIS, RECORDED_HUMAN_ID, RECORDED_ID, SessionError, handler_for, read_authorization, read_events, read_scans, read_session, recorded
 from .observe import append
 from .scans import write as write_scans
 from .quote import InvalidQuote, digest, from_terms, validate
@@ -110,6 +110,25 @@ class SessionTests(unittest.TestCase):
 
     def write(self, value):
         self.path.write_text(json.dumps(value))
+
+    def test_authorization_result_requires_exact_session_and_status_schema(self):
+        auth_path = Path(self.temp.name) / "authorization.json"
+        self.assertIsNone(read_authorization(auth_path, self.quote["quoteDigest"]))
+        result = {"version": 2, "issuerAuthentication": "VERIFIED",
+                  "issuanceProvenance": "VERIFIED",
+                  "credentialAuthorityAuthentication": "VERIFIED",
+                  "investorEligibility": "VERIFIED",
+                  "exactTradeAuthorization": "VERIFIED",
+                  "quoteDigest": self.quote["quoteDigest"],
+                  "tradeCommitment": "123", "rootedNoteLineage": "UNSUPPORTED"}
+        auth_path.write_text(json.dumps(result))
+        self.assertEqual(read_authorization(auth_path, self.quote["quoteDigest"]), result)
+        with self.assertRaises(SessionError):
+            read_authorization(auth_path, "00" * 32)
+        result["investorEligibility"] = "VERIFIED_BY_UI"
+        auth_path.write_text(json.dumps(result))
+        with self.assertRaises(SessionError):
+            read_authorization(auth_path, self.quote["quoteDigest"])
 
     def test_missing_corrupt_duplicate_and_receipt_mismatch(self):
         self.assertIsNone(read_session(self.path))

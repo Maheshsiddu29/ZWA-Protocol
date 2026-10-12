@@ -119,6 +119,30 @@ def read_session(path: Path | None) -> dict | None:
     return data
 
 
+def read_authorization(path: Path | None, session_id: str) -> dict | None:
+    if path is None or not path.exists():
+        return None
+    if path.is_symlink() or path.stat().st_size > 8192:
+        raise SessionError("unsafe authorization result")
+    try:
+        data = json.loads(path.read_bytes())
+    except (OSError, ValueError) as exc:
+        raise SessionError("invalid authorization result") from exc
+    expected = {"version", "issuerAuthentication", "issuanceProvenance",
+                "credentialAuthorityAuthentication", "investorEligibility",
+                "exactTradeAuthorization", "quoteDigest", "tradeCommitment",
+                "rootedNoteLineage"}
+    if (type(data) is not dict or set(data) != expected or data["version"] != 2
+            or data["quoteDigest"] != session_id
+            or any(data[key] != "VERIFIED" for key in expected if key.endswith("Authentication")
+                   or key in ("issuanceProvenance", "investorEligibility", "exactTradeAuthorization"))
+            or data["rootedNoteLineage"] != "UNSUPPORTED"
+            or not isinstance(data["tradeCommitment"], str)
+            or not data["tradeCommitment"].isdigit()):
+        raise SessionError("authorization result schema or quote mismatch")
+    return data
+
+
 PUBLIC_STAGES = (
     "SESSION_PREPARED", "AWAITING_BUYER_APPROVAL", "BUYER_AUTHORIZED",
     "AWAITING_SELLER_APPROVAL", "SELLER_AUTHORIZED", "TRANSACTION_SUBMITTED",
@@ -226,11 +250,12 @@ def _receipt_view(quote: dict, receipt: dict, status: str, finality: str,
 
 class Engine:
     def __init__(self, session_path: Path | None, rpc: Rpc, event_path: Path | None = None,
-                 scans_path: Path | None = None):
+                 scans_path: Path | None = None, authorization_path: Path | None = None):
         self.session_path = session_path
         self.rpc = rpc
         self.event_path = event_path
         self.scans_path = scans_path
+        self.authorization_path = authorization_path
 
     def availability(self) -> dict:
         try:
@@ -369,6 +394,7 @@ class Engine:
             if session["receipt"] is not None and any(stage in FAILURE_STAGES for stage in stages):
                 raise SessionError("failure event conflicts with accepted receipt")
             scans = read_scans(self.scans_path, session) if session["receipt"] is not None else None
+            authorization = read_authorization(self.authorization_path, session["sessionId"])
         except SessionError:
             return {"error": {"code": "INVALID_SESSION_OBSERVATION"}}, 503
         view, code = self.live(session)
@@ -376,6 +402,10 @@ class Engine:
             view["operatorStages"] = stages
             view["operatorStage"] = stages[-1]
             view["approvalEvidence"] = approval_mode
+        if authorization is not None:
+            view["authorization"] = authorization
+            if isinstance(view.get("receipt"), dict):
+                view["receipt"]["investorEligibility"] = "VERIFIED"
         if scans is not None and code == 200 and view.get("status") in ("PENDING_FINALITY", "FINALIZED"):
             view["walletScans"] = scans
             view["receipt"]["walletScans"] = scans
@@ -449,12 +479,14 @@ def main() -> None:
     parser.add_argument("--session-result", type=Path)
     parser.add_argument("--event-result", type=Path)
     parser.add_argument("--wallet-scans", type=Path)
+    parser.add_argument("--authorization-result", type=Path)
     args = parser.parse_args()
     if not args.demo:
         parser.error("disabled without --demo")
     if not 1 <= args.port <= 65535:
         parser.error("invalid API port")
-    engine = Engine(args.session_result, Rpc(args.rpc_port), args.event_result, args.wallet_scans)
+    engine = Engine(args.session_result, Rpc(args.rpc_port), args.event_result,
+                    args.wallet_scans, args.authorization_result)
     server = ThreadingHTTPServer(("127.0.0.1", args.port), handler_for(engine, args.port))
     print(f"Phase 3.5G read-only demo on http://127.0.0.1:{args.port}", flush=True)
     server.serve_forever()
