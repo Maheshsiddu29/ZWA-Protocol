@@ -1,5 +1,7 @@
 # Phase 4B implementation and evidence report
 
+> This is the pre-recovery snapshot. The trusted parameter path was recovered and two fresh scripted checkouts passed on 2026-10-12. See [Phase 4B recovery report](phase4b-recovery-report.md) for the current evidence and human handoff. No new human wallet approvals have been given.
+
 ## Verdict and source state
 
 **PARTIAL / BLOCKED** as of 2026-10-12. The local product implementation, read-only UI observation, and regression tests are in place. A new accepted transaction and a second repeat run are **not yet evidenced**. The first new scripted test-mode attempt stopped before funding because the existing `~/.local/share/ZcashParams` link points to a missing directory; the pinned tx-tool reported `Zcash parameters not found`. No parameter fetch script was run. The owner has not yet supplied buyer and seller approvals for this Phase 4B run. Do not classify this as `REAL_WALLET_E2E_WITH_SEPARATE_LINEAGE_EVIDENCE` until a new accepted regtest transaction, wallet scans, and human decisions are recorded.

@@ -7,7 +7,7 @@ This flow uses disposable regtest wallets and the pinned experimental Zebra imag
 - Use macOS with `docker`, `sandbox-exec`, `sqlite3`, `curl`, `rg`, Python 3 and a current Node.js. Run the signer flow in a real interactive terminal.
 - Use the isolated tx-tool checkout at `/private/tmp/zwa35c-tx-tool`, revision `3dd2a010fd557ef15a68915e42fec8289dc7d7d2`, with its existing executable `target/release/zcash_tx_tool`. The launcher checks the revision.
 - The pinned Zebra image is `sha256:540a3429ef14ff3c575258255e4310951606d16c86ec5e1c37e285ea95178185`. The launcher checks it before creating wallets.
-- Point `PARAMS_DATA_HOME` to an existing trusted XDG data directory containing readable `ZcashParams/sapling-spend.params` and `ZcashParams/sapling-output.params`. The launcher fails before wallet creation if either is absent. Do not run the quarantined `fetch-params.sh`.
+- Point `PARAMS_DATA_HOME` to an existing trusted XDG data directory containing readable `ZcashParams/sapling-spend.params` and `ZcashParams/sapling-output.params`. Both launchers check the pinned SHA-256 values before wallet creation and fail if either file is absent or changed. In this workspace the data home is `/Users/mahesh/Desktop/Colosseum/ZWA/zsa-feasibility/.local/share`. Do not run the quarantined `fetch-params.sh`.
 - The chosen `ROOT` must be a **new** direct child of `/private/tmp` whose name begins `zwa4b-`. It will contain private seeds and wallet databases. Never add it to Git or share it.
 - Confirm the default ports 18255 (Zebra), 18745 (checkout API), 3000 (verifier) and 3210 (website) are free. The signer API and Zebra bind loopback only.
 
@@ -19,7 +19,7 @@ From `ZWA-Brand-Integration/website`:
 npm ci
 npm run lint
 npm run build
-./node_modules/.bin/next start -H 127.0.0.1 -p 3210
+ZWA_CHECKOUT_URL=http://127.0.0.1:18748 ./node_modules/.bin/next start -H 127.0.0.1 -p 3212
 ```
 
 In another terminal, from `ZWA-Brand-Integration/lineage`:
@@ -28,19 +28,22 @@ In another terminal, from `ZWA-Brand-Integration/lineage`:
 ZWA_CHAIN_VIEW=A7 ZWA_DEMO_ENABLED=true ./target/debug/zwa-lineage-api
 ```
 
-Build the pinned verifier first using `docs/phase3-api.md` if the binary is absent. Check `http://127.0.0.1:3000/health/ready` and open `http://127.0.0.1:3210/demo`. The verifier panel can run its real A7 fixture, but its result is **independent research evidence**.
+Build the pinned verifier first using `docs/phase3-api.md` if the binary is absent. Check `http://127.0.0.1:3000/health/ready` and open `http://127.0.0.1:3212/demo`. The verifier panel can run its real A7 fixture, but its result is **independent research evidence**.
 
 ## Prepare and execute one fresh session
 
 In a third real terminal from `ZWA-Brand-Integration/`:
 
 ```sh
-PARAMS_DATA_HOME=/absolute/path/to/trusted/xdg-data-home \
-ROOT=/private/tmp/zwa4b-owner-run-001 \
+PARAMS_DATA_HOME=/Users/mahesh/Desktop/Colosseum/ZWA/zsa-feasibility/.local/share \
+ROOT=/private/tmp/zwa4b-owner-run-002 \
+PORT=18258 API_PORT=18748 CONTAINER=zwa-phase4b-owner-002 \
 ./checkout/operator/phase4b-human-demo.sh
 ```
 
 Choose a new `ROOT` name on every run. The launcher starts a clean pinned Zebra container; creates buyer, seller and sponsor wallets with private homes and sandbox profiles; mines 100 funding blocks; funds buyer native ZEC; has seller issue 100 units of one new ZSA; mines issuance; scans starting balances; and prepares the exact 7-ZSA-for-10,000-zatoshi quote. The sponsor fee is 5,000 zatoshis; matcher fee is zero; buyer debit is exactly 10,000 zatoshis. No browser action starts these steps.
+
+The separate `checkout/operator/phase4b-scripted-validation.sh` requires `SCRIPTED_TEST_MODE=1` and uses the pinned signer's `--scripted-test-mode` acceptance flag. Its events and website view explicitly say `SCRIPTED_TEST_MODE`; they are never human approval evidence. The human launcher above has only `authorize-interactive` signer calls.
 
 The launcher starts the read-only checkout API and waits for `availability.state: AVAILABLE`. The site then discovers `GET /v1/checkout/active` through its same-origin proxy. It displays the newly generated AssetBase and quote digest. Keep the terminal open.
 
@@ -51,8 +54,8 @@ After both signers authorize, the coordinator receives the two signed Action Gro
 The launcher waits at `Press Enter` after success so the node and API remain live for judges. Use another terminal to inspect:
 
 ```sh
-curl -fsS http://127.0.0.1:18745/v1/checkout/active
-curl -fsS http://127.0.0.1:18745/v1/checkout/sessions/<actual-quote-digest>/receipt
+curl -fsS http://127.0.0.1:18748/v1/checkout/active
+curl -fsS http://127.0.0.1:18748/v1/checkout/sessions/<actual-quote-digest>/receipt
 ```
 
 The private run directory holds `exchange/api-depth3.json`, `exchange/api-receipt.json`, `exchange/public-scans.json`, `exchange/independent-block.json`, and `exchange/independent-transaction.json`. The latter transaction file may contain full transaction bytes and must stay local. The public scans and API views are observations from this one run, not permanent chain evidence after the node stops. Press Enter to stop the node and API. The site must return an unavailable state rather than replaying the old live success.
