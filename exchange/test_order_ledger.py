@@ -93,6 +93,70 @@ class OfferLedgerTests(unittest.TestCase):
                          [(1, "BUYER_REQUESTED"), (2, "QUOTE_READY"), (3, "CANCELLED")])
         self.assertEqual(reserved, 0)
 
+    def test_exact_order_lifecycle_replay_and_observed_wallet_effects(self):
+        order = self.ledger.request_purchase(
+            offer_id=self.offer["id"], buyer_id="buyer", quantity=self.quote["quantity"],
+            idempotency_key="lifecycle", chain_genesis="a" * 64)
+        self.ledger.attach_quote(order["id"], self.quote,
+                                 observed_height=self.quote["targetHeight"] - 1)
+        digest = self.quote["quoteDigest"]
+        evidence = [
+            ("QUOTE_READY", "PROOF_VERIFIED", {"quoteDigest":digest,
+                "tradeCommitment":"123", "verifierResultSha256":"c"*64}),
+            ("PROOF_VERIFIED", "TRADE_AUTHORIZED", {"quoteDigest":digest,
+                "assetBase":self.quote["assetId"], "buyerId":"buyer", "sellerId":"seller",
+                "tipHeight":self.quote["targetHeight"]-1}),
+            ("TRADE_AUTHORIZED", "BUYER_APPROVED", {"quoteDigest":digest,
+                "role":"buyer", "approvalMode":"SCRIPTED_TEST_MODE", "signerLogSha256":"d"*64}),
+            ("BUYER_APPROVED", "SELLER_APPROVED", {"quoteDigest":digest,
+                "role":"seller", "approvalMode":"SCRIPTED_TEST_MODE", "signerLogSha256":"e"*64}),
+            ("SELLER_APPROVED", "SUBMITTED", {"quoteDigest":digest,"txid":"f"*64}),
+            ("SUBMITTED", "INCLUDED", {"txid":"f"*64,"height":self.quote["targetHeight"],
+                "blockHash":"1"*64}),
+            ("INCLUDED", "RECONCILED", {"txid":"f"*64,
+                "buyerUnitsBefore":0,"buyerUnitsAfter":self.quote["quantity"],
+                "sellerUnitsBefore":7,"sellerUnitsAfter":7-self.quote["quantity"],
+                "sellerZatBefore":0,"sellerZatAfter":self.quote["paymentAmount"]}),
+            ("RECONCILED", "RECEIPT_AVAILABLE", {"quoteDigest":digest,"txid":"f"*64,
+                "height":self.quote["targetHeight"],"blockHash":"1"*64,
+                "approvalMode":"SCRIPTED_TEST_MODE"}),
+        ]
+        for prior, state, observed in evidence:
+            result = self.ledger.transition(order["id"], expected=prior,
+                                            state=state, evidence=observed)
+            self.assertEqual(result["state"], state)
+            self.assertEqual(self.ledger.transition(order["id"], expected=prior,
+                                                    state=state, evidence=observed)["state"],state)
+            with self.assertRaises(OrderError):
+                self.ledger.transition(order["id"], expected=prior,
+                                       state=state, evidence={**observed,"replay":True})
+        with self.assertRaises(OrderError):
+            self.ledger.close_before_approval(order["id"], buyer_id="buyer", state="CANCELLED")
+        detail = self.ledger.get_order(order["id"], participant_id="seller")
+        self.assertEqual(len(detail["events"]),10)
+        self.assertEqual(len(detail["evidence"]),8)
+        self.assertEqual(detail["reserved"],0)
+        self.assertEqual(detail["sold"],self.quote["quantity"])
+        with self.assertRaises(OrderError):
+            self.ledger.get_order(order["id"], participant_id="stranger")
+
+    def test_rejects_wrong_approval_and_unreconciled_effects(self):
+        order = self.ledger.request_purchase(
+            offer_id=self.offer["id"], buyer_id="buyer", quantity=self.quote["quantity"],
+            idempotency_key="negative", chain_genesis="a"*64)
+        self.ledger.attach_quote(order["id"], self.quote,
+                                 observed_height=self.quote["targetHeight"]-1)
+        self.ledger.transition(order["id"],expected="QUOTE_READY",state="PROOF_VERIFIED",
+                               evidence={"quoteDigest":self.quote["quoteDigest"],
+                                         "tradeCommitment":"123","verifierResultSha256":"c"*64})
+        with self.assertRaises(OrderError):
+            self.ledger.transition(order["id"],expected="PROOF_VERIFIED",state="TRADE_AUTHORIZED",
+                                   evidence={"quoteDigest":self.quote["quoteDigest"],
+                                             "assetBase":"0"*64,"buyerId":"buyer",
+                                             "sellerId":"seller","tipHeight":self.quote["targetHeight"]-1})
+        self.assertEqual(self.ledger.get_order(order["id"],participant_id="buyer")["state"],
+                         "PROOF_VERIFIED")
+
 
 if __name__ == "__main__":
     unittest.main()
