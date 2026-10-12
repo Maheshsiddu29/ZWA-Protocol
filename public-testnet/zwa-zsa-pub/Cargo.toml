@@ -1,0 +1,66 @@
+[package]
+name = "zwa-zsa-pub"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Isolated ZWA client for experimental ZSA issuance and shielded transfer on the community ZSA Testnet"
+publish = false
+
+# Standalone workspace: this crate pins the community ZSA crate graph and must
+# never unify with the ZWA protocol workspace or the pinned regtest tx tool.
+[workspace]
+
+[dependencies]
+# Community ZSA wallet library (Zkool, MIT, Hanh Huynh Huu), pinned to an
+# immutable revision. Default features (Flutter bridge, Nym transport) are off.
+# `bundled-sapling-params` compiles the Sapling parameters in, so signing
+# never reads a parameter directory or downloads anything.
+rlz = { git = "https://github.com/hhanh00/zkool2.git", rev = "51df4f0b356a886d5d2308811f215366ab648d65", default-features = false, features = ["bundled-sapling-params"] }
+
+anyhow = "1.0.97"
+clap = { version = "4.5", features = ["derive"] }
+hex = "0.4"
+nonempty = "0.11"
+orchard = "0.16"
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+tonic = { version = "0.14.0", features = ["tls-webpki-roots"] }
+zcash_address = "=0.14.0-pre.1"
+zcash_note_encryption = "0.5.1"
+zcash_primitives = { version = "=0.31.0-pre.1", features = ["transparent-inputs", "zsa"] }
+zcash_protocol = { version = "=0.11.0-pre.0", features = ["local-consensus"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+# Patches do not propagate from dependencies. These are copied from
+# zkool2@51df4f0 (minus the Nym/JWT/Ledger-emulator entries that the
+# disabled features never reach) so the ZSA crates resolve to the same immutable revisions the
+# wallet library was built and tested with.
+[patch.crates-io]
+orchard = { git = "https://github.com/zcash-shielded-assets/orchard.git", rev = "60697dd60ecbc14c7d8953316cea479944e605b8" }
+sapling-crypto = { git = "https://github.com/zcash-shielded-assets/sapling-crypto.git", rev = "8f2e47e0d7a3db15507825f4c49a540779c6082e" }
+zcash_note_encryption = { git = "https://github.com/zcash-shielded-assets/zcash_note_encryption.git", rev = "54d2360c3b16561d7c00167dc0af7358251469c9" }
+pczt = { git = "https://github.com/zcash-shielded-assets/librustzcash.git", rev = "53813b3a76546eabf2d1260d89436be7492a52dd" }
+zcash_client_backend = { git = "https://github.com/zcash-shielded-assets/librustzcash.git", rev = "53813b3a76546eabf2d1260d89436be7492a52dd" }
+zcash_client_sqlite = { git = "https://github.com/zcash-shielded-assets/librustzcash.git", rev = "53813b3a76546eabf2d1260d89436be7492a52dd" }
+zcash_address = { git = "https://github.com/zcash-shielded-assets/librustzcash.git", rev = "53813b3a76546eabf2d1260d89436be7492a52dd" }
+zcash_encoding = { git = "https://github.com/zcash-shielded-assets/librustzcash.git", rev = "53813b3a76546eabf2d1260d89436be7492a52dd" }
+zcash_keys = { git = "https://github.com/zcash-shielded-assets/librustzcash.git", rev = "53813b3a76546eabf2d1260d89436be7492a52dd" }
+zcash_primitives = { git = "https://github.com/zcash-shielded-assets/librustzcash.git", rev = "53813b3a76546eabf2d1260d89436be7492a52dd" }
+zcash_proofs = { git = "https://github.com/zcash-shielded-assets/librustzcash.git", rev = "53813b3a76546eabf2d1260d89436be7492a52dd" }
+zcash_protocol = { git = "https://github.com/zcash-shielded-assets/librustzcash.git", rev = "53813b3a76546eabf2d1260d89436be7492a52dd" }
+zcash_transparent = { git = "https://github.com/zcash-shielded-assets/librustzcash.git", rev = "53813b3a76546eabf2d1260d89436be7492a52dd" }
+zip321 = { git = "https://github.com/zcash-shielded-assets/librustzcash.git", rev = "53813b3a76546eabf2d1260d89436be7492a52dd" }
+zcash_spec = { git = "https://github.com/zcash-shielded-assets/zcash_spec", rev = "d5e84264d2ad0646b587a837f4e2424ca64d3a05" }
+halo2_gadgets = { git = "https://github.com/zcash-shielded-assets/halo2.git", rev = "0e3f1ea9dcba44fa4cd213b3f06b2aee3fc6e90e" }
+halo2_proofs = { git = "https://github.com/zcash-shielded-assets/halo2.git", rev = "0e3f1ea9dcba44fa4cd213b3f06b2aee3fc6e90e" }
+halo2_poseidon = { git = "https://github.com/zcash-shielded-assets/halo2.git", rev = "0e3f1ea9dcba44fa4cd213b3f06b2aee3fc6e90e" }
+voting-circuits = { git = "https://github.com/hhanh00/voting-circuits.git", rev = "f117ad8eb502385aec46d94585aae55be059c342" }
+voting-crypto-deps = { git = "https://github.com/hhanh00/voting-circuits.git", rev = "f117ad8eb502385aec46d94585aae55be059c342" }
+
+[profile.release]
+debug = false
