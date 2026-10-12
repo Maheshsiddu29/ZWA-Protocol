@@ -1,0 +1,37 @@
+{
+  "outcome": "ACCEPTED",
+  "quote": {
+    "assetId": "18f9a9c9f6cfcff0416560beddfd6b31c10b37d83cfc32ee9d9b1b01b0bcd834",
+    "buyerReceivingCommitment": "146121352c001aa36b79bef9a8430259ec6a19e4799d3bf5430e317f85c18fdb",
+    "consensusBranchId": 2290649224,
+    "feePayer": "DISPOSABLE_REGTEST_SPONSOR",
+    "groupExpiry": 113,
+    "matcherFee": 0,
+    "maximumTotalDebit": 10000,
+    "network": "regtest",
+    "networkFee": 5000,
+    "paymentAmount": 10000,
+    "paymentAsset": "ZEC",
+    "quantity": 7,
+    "quoteDigest": "bcfeece4d3e52834990a51780e772fd46d8b85ac90255e71b6f854afa9707f0d",
+    "quoteId": "53687f91a5f1f8aa9be7f960c8910a0516bf90296ee08e3862c36a0a38a85e86",
+    "sellerProceedsCommitment": "c69e3f0dce225da6a03a1cb51dbcd9fefa48a8a65d466d9e0c95a5b881ada218",
+    "sponsorChange": 624995000,
+    "sponsorInput": 625000000,
+    "sponsorOutpointIndex": 0,
+    "sponsorOutpointTxid": "52d16b3f37b8e0a2cc1cf889b5ac7f8be6de18aef724fd601afbef1d9843cf6e",
+    "targetHeight": 103,
+    "transactionExpiry": 143,
+    "version": 1
+  },
+  "receipt": {
+    "block_hash": "7ece7eadb0fda860e9d2f49add753174da9a04d4e64a4a1c3ced90e15f0cd13a",
+    "height": 103,
+    "terms_hash": "bcfeece4d3e52834990a51780e772fd46d8b85ac90255e71b6f854afa9707f0d",
+    "tx_bytes": 28060,
+    "txid": "aaeb15b837d5b44fc6aaf6d88b36ac9b802cd53e6cd2cf292ef8450db6826dfd"
+  },
+  "sessionId": "bcfeece4d3e52834990a51780e772fd46d8b85ac90255e71b6f854afa9707f0d",
+  "source": "LIVE_LOCAL_CLI",
+  "version": 1
+}

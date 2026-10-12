@@ -17,6 +17,7 @@ from typing import Any
 from .quote import InvalidQuote, from_terms, validate
 
 RECORDED_ID = "recorded-phase35f"
+RECORDED_HUMAN_ID = "recorded-phase35h"
 ROOT = Path(__file__).resolve().parent
 MAX_SESSION_BYTES = 16_384
 MAX_RPC_BYTES = 262_144
@@ -123,10 +124,19 @@ def recorded() -> tuple[dict, dict]:
     return quote, data["receipt"]
 
 
+def recorded_human() -> tuple[dict, dict]:
+    """Public evidence from the owner-operated Phase 3.5H disposable run."""
+    session = read_session(ROOT / "recorded-phase35h.json")
+    if session is None or session["outcome"] != "ACCEPTED":
+        raise SessionError("recorded human receipt unavailable")
+    return session["quote"], session["receipt"]
+
+
 def _receipt_view(quote: dict, receipt: dict, status: str, finality: str,
-                  source: str, confirmations: int | None = None) -> dict:
+                  source: str, confirmations: int | None = None,
+                  session_id: str | None = None) -> dict:
     return {
-        "sessionId": quote["quoteDigest"], "quoteDigest": quote["quoteDigest"],
+        "sessionId": session_id or quote["quoteDigest"], "quoteDigest": quote["quoteDigest"],
         "purchaseSettlement": "ACCEPTED" if status in {"ACCEPTED", "PENDING_FINALITY", "FINALIZED", "RECORDED_REGTEST_EVIDENCE"} else status,
         "rootedLineage": "UNSUPPORTED", "investorEligibility": "NOT_EVALUATED",
         "finality": finality, "trustSource": "EXPERIMENTAL_REGTEST",
@@ -234,12 +244,15 @@ class Engine:
         if len(parts) not in (1, 2) or (len(parts) == 2 and parts[1] != "receipt"):
             return {"error": {"code": "NOT_FOUND"}}, 404
         session_id = parts[0]
-        if session_id == RECORDED_ID:
+        if session_id in (RECORDED_ID, RECORDED_HUMAN_ID):
+            if session_id == RECORDED_HUMAN_ID:
+                quote, historical_receipt = recorded_human()
             receipt = _receipt_view(quote, historical_receipt, "RECORDED_REGTEST_EVIDENCE",
-                                    "UNKNOWN", "RECORDED_REGTEST_EVIDENCE")
+                                    "UNKNOWN", "RECORDED_REGTEST_EVIDENCE",
+                                    session_id=session_id)
             if len(parts) == 2:
                 return receipt, 200
-            return {"sessionId": RECORDED_ID, "status": "RECORDED_REGTEST_EVIDENCE",
+            return {"sessionId": session_id, "status": "RECORDED_REGTEST_EVIDENCE",
                     "availability": self.availability(), "quote": quote,
                     "receipt": receipt, "actionable": False}, 200
         if not HEX.fullmatch(session_id):

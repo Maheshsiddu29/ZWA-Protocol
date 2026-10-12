@@ -11,7 +11,7 @@ import tempfile
 import threading
 import unittest
 
-from .api import Engine, NodeUnavailable, PINNED_GENESIS, RECORDED_ID, SessionError, handler_for, read_session, recorded
+from .api import Engine, NodeUnavailable, PINNED_GENESIS, RECORDED_HUMAN_ID, RECORDED_ID, SessionError, handler_for, read_session, recorded
 from .quote import InvalidQuote, digest, from_terms, validate
 from http.server import ThreadingHTTPServer
 
@@ -172,10 +172,17 @@ class SessionTests(unittest.TestCase):
 
     def test_historical_is_never_live_session(self):
         engine = Engine(None, FakeRpc(unavailable=True))
-        view, code = engine.route(f"/v1/checkout/sessions/{RECORDED_ID}")
-        self.assertEqual((code, view["status"], view["receipt"]["finality"]),
-                         (200, "RECORDED_REGTEST_EVIDENCE", "UNKNOWN"))
-        self.assertFalse(view["actionable"])
+        for session_id, txid in ((RECORDED_ID, "99d9982716cbbeb1937691fef76511f0485e527c7cce4961e4510c1b9f21fb25"),
+                                 (RECORDED_HUMAN_ID, "aaeb15b837d5b44fc6aaf6d88b36ac9b802cd53e6cd2cf292ef8450db6826dfd")):
+            with self.subTest(session_id=session_id):
+                view, code = engine.route(f"/v1/checkout/sessions/{session_id}")
+                self.assertEqual((code, view["status"], view["receipt"]["finality"]),
+                                 (200, "RECORDED_REGTEST_EVIDENCE", "UNKNOWN"))
+                self.assertEqual(view["receipt"]["sessionId"], session_id)
+                self.assertEqual(view["receipt"]["txid"], txid)
+                self.assertFalse(view["actionable"])
+                receipt_view, receipt_code = engine.route(f"/v1/checkout/sessions/{session_id}/receipt")
+                self.assertEqual((receipt_code, receipt_view), (200, view["receipt"]))
 
 
 class BrowserTests(unittest.TestCase):
