@@ -1,0 +1,135 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+<defs><linearGradient id="page" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#fbfcfd"/></linearGradient><linearGradient id="blueband" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#f4f9ff"/><stop offset="1" stop-color="#fcfdff"/></linearGradient><linearGradient id="purpleband" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#fbf8ff"/><stop offset="1" stop-color="#fffefe"/></linearGradient><linearGradient id="greenband" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#f5fbf6"/><stop offset="1" stop-color="#fcfefc"/></linearGradient>
+<marker id="mb" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L8 4L0 8Z" fill="#0969da"/></marker>
+<marker id="mp" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L8 4L0 8Z" fill="#8250df"/></marker>
+<marker id="mg" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L8 4L0 8Z" fill="#1a7f37"/></marker>
+<clipPath id="crop"><rect x="20" y="20" width="1560" height="860" rx="24"/></clipPath></defs>
+<rect x="0" y="0" width="1600" height="900" rx="0" fill="url(#page)" stroke="none" stroke-width="1"/>
+<rect x="20" y="20" width="1560" height="860" rx="24" fill="white" stroke="#d0d7de" stroke-width="1"/>
+<g clip-path="url(#crop)">
+<rect x="20" y="20" width="1560" height="286" rx="0" fill="url(#blueband)" stroke="none" stroke-width="1"/>
+<rect x="20" y="306" width="1560" height="286" rx="0" fill="url(#purpleband)" stroke="none" stroke-width="1"/>
+<rect x="20" y="592" width="1560" height="286" rx="0" fill="url(#greenband)" stroke="none" stroke-width="1"/>
+<g transform="translate(20 20)"><line x1="470" y1="165" x2="535" y2="165" stroke="#0969da" stroke-width="1.8" marker-end="url(#mb)" stroke-linecap="round"/></g>
+<g transform="translate(20 20)"><line x1="770" y1="165" x2="835" y2="165" stroke="#0969da" stroke-width="1.8" marker-end="url(#mb)" stroke-linecap="round"/></g>
+<g transform="translate(20 20)"><line x1="1070" y1="165" x2="1135" y2="165" stroke="#0969da" stroke-width="1.8" marker-end="url(#mb)" stroke-linecap="round"/></g>
+<g transform="translate(20 20)"><line x1="550" y1="448" x2="650" y2="448" stroke="#8250df" stroke-width="1.8" marker-end="url(#mp)" stroke-linecap="round"/></g>
+<g transform="translate(20 20)"><line x1="900" y1="448" x2="1000" y2="448" stroke="#8250df" stroke-width="1.8" marker-end="url(#mp)" stroke-linecap="round"/></g>
+<g transform="translate(20 20)"><line x1="425" y1="730" x2="485" y2="730" stroke="#1a7f37" stroke-width="1.8" marker-end="url(#mg)" stroke-linecap="round"/></g>
+<g transform="translate(20 20)"><line x1="675" y1="730" x2="735" y2="730" stroke="#1a7f37" stroke-width="1.8" marker-end="url(#mg)" stroke-linecap="round"/></g>
+<g transform="translate(20 20)"><line x1="925" y1="730" x2="1010" y2="730" stroke="#1a7f37" stroke-width="1.8" marker-end="url(#mg)" stroke-linecap="round"/></g>
+<g transform="translate(20 20)"><line x1="1225" y1="730" x2="1285" y2="730" stroke="#1a7f37" stroke-width="1.8" marker-end="url(#mg)" stroke-linecap="round"/></g>
+<g transform="translate(20 20)"><path d="M 952 226 C 952 274, 880 320, 780 376" fill="none" stroke="#8c959f" stroke-width="1.6" stroke-dasharray="5 6" marker-end="url(#mp)" stroke-linecap="round"/></g>
+<g transform="translate(20 20)"><path d="M 1125 510 C 1125 560, 1125 610, 1125 674" fill="none" stroke="#8c959f" stroke-width="1.6" stroke-dasharray="5 6" marker-end="url(#mg)" stroke-linecap="round"/></g>
+<text x="44" y="119" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#57606a" font-weight="700" letter-spacing="0.5">01 / VERIFY ORIGIN</text>
+<text x="44" y="154" font-family="Arial, Helvetica, sans-serif" font-size="25" fill="#24292f" font-weight="700">Private</text>
+<text x="44" y="181" font-family="Arial, Helvetica, sans-serif" font-size="25" fill="#24292f" font-weight="700">provenance</text>
+<text x="44" y="212" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#57606a">Prove that a supported asset</text>
+<text x="44" y="231" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#57606a">note descends from an</text>
+<text x="44" y="250" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#57606a">authorized origin.</text>
+<text x="44" y="405" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#57606a" font-weight="700" letter-spacing="0.5">02 / CHECK PRIVATE RULES</text>
+<text x="44" y="440" font-family="Arial, Helvetica, sans-serif" font-size="25" fill="#24292f" font-weight="700">Private policy</text>
+<text x="44" y="467" font-family="Arial, Helvetica, sans-serif" font-size="25" fill="#24292f" font-weight="700">layer</text>
+<text x="44" y="498" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#57606a">Attach eligibility or policy</text>
+<text x="44" y="517" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#57606a">signals without exposing raw</text>
+<text x="44" y="536" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#57606a">user data.</text>
+<text x="44" y="689" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#57606a" font-weight="700" letter-spacing="0.5">03 / SETTLE PRIVATELY</text>
+<text x="44" y="724" font-family="Arial, Helvetica, sans-serif" font-size="25" fill="#24292f" font-weight="700">Experimental</text>
+<text x="44" y="751" font-family="Arial, Helvetica, sans-serif" font-size="25" fill="#24292f" font-weight="700">checkout</text>
+<text x="44" y="782" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#57606a">Coordinate buyer, seller and</text>
+<text x="44" y="801" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#57606a">sponsor signers for a private</text>
+<text x="44" y="820" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#57606a">exchange flow.</text>
+<rect x="255.0" y="124.0" width="235.0" height="160.5" rx="16" fill="#ffffff" stroke="#d0d7de" stroke-width="1"/>
+<rect x="269.0" y="138.0" width="112.34375" height="20" rx="10" fill="#fff1e5" stroke="#ffd8b5" stroke-width="1"/>
+<text x="277.0" y="152.0" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#bc4c00" font-weight="700">TRUSTED INPUTS</text>
+<text x="269.0" y="186.0" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#24292f" font-weight="700">Issuer root + chain</text>
+<text x="269.0" y="206.5" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#24292f" font-weight="700">context</text>
+<text x="269.0" y="243.0" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#57606a">Authorized roots and accepted</text>
+<text x="269.0" y="261.5" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#57606a">chain context define valid asset</text>
+<text x="269.0" y="280.0" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#57606a">origin.</text>
+<rect x="555.0" y="124.0" width="235.0" height="122.0" rx="16" fill="#ffffff" stroke="#d0d7de" stroke-width="1"/>
+<rect x="569.0" y="138.0" width="73.84375" height="20" rx="10" fill="#ddf4ff" stroke="#b6e3ff" stroke-width="1"/>
+<text x="577.0" y="152.0" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#0969da" font-weight="700">ZK PROOF</text>
+<text x="569.0" y="186.0" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#24292f" font-weight="700">Halo2 lineage proof</text>
+<text x="569.0" y="222.5" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#57606a">Privately proves that the lineage</text>
+<text x="569.0" y="241.0" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#57606a">descends from the root.</text>
+<rect x="855.0" y="124.0" width="235.0" height="163.5" rx="16" fill="#ffffff" stroke="#d0d7de" stroke-width="1"/>
+<rect x="869.0" y="138.0" width="67.75" height="20" rx="10" fill="#ddf4ff" stroke="#b6e3ff" stroke-width="1"/>
+<text x="877.0" y="152.0" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#0969da" font-weight="700">VERIFIER</text>
+<text x="869.0" y="186.0" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#24292f" font-weight="700">Verdict engine</text>
+<text x="869.0" y="222.5" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#57606a">Checks proof validity, root</text>
+<text x="869.0" y="241.0" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#57606a">authorization and chain context.</text>
+<text x="869.0" y="264.5" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#57606a">• VERIFIED</text>
+<text x="869.0" y="280.5" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#57606a">• REJECTED / NOT_EVALUATED</text>
+<rect x="1155.0" y="124.0" width="235.0" height="122.0" rx="16" fill="#ffffff" stroke="#d0d7de" stroke-width="1"/>
+<rect x="1169.0" y="138.0" width="62.21875" height="20" rx="10" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1"/>
+<text x="1177.0" y="152.0" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#57606a" font-weight="700">OUTPUT</text>
+<text x="1169.0" y="186.0" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#24292f" font-weight="700">API + frontend view</text>
+<text x="1169.0" y="222.5" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#57606a">Users inspect results and evidence</text>
+<text x="1169.0" y="241.0" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#57606a">through a read-only interface.</text>
+<rect x="320.0" y="408.0" width="250.0" height="142.0" rx="16" fill="#ffffff" stroke="#d0d7de" stroke-width="1"/>
+<rect x="334.0" y="422.0" width="106.46875" height="20" rx="10" fill="#fbefff" stroke="#e8d3ff" stroke-width="1"/>
+<text x="342.0" y="436.0" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#8250df" font-weight="700">PRIVATE INPUTS</text>
+<text x="334.0" y="470.0" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#24292f" font-weight="700">Issuer rules + credential</text>
+<text x="334.0" y="490.5" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#24292f" font-weight="700">roots</text>
+<text x="334.0" y="527.0" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#57606a">Define who can hold or receive a</text>
+<text x="334.0" y="545.5" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#57606a">given asset.</text>
+<rect x="670.0" y="408.0" width="250.0" height="142.0" rx="16" fill="#ffffff" stroke="#d0d7de" stroke-width="1"/>
+<rect x="684.0" y="422.0" width="105.25" height="20" rx="10" fill="#fbefff" stroke="#e8d3ff" stroke-width="1"/>
+<text x="692.0" y="436.0" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#8250df" font-weight="700">PRIVATE PROOF</text>
+<text x="684.0" y="470.0" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#24292f" font-weight="700">Eligibility / commitment</text>
+<text x="684.0" y="490.5" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#24292f" font-weight="700">proof</text>
+<text x="684.0" y="527.0" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#57606a">Produces a policy signal without</text>
+<text x="684.0" y="545.5" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#57606a">exposing raw compliance data.</text>
+<rect x="1020.0" y="408.0" width="250.0" height="142.0" rx="16" fill="#ffffff" stroke="#d0d7de" stroke-width="1"/>
+<rect x="1034.0" y="422.0" width="146.96875" height="20" rx="10" fill="#fbefff" stroke="#e8d3ff" stroke-width="1"/>
+<text x="1042.0" y="436.0" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#8250df" font-weight="700">COORDINATION SIGNAL</text>
+<text x="1034.0" y="470.0" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#24292f" font-weight="700">Policy-aware</text>
+<text x="1034.0" y="490.5" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#24292f" font-weight="700">coordination</text>
+<text x="1034.0" y="527.0" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#57606a">Lets a coordinator verify conditions</text>
+<text x="1034.0" y="545.5" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#57606a">before a trade or transfer.</text>
+<rect x="255.0" y="694.0" width="190.0" height="121.5" rx="16" fill="#ffffff" stroke="#d0d7de" stroke-width="1"/>
+<rect x="269.0" y="708.0" width="63.859375" height="20" rx="10" fill="#dafbe1" stroke="#aceebb" stroke-width="1"/>
+<text x="277.0" y="722.0" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#1a7f37" font-weight="700">PARTY A</text>
+<text x="269.0" y="756.0" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#24292f" font-weight="700">Buyer signer</text>
+<text x="269.0" y="792.5" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#57606a">Approves payment of</text>
+<text x="269.0" y="811.0" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#57606a">shielded ZEC.</text>
+<rect x="505.0" y="694.0" width="190.0" height="121.5" rx="16" fill="#ffffff" stroke="#d0d7de" stroke-width="1"/>
+<rect x="519.0" y="708.0" width="64.265625" height="20" rx="10" fill="#dafbe1" stroke="#aceebb" stroke-width="1"/>
+<text x="527.0" y="722.0" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#1a7f37" font-weight="700">PARTY B</text>
+<text x="519.0" y="756.0" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#24292f" font-weight="700">Seller signer</text>
+<text x="519.0" y="792.5" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#57606a">Approves transfer of the</text>
+<text x="519.0" y="811.0" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#57606a">offered ZSA.</text>
+<rect x="755.0" y="694.0" width="190.0" height="121.5" rx="16" fill="#ffffff" stroke="#d0d7de" stroke-width="1"/>
+<rect x="769.0" y="708.0" width="38.40625" height="20" rx="10" fill="#dafbe1" stroke="#aceebb" stroke-width="1"/>
+<text x="777.0" y="722.0" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#1a7f37" font-weight="700">FEE</text>
+<text x="769.0" y="756.0" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#24292f" font-weight="700">Sponsor signer</text>
+<text x="769.0" y="792.5" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#57606a">Pays network fees in the</text>
+<text x="769.0" y="811.0" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#57606a">experiment.</text>
+<rect x="1030.0" y="694.0" width="215.0" height="142.0" rx="16" fill="#ffffff" stroke="#d0d7de" stroke-width="1"/>
+<rect x="1044.0" y="708.0" width="102.34375" height="20" rx="10" fill="#dafbe1" stroke="#aceebb" stroke-width="1"/>
+<text x="1052.0" y="722.0" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#1a7f37" font-weight="700">COORDINATION</text>
+<text x="1044.0" y="756.0" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#24292f" font-weight="700">Checkout</text>
+<text x="1044.0" y="776.5" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#24292f" font-weight="700">coordinator</text>
+<text x="1044.0" y="813.0" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#57606a">Builds terms and gathers</text>
+<text x="1044.0" y="831.5" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#57606a">approvals.</text>
+<rect x="1305.0" y="694.0" width="215.0" height="121.5" rx="16" fill="#ffffff" stroke="#d0d7de" stroke-width="1"/>
+<rect x="1319.0" y="708.0" width="81.1875" height="20" rx="10" fill="#dafbe1" stroke="#aceebb" stroke-width="1"/>
+<text x="1327.0" y="722.0" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#1a7f37" font-weight="700">EXECUTION</text>
+<text x="1319.0" y="756.0" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#24292f" font-weight="700">Pinned Zebra regtest</text>
+<text x="1319.0" y="792.5" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#57606a">Records the experimental ZSA</text>
+<text x="1319.0" y="811.0" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#57606a">↔ shielded ZEC exchange.</text>
+<rect x="1407.625" y="39" width="170.375" height="28" rx="14" fill="#ffffff" stroke="#d0d7de" stroke-width="1"/>
+<circle cx="1423.625" cy="53" r="5" fill="#1a7f37"/>
+<text x="1434.625" y="57" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#57606a">experimental settlement</text>
+<rect x="1259.921875" y="39" width="137.703125" height="28" rx="14" fill="#ffffff" stroke="#d0d7de" stroke-width="1"/>
+<circle cx="1275.921875" cy="53" r="5" fill="#8250df"/>
+<text x="1286.921875" y="57" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#57606a">private rules layer</text>
+<rect x="1117.546875" y="39" width="132.375" height="28" rx="14" fill="#ffffff" stroke="#d0d7de" stroke-width="1"/>
+<circle cx="1133.546875" cy="53" r="5" fill="#0969da"/>
+<text x="1144.546875" y="57" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#57606a">provenance core</text>
+<rect x="930.0" y="328.0" width="219.40625" height="25" rx="12.5" fill="white" stroke="#d0d7de" stroke-width="1"/>
+<text x="939.0" y="345.0" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#57606a">verified origin can support rule checks</text>
+<rect x="1070.0" y="613.0" width="191.390625" height="25" rx="12.5" fill="white" stroke="#d0d7de" stroke-width="1"/>
+<text x="1079.0" y="630.0" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#57606a">policy signal can gate settlement</text>
+</g></svg>
