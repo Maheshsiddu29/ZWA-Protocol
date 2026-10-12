@@ -21,6 +21,8 @@ RECORDED_HUMAN_ID = "recorded-phase35h"
 ROOT = Path(__file__).resolve().parent
 MAX_SESSION_BYTES = 16_384
 MAX_RPC_BYTES = 262_144
+MAX_EVENTS_BYTES = 4096
+MAX_SCANS_BYTES = 4096
 HEX = re.compile(r"[0-9a-f]{64}\Z")
 PINNED_GENESIS = "029f11d80ef9765602235e1bc9727e3eb6ba20839319f761fee920d63401e327"
 SWAP_BRANCH = "88888888"
@@ -117,6 +119,73 @@ def read_session(path: Path | None) -> dict | None:
     return data
 
 
+PUBLIC_STAGES = (
+    "SESSION_PREPARED", "AWAITING_BUYER_APPROVAL", "BUYER_AUTHORIZED",
+    "AWAITING_SELLER_APPROVAL", "SELLER_AUTHORIZED", "TRANSACTION_SUBMITTED",
+    "TRANSACTION_INCLUDED",
+    "CONFIRMATION_DEPTH_OBSERVED", "RECEIPT_AVAILABLE",
+)
+FAILURE_STAGES = ("BUYER_APPROVAL_NOT_GRANTED", "SELLER_APPROVAL_NOT_GRANTED", "APPROVAL_TIMEOUT",
+                  "SIGNER_UNAVAILABLE", "EXECUTION_FAILED", "EXECUTION_UNCERTAIN")
+
+
+def read_events(path: Path | None, session_id: str) -> list[str]:
+    if path is None or not path.exists():
+        return []
+    try:
+        if path.is_symlink() or path.stat().st_size > MAX_EVENTS_BYTES:
+            raise SessionError("unsafe event result")
+        data = json.loads(path.read_bytes())
+    except (OSError, ValueError) as exc:
+        raise SessionError("invalid event result") from exc
+    if (type(data) is not dict or set(data) != {"version", "sessionId", "stages"}
+            or data["version"] != 1 or data["sessionId"] != session_id
+            or type(data["stages"]) is not list or len(data["stages"]) > len(PUBLIC_STAGES) + 1):
+        raise SessionError("event result schema")
+    stages = data["stages"]
+    if (not stages or stages[0] != PUBLIC_STAGES[0]
+            or any(type(stage) is not str for stage in stages)):
+        raise SessionError("event sequence")
+    normal = [stage for stage in stages if stage in PUBLIC_STAGES]
+    if (normal != list(PUBLIC_STAGES[:len(normal)])
+            or len(set(stages)) != len(stages)
+            or any(stage not in PUBLIC_STAGES + FAILURE_STAGES for stage in stages)
+            or (any(stage in FAILURE_STAGES for stage in stages)
+                and (stages[-1] not in FAILURE_STAGES or len(stages) != len(normal) + 1))):
+        raise SessionError("event order")
+    return stages
+
+
+def read_scans(path: Path | None, session: dict) -> dict | None:
+    if path is None or not path.exists():
+        return None
+    try:
+        if path.is_symlink() or path.stat().st_size > MAX_SCANS_BYTES:
+            raise SessionError("unsafe wallet scans")
+        data = json.loads(path.read_bytes())
+    except (OSError, ValueError) as exc:
+        raise SessionError("invalid wallet scans") from exc
+    if (type(data) is not dict or set(data) != {"version", "sessionId", "assetId", "buyerBefore", "buyerAfter", "sellerBefore", "sellerAfter"}
+            or data["version"] != 1 or data["sessionId"] != session["sessionId"]
+            or data["assetId"] != session["quote"]["assetId"]):
+        raise SessionError("wallet scan identity mismatch")
+    for key in ("buyerBefore", "buyerAfter", "sellerBefore", "sellerAfter"):
+        scan = data[key]
+        if type(scan) is not dict or set(scan) != {"height", "nativeZat", "assetUnits"}:
+            raise SessionError("wallet scan schema")
+        for field in scan:
+            _uint(scan[field], 64 if field != "height" else 32)
+    q = session["quote"]
+    if (data["buyerBefore"]["nativeZat"] - data["buyerAfter"]["nativeZat"] != q["paymentAmount"]
+            or data["buyerAfter"]["assetUnits"] - data["buyerBefore"]["assetUnits"] != q["quantity"]
+            or data["sellerAfter"]["nativeZat"] - data["sellerBefore"]["nativeZat"] != q["paymentAmount"]
+            or data["sellerBefore"]["assetUnits"] - data["sellerAfter"]["assetUnits"] != q["quantity"]
+            or data["buyerAfter"]["height"] < session["receipt"]["height"]
+            or data["sellerAfter"]["height"] < session["receipt"]["height"]):
+        raise SessionError("wallet scans do not reconcile")
+    return data
+
+
 def recorded() -> tuple[dict, dict]:
     data = json.loads((ROOT / "recorded-phase35f.json").read_bytes())
     quote = from_terms(data["terms"])
@@ -149,9 +218,12 @@ def _receipt_view(quote: dict, receipt: dict, status: str, finality: str,
 
 
 class Engine:
-    def __init__(self, session_path: Path | None, rpc: Rpc):
+    def __init__(self, session_path: Path | None, rpc: Rpc, event_path: Path | None = None,
+                 scans_path: Path | None = None):
         self.session_path = session_path
         self.rpc = rpc
+        self.event_path = event_path
+        self.scans_path = scans_path
 
     def availability(self) -> dict:
         try:
@@ -237,6 +309,14 @@ class Engine:
         if path == "/v1/checkout/sample-quote":
             return {"source": "RECORDED_REGTEST_EVIDENCE", "actionable": False,
                     "quote": quote, "status": "RECORDED_REGTEST_EVIDENCE"}, 200
+        if path == "/v1/checkout/active":
+            try:
+                active = read_session(self.session_path)
+            except SessionError:
+                return {"error": {"code": "INVALID_SESSION_RESULT"}}, 503
+            if active is None:
+                return {"error": {"code": "NO_ACTIVE_SESSION"}}, 404
+            return self._live_with_events(active)
         prefix = "/v1/checkout/sessions/"
         if not path.startswith(prefix):
             return {"error": {"code": "NOT_FOUND"}}, 404
@@ -263,13 +343,33 @@ class Engine:
             return {"error": {"code": "INVALID_SESSION_RESULT"}}, 503
         if session is None or session["sessionId"] != session_id:
             return {"error": {"code": "NOT_FOUND"}}, 404
-        view, code = self.live(session)
+        view, code = self._live_with_events(session)
         if len(parts) == 2:
             if code != 200:
                 return view, code
             if "receipt" not in view:
                 return {"error": {"code": "RECEIPT_NOT_AVAILABLE"}}, 404
             return view["receipt"], 200
+        return view, code
+
+    def _live_with_events(self, session: dict) -> tuple[dict, int]:
+        try:
+            stages = read_events(self.event_path, session["sessionId"])
+            if (session["receipt"] is None
+                    and (any(stage in stages for stage in PUBLIC_STAGES[5:])
+                         or self.scans_path is not None and self.scans_path.exists())):
+                raise SessionError("settlement observation without receipt")
+            scans = read_scans(self.scans_path, session) if session["receipt"] is not None else None
+        except SessionError:
+            return {"error": {"code": "INVALID_SESSION_OBSERVATION"}}, 503
+        view, code = self.live(session)
+        if stages:
+            view["operatorStages"] = stages
+            view["operatorStage"] = stages[-1]
+            view["approvalEvidence"] = "LOCAL_OPERATOR_EVENT_ONLY"
+        if scans is not None and code == 200 and view.get("status") in ("PENDING_FINALITY", "FINALIZED"):
+            view["walletScans"] = scans
+            view["receipt"]["walletScans"] = scans
         return view, code
 
 
@@ -338,12 +438,14 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=18735)
     parser.add_argument("--rpc-port", type=int, default=18243)
     parser.add_argument("--session-result", type=Path)
+    parser.add_argument("--event-result", type=Path)
+    parser.add_argument("--wallet-scans", type=Path)
     args = parser.parse_args()
     if not args.demo:
         parser.error("disabled without --demo")
     if not 1 <= args.port <= 65535:
         parser.error("invalid API port")
-    engine = Engine(args.session_result, Rpc(args.rpc_port))
+    engine = Engine(args.session_result, Rpc(args.rpc_port), args.event_result, args.wallet_scans)
     server = ThreadingHTTPServer(("127.0.0.1", args.port), handler_for(engine, args.port))
     print(f"Phase 3.5G read-only demo on http://127.0.0.1:{args.port}", flush=True)
     server.serve_forever()

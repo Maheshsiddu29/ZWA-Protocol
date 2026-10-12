@@ -11,7 +11,9 @@ import tempfile
 import threading
 import unittest
 
-from .api import Engine, NodeUnavailable, PINNED_GENESIS, RECORDED_HUMAN_ID, RECORDED_ID, SessionError, handler_for, read_session, recorded
+from .api import Engine, NodeUnavailable, PINNED_GENESIS, RECORDED_HUMAN_ID, RECORDED_ID, SessionError, handler_for, read_events, read_scans, read_session, recorded
+from .observe import append
+from .scans import write as write_scans
 from .quote import InvalidQuote, digest, from_terms, validate
 from http.server import ThreadingHTTPServer
 
@@ -183,6 +185,57 @@ class SessionTests(unittest.TestCase):
                 self.assertFalse(view["actionable"])
                 receipt_view, receipt_code = engine.route(f"/v1/checkout/sessions/{session_id}/receipt")
                 self.assertEqual((receipt_code, receipt_view), (200, view["receipt"]))
+
+    def test_active_session_and_operator_events_are_public_and_ordered(self):
+        self.write(session(self.quote))
+        events = Path(self.temp.name) / "events.json"
+        engine = Engine(self.path, FakeRpc(tip=102), events)
+        active, code = engine.route("/v1/checkout/active")
+        self.assertEqual((code, active["status"], active["sessionId"]),
+                         (200, "QUOTE_READY", self.quote["quoteDigest"]))
+        append(self.path, events, "SESSION_PREPARED")
+        append(self.path, events, "AWAITING_BUYER_APPROVAL")
+        self.assertEqual(read_events(events, self.quote["quoteDigest"])[-1], "AWAITING_BUYER_APPROVAL")
+        with self.assertRaises(SessionError):
+            append(self.path, events, "SELLER_AUTHORIZED")
+        with self.assertRaises(SessionError):
+            append(self.path, events, "TRANSACTION_INCLUDED")
+        active, code = engine.route("/v1/checkout/active")
+        self.assertEqual((code, active["operatorStage"]), (200, "AWAITING_BUYER_APPROVAL"))
+        append(self.path, events, "BUYER_APPROVAL_NOT_GRANTED")
+        with self.assertRaises(SessionError):
+            append(self.path, events, "BUYER_AUTHORIZED")
+        events.write_text(json.dumps({"version": 1, "sessionId": "00" * 32,
+                                      "stages": ["SESSION_PREPARED"]}))
+        self.assertEqual(engine.route("/v1/checkout/active")[1], 503)
+        events.unlink()
+        self.path.unlink()
+        self.assertEqual(engine.route("/v1/checkout/active"),
+                         ({"error": {"code": "NO_ACTIVE_SESSION"}}, 404))
+
+    def test_wallet_scans_bind_to_exact_session_asset_and_receipt(self):
+        rec = receipt(self.quote)
+        self.write(session(self.quote, rec))
+        asset = self.quote["assetId"]
+        paths = [Path(self.temp.name) / f"scan-{i}.log" for i in range(4)]
+        values = [("Buyer", 625000000, 0, 102), ("Buyer", 624990000, 7, 103),
+                  ("Seller", 0, 100, 102), ("Seller", 10000, 93, 103)]
+        for path, (role, native, units, height) in zip(paths, values):
+            path.write_text(f"PHASE35F_BALANCES role={role} scanned_height={height} native_zat={native} asset={asset} asset_units={units}\n")
+        output = Path(self.temp.name) / "public-scans.json"
+        write_scans(self.path, output, *paths)
+        self.assertEqual(read_scans(output, read_session(self.path))["buyerAfter"]["assetUnits"], 7)
+        block = {"hash": rec["block_hash"], "tx": [rec["txid"]], "confirmations": 1}
+        active, code = Engine(self.path, FakeRpc(tip=103, block=block), scans_path=output).route("/v1/checkout/active")
+        self.assertEqual((code, active["walletScans"]["sellerAfter"]["nativeZat"]), (200, 10000))
+        bad = json.loads(output.read_text())
+        bad["assetId"] = "ff" * 32
+        output.write_text(json.dumps(bad))
+        self.assertEqual(Engine(self.path, FakeRpc(tip=103, block=block), scans_path=output).route("/v1/checkout/active")[1], 503)
+        output.unlink()
+        paths[1].write_text(paths[1].read_text().replace("asset_units=7", "asset_units=8"))
+        with self.assertRaises(SessionError):
+            write_scans(self.path, output, *paths)
 
 
 class BrowserTests(unittest.TestCase):
