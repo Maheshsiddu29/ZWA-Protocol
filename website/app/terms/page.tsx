@@ -1,15 +1,3 @@
 import type { Metadata } from "next";
-import { PageHero } from "@/components/layout/PageHero";
-
-export const metadata: Metadata = { title: "Terms" };
-
-export default function TermsPage() {
-  return (
-    <PageHero title="Terms">
-      <p>
-        ZWA Protocol is research software provided as is, without warranty. It has not been audited for production use
-        and must not be used to custody or move real assets.
-      </p>
-    </PageHero>
-  );
-}
+export const metadata:Metadata={title:"Terms"};
+export default function TermsPage(){return <section className="subpage"><div className="shell"><p className="eyebrow">Research software</p><h1>Terms</h1><p className="legal-copy">ZWA Protocol is experimental research software provided as is. The website demo runs against local pinned regtest research views and recorded disposable checkout evidence. It is not a production Zcash Shielded Assets mainnet service or a purchase interface.</p><p className="legal-copy">The verifier&apos;s lineage verdict does not evaluate investor eligibility or execute settlement. Do not use this software to custody or move real assets without independent security review and appropriate controls.</p></div></section>}

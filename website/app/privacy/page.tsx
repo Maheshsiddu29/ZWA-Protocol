@@ -1,15 +1,3 @@
 import type { Metadata } from "next";
-import { PageHero } from "@/components/layout/PageHero";
-
-export const metadata: Metadata = { title: "Privacy" };
-
-export default function PrivacyPage() {
-  return (
-    <PageHero title="Privacy">
-      <p>
-        This website sets no cookies, runs no analytics and loads no third-party scripts. The demo runs entirely in
-        your browser and sends nothing anywhere.
-      </p>
-    </PageHero>
-  );
-}
+export const metadata:Metadata={title:"Privacy"};
+export default function PrivacyPage(){return <section className="subpage"><div className="shell"><p className="eyebrow">Site privacy</p><h1>Privacy</h1><p className="legal-copy">This website does not add analytics or account tracking. The verifier demo sends selected scenario IDs or proof bytes to this site&apos;s server, which forwards them to a local verifier. The checkout panel requests read-only evidence from a separate local service. Do not upload private keys, wallet databases, identity records, or other secrets as proof evidence.</p><p className="legal-copy">The local backend&apos;s operational logging and retention depend on how it is run. Consult the repository documentation before exposing these services to other users.</p></div></section>}

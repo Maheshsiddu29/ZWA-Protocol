@@ -1,30 +1,9 @@
 import type { Metadata } from "next";
-import { Suspense } from "react";
-import { PageHero } from "@/components/layout/PageHero";
-import { Container } from "@/components/layout/Container";
-import { Section } from "@/components/layout/Section";
-import { ResearchArchive } from "@/components/research/ResearchArchive";
-
-export const metadata: Metadata = {
-  title: "Research",
-  description: "The assumptions, experiments and boundaries behind ZWA Protocol.",
-};
-
-export default function ResearchPage() {
-  return (
-    <>
-      <PageHero title="Cryptography should come with evidence.">
-        <p>ZWA Research documents the assumptions, experiments and boundaries behind the protocol.</p>
-      </PageHero>
-
-      <Section className="!pt-16">
-        <Container>
-          <Suspense fallback={<div className="h-96" />}>
-            <ResearchArchive />
-          </Suspense>
-        </Container>
-      </Section>
-
-    </>
-  );
-}
+import { site } from "@/lib/site";
+export const metadata:Metadata={title:"Research",description:"Current ZWA proof evidence, feasibility work, and open questions."};
+const entries=[
+  {title:"Rooted lineage",status:"Implemented",text:"The current verifier checks a supported private lineage relation with authenticated root and terminal obligations in pinned regtest research views.",href:"docs/phase3-api.md"},
+  {title:"Feasibility evidence",status:"Recorded research",text:"Earlier circuit and lineage feasibility work established specific proof relations and test fixtures. It is not equivalent to a full production custody protocol.",href:"lineage/README.md"},
+  {title:"Checkout experiment",status:"Recorded regtest",text:"An owner-operated disposable swap recorded seven ZSA units received and 10,000 zatoshis paid, with a separately sponsored network fee.",href:"docs/checkout-phase35h-human-approval.md"},
+];
+export default function ResearchPage(){return <><header className="subpage-hero"><div className="shell"><p className="eyebrow">Research archive</p><h1>Show the proof.<br />Name the limits.</h1><p>ZWA documents the implemented relation, the feasibility path, and the evidence behind the experimental checkout.</p></div></header><section className="subpage-section"><div className="shell"><div className="subpage-grid">{entries.map(e=><article className="info-panel" key={e.title}><small>{e.status}</small><h2>{e.title}</h2><p>{e.text}</p><a className="text-link" href={`${site.github}/blob/integration/zwa-checkout-poc/${e.href}`} target="_blank" rel="noreferrer noopener">Read source ↗</a></article>)}</div><div className="info-band"><h2>Open questions remain.</h2><p>The current API does not evaluate investor eligibility, dispatch settlement, or prove full recursive ownership lineage. Zcash Shielded Assets remain experimental rather than a production mainnet feature.</p></div></div></section></>}

@@ -38,3 +38,10 @@ React Bits is licensed under MIT + Commons Clause License Condition v1.0:
 ## Icons
 
 - Lucide (`lucide-react`) — ISC License.
+
+## Phase 4 font and motion runtime
+
+- Inter Variable (`@fontsource-variable/inter`) — SIL Open Font License 1.1. It provides the local Inter face and display optical sizing used by the redesign. The official wordmark remains outlined SVG artwork.
+- Lottie Web (`lottie-web`) — MIT License. It plays only the supplied shape-based animation JSON when in view.
+
+The official ZWA SVG illustrations, lockups, token files, and Lottie exports are project-supplied original assets. Their source package and attribution are preserved in `design-assets/README.md` in the original checkout.

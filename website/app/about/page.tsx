@@ -1,30 +1,4 @@
 import type { Metadata } from "next";
-import { PageHero } from "@/components/layout/PageHero";
-import { Container } from "@/components/layout/Container";
-import { Section } from "@/components/layout/Section";
-
-export const metadata: Metadata = {
-  title: "About",
-  description: "ZWA Protocol: privacy infrastructure for compliant digital assets.",
-};
-
-const traits = ["Precise", "Institutional", "Private", "Technical", "Calm", "Research-led"];
-
-export default function AboutPage() {
-  return (
-    <>
-      <PageHero title="Privacy infrastructure for compliant digital assets." />
-      <Section>
-        <Container>
-          <ul className="grid gap-px overflow-hidden rounded-[16px] border border-line bg-line sm:grid-cols-2 lg:grid-cols-3">
-            {traits.map((t) => (
-              <li key={t} className="bg-void px-7 py-10 text-[24px] font-semibold tracking-[-0.02em] text-ink">
-                {t}
-              </li>
-            ))}
-          </ul>
-        </Container>
-      </Section>
-    </>
-  );
-}
+import Link from "next/link";
+export const metadata:Metadata={title:"About",description:"ZWA Protocol is experimental infrastructure for private assets and verifiable origins."};
+export default function AboutPage(){return <><header className="subpage-hero"><div className="shell"><p className="eyebrow">About ZWA</p><h1>Private assets.<br />Verifiable origins.</h1><p>ZWA Protocol explores how real-world asset workflows can use Zcash privacy infrastructure while preserving precise, auditable verification boundaries.</p></div></header><section className="subpage-section"><div className="shell"><div className="subpage-grid"><article className="info-panel"><small>Purpose</small><h2>Keep sensitive context private.</h2><p>An asset can carry personal and commercial information. The research aims to prove a narrow claim without publishing the entire story.</p></article><article className="info-panel"><small>Current implementation</small><h2>Verify supported origins.</h2><p>A local rooted-lineage verifier checks authenticated issuance and a supported relation against pinned research views.</p></article><article className="info-panel"><small>Discipline</small><h2>Separate evidence from ambition.</h2><p>Eligibility and settlement are distinct. The site labels implemented relations, historical feasibility, and experimental execution separately.</p></article></div><div className="info-band"><h2>Start with the evidence.</h2><p>Run a real local verifier scenario and inspect the recorded checkout receipt.</p><Link href="/demo">Explore the demo ↗</Link></div></div></section></>}
