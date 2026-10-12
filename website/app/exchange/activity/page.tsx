@@ -1,11 +1,19 @@
 import { Protected } from "@/components/exchange/Protected";
-import { boundActiveAsset } from "@/lib/exchange";
+import { ownOrders } from "@/lib/private-orders";
+import { participantPortfolio } from "@/lib/persistent-portfolio";
 
 export const dynamic = "force-dynamic";
 export default async function ActivityPage() {
-  const active = await boundActiveAsset();
-  const receipt = active?.checkout.receipt;
-  return <Protected role="buyer" eyebrow="BUYER / ACTIVITY" title="Transaction activity." intro="Receipts show observed inclusion depth and wallet effects. A confirmation count is not irreversible finality.">
-    {receipt && active?.checkout.status !== null ? <div className="exchange-order"><div><span>Instrument</span><strong>{active?.asset.name}</strong></div><div><span>Transaction</span><code>{receipt.txid}</code></div><div><span>Height</span><strong>{receipt.height}</strong></div><div><span>Observed depth</span><strong>{receipt.confirmations ?? "Unknown"} confirmations</strong></div><div><span>Finality label</span><strong>{receipt.finality.replaceAll("_", " ")}</strong></div></div> : <div className="exchange-empty"><h2>No current-chain receipt.</h2><p>Completion appears after the local node confirms inclusion. A stopped node never promotes a saved receipt to current evidence.</p></div>}
+  const [orders, portfolio] = await Promise.all([ownOrders(), participantPortfolio("buyer")]);
+  const settled = orders?.filter(order => order.receipt) ?? [];
+  return <Protected role="buyer" eyebrow="BUYER / ACTIVITY" title="Transaction activity." intro="Each receipt is checked against the live chain and current wallet holdings.">
+    {portfolio && settled.length ? settled.map(order => <div className="exchange-order" key={order.id}>
+      <div><span>Instrument</span><strong>{order.instrumentId}</strong></div>
+      <div><span>Transaction</span><code>{order.receipt?.txid}</code></div>
+      <div><span>Height</span><strong>{order.receipt?.height}</strong></div>
+      <div><span>Current chain tip</span><strong>{order.chainHeight}</strong></div>
+      <div><span>Wallet effect</span><strong>{order.quantity} unit acquired · {order.receipt?.paymentZat.toLocaleString("en-US")} zatoshis paid</strong></div>
+      <div><span>Approval evidence</span><strong>{order.receipt?.approvalMode.replaceAll("_", " ")}</strong></div>
+    </div>) : <div className="exchange-empty"><h2>No current-chain order receipt.</h2><p>The ledger may retain history while the node or wallet scan is unavailable; this page shows live verified receipts only.</p></div>}
   </Protected>;
 }
