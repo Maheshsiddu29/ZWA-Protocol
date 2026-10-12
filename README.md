@@ -2,134 +2,231 @@
 
 ### Private assets. Verifiable origins.
 
-**Prove where an asset came from. Verify the rules that matter. Explore private exchange on Zcash.**
+**Zero-knowledge asset provenance, private policy verification, and experimental shielded settlement on Zcash.**
 
-A token can be transferred in seconds. That does not prove it was legitimately issued, that its history is authentic, or that its recipient satisfies the right conditions. And answering those questions should not require publishing every private note opening or credential.
+ZWA Protocol develops cryptographic infrastructure for assets whose origin must be verifiable without disclosing their underlying private note data. It combines a **rooted Halo2 lineage verifier**, earlier **issuer and recipient policy proofs**, and a separately demonstrated **ZSA-for-shielded-ZEC exchange**.
 
-**ZWA turns asset provenance into verifiable evidence.** It combines zero-knowledge lineage verification, chain-authenticated trust checks, earlier private-policy proof primitives, and an independently demonstrated experimental ZSA-for-ZEC checkout.
+For tokenized real-world assets, recording a balance is not enough. An application also needs evidence of authorized issuance, valid provenance, and applicable transaction rules. ZWA addresses those requirements while preserving privacy at the proof-witness and settlement layers.
 
-## The architecture
+## 1. Overview
+
+ZWA's architecture is organized around three capabilities:
+
+| Capability | Question answered | Technical approach |
+|---|---|---|
+| **Verify Origin** | Does this supported asset-note lineage descend from an authorized issuance root? | Halo2 step proofs, authenticated root and terminal, pinned chain context |
+| **Check Private Rules** | Is this issuance and recipient eligible for the exact intended trade? | Circom/Groth16 membership proofs, signed roots, `TradeCommitmentV1` |
+| **Settle Privately** | Can independent parties exchange an experimental shielded asset for shielded ZEC atomically? | Separately approved ZSA Action Groups, local coordinator, experimental Zebra |
+
+These are **complementary workstreams**. The rooted-lineage verifier and experimental purchase have been validated separately; the full provenance-to-policy-to-purchase pipeline is an integration objective.
+
+## 2. Architecture
 
 ![ZWA Protocol Architecture](docs/images/zwa_architecture.svg)
 
-**01 · Verify origin** — Follow supported private-note ancestry back to an authenticated issuance root.  
-**02 · Check private rules** — Bind issuer provenance and recipient eligibility to one exact intended trade (earlier Groth16 workstream).  
-**03 · Settle privately** — Explore independently authorized asset-for-ZEC exchange on an experimental shielded ledger.
+The architecture separates cryptographic statements, application trust decisions, and transaction execution:
 
-> These are complementary capabilities, **not yet a single production-integrated trade pipeline**. The rooted-lineage verifier and recorded checkout are separate demonstrated workstreams.
+- **Proof layer:** validates supported note ancestry and, in the earlier policy track, hidden issuance or credential membership.
+- **Verification layer:** checks proof identity, canonical evidence, authorized roots, chain-observed terminals, and finality/checkpoint policy. An isolated valid proof is not sufficient for acceptance.
+- **Policy layer:** binds provenance and eligibility to an exact transaction intent, with issuer and credential-authority trust enforced by the application.
+- **Settlement layer:** constructs an experimental shielded-asset exchange using separately controlled signers and a locally trusted coordinator.
 
-## 01 / An asset needs a verifiable origin
+The shared protocol direction is **Verify Origin → Check Private Rules → Settle Privately**. The arrows describe the target composition, not a claim that the accepted checkout transaction already passed both proof systems.
 
-**A valid proof is not necessarily a valid asset.** ZWA's rooted-lineage verifier answers a narrower, stronger question: *does this supported note lineage connect an authorized issuance root to a real terminal chain output under a configured chain-trust policy?*
+## 3. Rooted Provenance Verification
 
-The frozen Halo2 relation, `NormalLineageStepV2`, proves each supported transition using public inputs:
+### 3.1 Halo2 lineage relation
 
-```text
-xᵢ = (cmx_old, nf_old, cmx_new)
-
-Private witness: note openings, AssetBase, note/nullifier secrets
-Circuit constraint: ρ_new = nf_old
-```
-
-**Design A** verifies each proof and joins adjacent public commitments. **Layer B** then authenticates the issuance root, terminal Orchard-ZSA Action, pinned chain view, and finality/checkpoint policy.
+The frozen `NormalLineageStepV2` circuit proves a supported Orchard/ZSA normal-lineage transition without revealing the private note openings. Each step has the public tuple:
 
 ```text
-Halo2 step proofs ──> Public commitment joins ──> Authorized root
-                                                    │
-VERIFIED <── Finality / checkpoint policy <── Chain view + real terminal
+x_i = (cmx_old, nf_old, cmx_new)
+
+Private witness: old/new note openings, AssetBase,
+                 note/nullifier secrets including nk
+Core relation:   rho_new = nf_old
 ```
 
-A cryptographically correct proof with an untrusted root is **not** `VERIFIED`. An authenticated root without sufficient finality is **not** `VERIFIED` either. The verifier fails closed instead of upgrading missing evidence into success.
+The circuit checks the relevant note-commitment and nullifier consistency constraints. It covers a **specific non-split, nonzero-value, non-native ZSA ρ-linked relation**; it does not establish arbitrary asset flow, wallet ownership, unspentness, or lineage through swaps.
 
-**Under the hood:** Halo2 · Rust · Orchard note primitives · canonical evidence v3 · frozen verifier identity (`lineage-v2-l1`) · **5,120-byte proofs per normal step**. This is a constrained, non-recursive ρ-linked lineage proof; public path tuples remain visible, while private note openings are hidden. Arbitrary swaps, splits and general ownership histories are not covered by this relation.
+### 3.2 Design A + Layer B
 
-### Real verdicts, not a green checkmark animation
+Two independent sets of conditions determine the final verdict:
 
-| Evidence / chain state | Verifier outcome |
+```text
+DESIGN A — CRYPTOGRAPHIC CONTINUITY
+Verify each frozen Halo2 step proof
+    + require cmx_new[i] == cmx_old[i+1]
+    + require first cmx_old == requested root
+    + require last cmx_new == requested terminal
+
+LAYER B — AUTHENTICATED CHAIN CONTEXT
+Authenticate authorized issuance root
+    + locate terminal Orchard-ZSA Action output
+    + validate pinned chain view and history
+    + apply finality and checkpoint-trust policy
+
+=> VERIFIED only if all required obligations pass
+```
+
+Each frozen normal-step proof is **5,120 bytes**. The verifier uses a pinned identity (`lineage-v2-l1`), strict evidence parsing, and a verifier-owned key/configuration; it does not adopt a caller's supplied proof authority. Public `cmx`/`nf` tuples and path length remain visible. This is **per-step verification with public joins**, not recursion over a hidden path.
+
+### 3.3 Fail-closed verdicts
+
+| Evidence | Result |
 |---|---|
-| Supported rooted lineage with authenticated chain context (A7 fixture) | `VERIFIED` |
-| Valid evidence, insufficient required chain depth (A4) | `PENDING_FINALITY` |
-| Historical context requiring explicit checkpoint trust (CKN) | `CHECKPOINT_TRUST_REQUIRED` |
-| Tampered proof, forged root, false terminal or invalidated chain | Rejected / non-success |
+| Valid rooted N=3 lineage under A7 chain policy | `VERIFIED` |
+| Valid path, insufficient confirmation depth (A4) | `PENDING_FINALITY` |
+| Valid path, historical checkpoint needs configured trust (CKN) | `CHECKPOINT_TRUST_REQUIRED` |
+| Altered proof, invalid root or terminal | `REJECTED` / other non-success result |
+| Invalidated chain observation | `INVALIDATED_BY_REORG` |
 
-The Phase 2 validation report records **236 classified differential cases with zero unexplained divergences**. This is engineering regression evidence, not an independent audit.
+The Phase 2 validation record reports **236 classified differential cases, with zero unexplained divergences**. This measures bounded regression behavior, not independent security assurance.
 
-## 02 / Prove eligibility without publishing the credential
+## 4. Private Policy Verification
 
-Provenance answers *where the asset came from*. Policy answers *whether this particular recipient and trade satisfy issuer-defined conditions*.
+The earlier Circom/Groth16 workstream provides additional proof primitives for transaction-level rules:
 
-ZWA's earlier **Circom / Groth16** work demonstrates two private statements:
+- **Issuer provenance:** prove membership in an issuer-authorized issuance Merkle root without disclosing the private issuance leaf.
+- **Recipient eligibility:** prove membership in an authority-approved credential set, with investor-class, jurisdiction, expiration, and receiver-binding conditions kept within the proof witness.
+- **Exact trade binding:** both proof statements reference `TradeCommitmentV1`, which commits to offered/requested assets, amounts, recipient, policy, matcher fee, nonce, and expiration.
 
-- **Authorized issuance:** a hidden issuance leaf belongs to an issuer-approved Merkle root.
-- **Recipient eligibility:** a hidden credential belongs to an authority-approved set and satisfies class, jurisdiction, validity and receiver-binding constraints.
+At the application boundary, signed-root authentication, freshness, wallet control, and replay checks remain mandatory. The shared commitment is designed to prevent reuse of a provenance proof with eligibility evidence from a different proposed trade.
 
-Both statements use the same canonical **`TradeCommitmentV1`**, binding the exact assets, amounts, recipient, policy, matcher fee, nonce and expiration. That design prevents proof-splicing across unrelated trade intents. The application still has to authenticate signed roots, receiver control and replay state: **a ZK proof cannot replace those trust checks**.
+**Scope:** these proofs were demonstrated in the historical feasibility/core track. Eligibility was **not evaluated** in the recorded purchase in Section 5, and these proofs are not Zcash consensus-level transfer restrictions.
 
-This is a separate, historically demonstrated policy-proof foundation; it has **not** been evaluated as part of the recorded ZSA-for-ZEC purchase below.
+## 5. Experimental Private Settlement
 
-## 03 / Two parties. One experimental private exchange.
+ZWA separately demonstrated a manually authorized **7-unit ZSA purchase for 10,000 zatoshis** (0.0001 shielded ZEC) on pinned experimental Zebra regtest software.
 
-ZWA has also demonstrated a **human-approved ZSA-for-shielded-ZEC purchase** on a pinned experimental Zebra regtest. The buyer and seller approved the same terms in separate signer processes, signed their own Action Groups, and a local coordinator assembled one accepted transaction. A sponsor independently paid the network fee.
+### 5.1 Transaction design
 
-| Recorded exchange | Observed result |
+1. Buyer and seller independently review identical transaction terms, with terminal approval defaulting to reject.
+2. Separate local signer processes approve and sign their own experimental Action Groups.
+3. The one-shot coordinator combines the signed groups with a sponsor-funded network-fee group.
+4. Experimental Zebra accepts the assembled transaction; independent wallet scans confirm the observed asset/payment changes.
+
+| Observed effect | Recorded amount |
 |---|---:|
-| Buyer received | **7 ZSA units** |
-| Buyer paid | **10,000 zatoshis** (0.0001 ZEC) |
-| Seller received | **10,000 zatoshis** |
-| Sponsor paid network fee | **5,000 zatoshis** |
-| Accepted transaction | Block **103**, experimental regtest |
+| Buyer receives | **7 ZSA units** |
+| Buyer pays | **10,000 zatoshis** |
+| Seller receives | **10,000 zatoshis** |
+| Seller delivers | **7 ZSA units** |
+| Sponsor-funded network fee | **5,000 zatoshis** |
+| Matcher fee in this run | **0 zatoshis** |
 
-**Recorded transaction ID**
+**Recorded regtest evidence**
 
 ```text
-aaeb15b837d5b44fc6aaf6d88b36ac9b802cd53e6cd2cf292ef8450db6826dfd
+Transaction: aaeb15b837d5b44fc6aaf6d88b36ac9b802cd53e6cd2cf292ef8450db6826dfd
+Block:       103
+Block hash:  7ece7eadb0fda860e9d2f49add753174da9a04d4e64a4a1c3ced90e15f0cd13a
 ```
 
-Buyer and seller wallet scans showed the corresponding balance changes. Two additional local blocks were observed after acceptance. This is **historical evidence from a disposable test network**, not live mainnet finality or an active browser checkout.
+Two subsequent local blocks were observed after acceptance. The original disposable chain is no longer a live source of finality; this is **recorded test evidence**, not a current mainnet transaction.
 
-**Important signer boundary:** on this pinned experimental stack, Action Group signatures do not bind every outer transaction field, and group expiry was not consensus-enforced. The demonstrated flow therefore uses explicit human approval and a one-shot, locally controlled coordinator—not reusable production spending authorization.
+### 5.2 Authorization boundary
 
-## What to inspect
+On the tested experimental branch, Action Group signatures do **not** cover all eventual outer-transaction fields, and group expiry was **not consensus-enforced**. ZWA therefore used human-approved, one-shot local execution rather than standing orders or production wallet authorization. The acquired swap output has **not** been established as satisfying the frozen lineage relation.
 
-ZWA is designed to make claims **falsifiable**. A verifier should give a precise negative result when proof or chain trust fails; a checkout receipt should say exactly what happened and when.
+## 6. Demo & Validation
 
-| Interface | Purpose |
+ZWA exposes two distinct evidence-driven demos, rather than simulating a single fully integrated trade.
+
+### Demo A — ZWA Verify
+
+Use the real verifier service to inspect a supported lineage statement and its exact verdict:
+
+| Demo case | What to show |
 |---|---|
-| `POST /v1/lineage/verify` | Verify canonical evidence under pinned proof and chain policy |
-| `GET /v1/verifier/info` | Inspect verifier identity and configuration |
-| `GET /v1/demo/scenarios` · `POST /v1/demo/run` | Run backend-supported proof fixtures, when enabled |
-| `GET /v1/checkout/sample-quote` | Inspect fee-inclusive experimental quote |
-| `GET /v1/checkout/sessions/recorded-phase35h/receipt` | Inspect the recorded human-approved purchase receipt |
+| **Valid rooted lineage** | `valid-rooted-n3` → authenticated proof path and `VERIFIED` |
+| **Proof tampering** | Modified proof → rejection without a false positive |
+| **Root/terminal substitution** | Incorrect trust anchor or chain terminal → rejection |
+| **Finality boundary** | A4 → `PENDING_FINALITY` rather than premature approval |
+| **Checkpoint/reorg boundary** | Explicit checkpoint trust requirement or invalidated chain observation |
 
-The Phase 3 verifier and checkout HTTP APIs were **owner-reported local implementations** in the October 11 sourcebook; their availability and current schemas must be checked in the running checkout. These endpoints are **not** claims of a public hosted service.
+The backend's available scenario identifiers should be read from `GET /v1/demo/scenarios`; the listed names reflect reported fixtures, not guaranteed availability on every checkout.
 
-### Reproduce the available protocol core
+### Demo B — ZWA Checkout
+
+Inspect the **recorded** independently approved ZSA-for-ZEC exchange: quote, buyer/seller authorization, accepted txid, wallet-scan observations, block reference, and read-only receipt. The checkout API distinguishes historical execution evidence from current chain availability.
+
+**Important:** Demo A verifies a supported rooted-lineage relation. Demo B shows a separate accepted experimental exchange. Demo B does **not** certify lineage or private recipient eligibility for the purchased note.
+
+### Validation inventory
+
+| Area | Evidence |
+|---|---|
+| Lineage verification | Frozen Halo2 proof and canonical evidence checks; Phase 2 snapshot and adversarial comparisons |
+| Differential testing | 236 classified Phase 2 cases; zero unexplained divergences (recorded) |
+| Checkout | Accepted human-approved transaction; independently observed buyer/seller wallet changes |
+| API testing | Owner-reported Phase 3/3.5 local HTTP and negative-path checks |
+
+## 7. Developer Interfaces
+
+The interfaces below describe **reported local services**, not public hosted endpoints. Confirm the routes and schemas against the current checkout before integration.
+
+| Method | Endpoint | Function |
+|---|---|---|
+| `GET` | `/health/ready` | Verifier readiness |
+| `GET` | `/v1/verifier/info` | Pinned verifier identity and configuration |
+| `POST` | `/v1/lineage/verify` | Canonical evidence verification and chain-trust verdict |
+| `POST` | `/v1/trade/authorize` | Application authorization verdict; **not** a broadcast |
+| `GET` | `/v1/demo/scenarios` | Available deterministic backend scenarios |
+| `POST` | `/v1/demo/run` | Execute a selected verifier fixture |
+| `GET` | `/v1/checkout/sample-quote` | Example ZSA/ZEC terms and fee attribution |
+| `GET` | `/v1/checkout/sessions/recorded-phase35h` | Recorded checkout session |
+| `GET` | `/v1/checkout/sessions/recorded-phase35h/receipt` | Historical transaction receipt |
+
+Example local checkout evidence inspection (when the `checkout/` module is present):
 
 ```bash
-# From the repository root
+python3 -m checkout.api --demo --port 18745 --rpc-port 18255
+
+# In another terminal:
+curl -sS http://127.0.0.1:18745/v1/checkout/sample-quote
+curl -sS http://127.0.0.1:18745/v1/checkout/sessions/recorded-phase35h/receipt
+```
+
+This API is **read-only**. It does not initiate a browser purchase or expose private signer keys. Full request/response contracts, where available, belong in `docs/phase3-api.md` and `docs/checkout-ui-api-contract.md`.
+
+## 8. Repository & Development
+
+| Directory | Responsibility |
+|---|---|
+| [`crates/`](crates/) | Rust protocol types, canonical commitments, credential structures |
+| [`circuits/`](circuits/) | Earlier Circom/Groth16 provenance and eligibility work |
+| [`lineage/`](lineage/) | Separate frozen Halo2 proof/verifier workspace, where published |
+| [`matcher/`](matcher/) · [`rfq/`](rfq/) | Application matcher and private-intent design |
+| [`docs/`](docs/) | Architecture, proofs, security and experimental evidence |
+| [`checkout/`](checkout/) | Experimental checkout/evidence service, where published |
+
+Protocol-core checks from the repository root:
+
+```bash
+git clone https://github.com/Maheshsiddu29/ZWA-Protocol.git
+cd ZWA-Protocol
 cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-The historical Circom circuits use **Circom 2.2.2** and pinned JavaScript dependencies. The Halo2 lineage workspace has a separate frozen toolchain and dependencies; see its own setup instructions when that workspace is available.
+The Halo2 lineage workspace maintains **separate frozen dependencies and tooling**. Where available, follow `lineage/README.md` and `lineage/scripts/check.sh` rather than substituting arbitrary upstream dependency versions.
 
-**Repository map:** [`crates/`](crates/) · [`circuits/`](circuits/) · [`tests/`](tests/) · [`docs/`](docs/) · [`matcher/`](matcher/) · [`rfq/`](rfq/) · [`frontend/`](frontend/)
+**Primary stack:** Rust, Halo2, Orchard note primitives, Circom/Groth16, Poseidon, experimental QEDIT ZSA/Zebra tooling, Python read-only checkout services, and Next.js UI work.
 
-For deeper design boundaries, see [architecture](docs/architecture.md), [trust model](docs/trust-model.md), and [threat model](docs/threat-model.md).
+## 9. Roadmap
 
-## Where ZWA goes next
+| Milestone | Focus |
+|---|---|
+| **Verifier integration** | Publish reproducible proof fixtures and a consistent real-verdict interface |
+| **Policy integration** | Authenticate issuer/credential roots and bind eligibility decisions to verified intents |
+| **Secure settlement integration** | Review signer scope, wallet-control challenges and settlement adapter before connecting purchase execution |
+| **Expanded coverage** | Investigate additional note classes, swap-output ancestry, split flows and richer issuer policies |
+| **Production readiness** | Independent cryptographic review, security hardening, custody/legal assessment, and mature Zcash asset support |
 
-**Prove origin reliably → enforce private rules at the application boundary → connect secure authorization to settlement.**
+## 10. Security & Status
 
-The next milestone is to integrate authenticated roots, the real verifier verdict, recipient/wallet authorization, and a reviewed settlement adapter into a reproducible end-to-end application. Supporting swap-output ancestry, splits, broader asset classes and production-grade authorization requires new work rather than a relabeling of the current proof.
+ZWA is **experimental software, not an audited production RWA exchange**. The checkout uses pinned experimental QEDIT/Zebra ZSA components, not generally available production Zcash mainnet asset functionality. A valid lineage proof does not establish legal title, unspentness, ownership, compliance, or authorization of arbitrary transfers. Private witnesses remain hidden, while public proof tuples and relevant chain references may remain visible.
 
-The opportunity is larger than a single RWA demo: **an asset ecosystem where provenance can be challenged, rules can be checked, and sensitive financial details need not be made public by default.**
-
----
-
-**Experimental status.** The ZSA/ZIP-227/ZIP-228 settlement work uses pinned QEDIT experimental branches, **not generally available production Zcash mainnet functionality**. The protocol has no independent security audit or established regulated-asset deployment. Lineage verification does not itself prove legal title, unspentness, or recipient compliance, and the recorded checkout has not been proven to satisfy the rooted-lineage or eligibility relation.
-
-**Attribution.** Earlier ZK-ORIGIN components derive from [ZKChainForge/zk-origin](https://github.com/ZKChainForge/zk-origin) at commit `eae3f3e19dd63562364149ecb000f2de7296d025`; reused files retain their attribution and MIT notices. No project-wide ZWA license has been selected.
-
-**ZWA Protocol — Private assets. Verifiable origins.**
+Earlier ZK-ORIGIN-derived work is attributed to [ZKChainForge/zk-origin](https://github.com/ZKChainForge/zk-origin) (source commit `eae3f3e19dd63562364149ecb000f2de7296d025`); original attribution and licensing notices are retained. No project-wide ZWA license is asserted here.
