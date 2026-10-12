@@ -9,6 +9,8 @@ if (!root || !/^\/private\/tmp\/zwa4c1-[A-Za-z0-9-]+$/.test(root) || !process.ar
   throw Error("provide disposable Phase 4C.1 ROOT and unrelated disposable terms for negative cases");
 const unrelated = JSON.parse(fs.readFileSync(process.argv[3]));
 const script = path.join(__dirname, "native_zec_v2.js");
+const historicalProof = JSON.parse(fs.readFileSync(path.resolve(__dirname,
+  "../../../zsa-feasibility/phase-0f-zkorigin-binding/proofs/reference-proof.json")));
 const bin = process.env.TX_TOOL_BIN || "/private/tmp/zwa4c1-tx-tool/target/release/zcash_tx_tool";
 const terms = JSON.parse(fs.readFileSync(path.join(root, "exchange/terms.json")));
 const trust = JSON.parse(fs.readFileSync(path.join(root, "coordinator/authorization/trust.json")));
@@ -39,6 +41,7 @@ try {
   run("unauthorized_zsa", t => { t.asset_base = unrelated.asset_base; });
   run("invalid_groth16_proof", (_t, a) => { a.proof.pi_a[0] = "1"; });
   run("revoked_credential_root", (_t, _a, r) => { r.credential.root = "1"; });
+  run("forged_credential_authority", (_t, a) => { a.credentialEnvelope.signature = "00".repeat(64); });
   run("wrong_approved_receiver", t => { t.buyer_receive_address = unrelated.buyer_receive_address; });
   run("inconsistent_public_commitment", (_t, a) => { a.publicSignals[2] = "1"; });
   run("changed_quote_amount", t => { t.price_zat += 1; });
@@ -48,5 +51,5 @@ try {
   run("wrong_network", t => { t.network = "mainnet"; });
   run("expired_authority_root", (_t, a) => { a.credentialEnvelope.expiresAt = 1; });
   run("replayed_quote_nonce", t => { t.nonce = "11".repeat(32); });
-  run("unrelated_historical_lineage", (_t, a) => { a.proof = { pi_a: ["1", "1", "1"] }; });
+  run("unrelated_historical_lineage", (_t, a) => { a.proof = historicalProof; });
 } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
