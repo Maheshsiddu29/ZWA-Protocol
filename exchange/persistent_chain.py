@@ -213,11 +213,14 @@ def checkpoint(root: Path, port: int) -> dict:
         raise ChainError("chain has not been initialized")
     height = _rpc(port, "getblockcount")
     verify_anchor(meta, lambda h: _rpc(port, "getblockhash", [h]), height)
-    meta["anchorHeight"] = height
-    meta["anchorHash"] = _rpc(port, "getblockhash", [height])
+    # This pinned Zebra drops its last 99 non-finalized blocks on restart.
+    # Never checkpoint the volatile tip as though it were durable.
+    safe_height = max(meta["anchorHeight"], height - 100)
+    meta["anchorHeight"] = safe_height
+    meta["anchorHash"] = _rpc(port, "getblockhash", [safe_height])
     meta["lastObservedHeight"] = height
     _atomic_json(root / "chain-identity.json", meta)
-    return {"state": "CHAIN_ACTIVE", "height": height,
+    return {"state": "CHAIN_ACTIVE", "height": height, "anchorHeight": safe_height,
             "anchorHash": meta["anchorHash"]}
 
 
