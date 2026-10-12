@@ -57,12 +57,18 @@ fn check(bytes: &[u8]) -> Result<Value, String> {
 fn main() -> ExitCode {
     let paths: Vec<String> = std::env::args().skip(1).collect();
     if paths.is_empty() {
-        eprintln!("usage: zwa-node-check <tx-file>...");
+        eprintln!("usage: zwa-node-check <tx-file | ->...");
         return ExitCode::from(2);
     }
     let mut ok = true;
     for path in paths {
-        let result = std::fs::read(&path).map_err(|e| e.to_string()).and_then(|b| check(&b));
+        let bytes = if path == "-" {
+            let mut buf = Vec::new();
+            std::io::Read::read_to_end(&mut std::io::stdin(), &mut buf).map(|_| buf)
+        } else {
+            std::fs::read(&path)
+        };
+        let result = bytes.map_err(|e| e.to_string()).and_then(|b| check(&b));
         match result {
             Ok(v) => println!("{}", json!({ "file": path, "nodeParse": "ACCEPTED", "facts": v })),
             Err(e) => {

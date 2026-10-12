@@ -1,0 +1,37 @@
+# LOCAL LAB ONLY. A private fork of the community ZSA Testnet parameters
+# (testnet_variant = "zsa": same genesis, magic and consensus code) with no
+# peers and loopback-only listeners. It never connects to the public network.
+
+[consensus]
+checkpoint_sync = true
+
+[mempool]
+eviction_memory_time = "1h"
+
+[mining]
+miner_address = "@MINER_ADDRESS@"
+extra_coinbase_data = "ZWA LAB"
+internal_miner = @INTERNAL_MINER@
+
+[network]
+cache_dir = "@NODE_DIR@/network-cache"
+initial_testnet_peers = []
+listen_addr = "127.0.0.1:19233"
+network = "Testnet"
+testnet_variant = "zsa"
+peerset_initial_target_size = 0
+
+[rpc]
+listen_addr = "127.0.0.1:19232"
+enable_cookie_auth = false
+
+[state]
+cache_dir = "@NODE_DIR@/state"
+delete_old_database = false
+ephemeral = false
+
+[sync]
+parallel_cpu_threads = 0
+
+[tracing]
+use_color = false

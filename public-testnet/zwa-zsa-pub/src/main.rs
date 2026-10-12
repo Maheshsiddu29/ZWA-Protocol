@@ -11,6 +11,7 @@
 mod chain;
 mod gate;
 mod inspect;
+mod nodecheck;
 mod policy;
 mod receipt;
 mod wallet;
@@ -94,6 +95,8 @@ enum Cmd {
         #[arg(long)]
         amount: u64,
     },
+    /// LAB ONLY: shield the lab faucet's matured coinbase to its own Orchard address.
+    LabShield,
     /// LAB ONLY: send local tZEC from the lab faucet wallet to the issuer.
     LabFund {
         #[arg(long)]
@@ -195,11 +198,24 @@ fn check_txid(txid: &str) -> Result<()> {
     Ok(())
 }
 
+/// Wallet-library inspection plus the node's own parser. The node's txid is
+/// canonical; any divergence must be explained by the one known Orchard-flags
+/// normalization, and issuance AssetBases must agree across both crate graphs.
 fn facts_for(kind: PlanKind, bytes: &[u8]) -> Result<inspect::TxFacts> {
-    match kind {
-        PlanKind::LabFunding => inspect::facts_lab_funding(bytes),
-        _ => inspect::facts(bytes),
+    let mut facts = match kind {
+        PlanKind::LabFunding => inspect::facts_lab_funding(bytes)?,
+        _ => inspect::facts(bytes)?,
+    };
+    let node = nodecheck::check(bytes)?;
+    if node.txid != facts.wallet_library_txid && !facts.orchard_flags_normalized {
+        bail!("wallet library and node compute different txids without a known cause");
     }
+    let wallet_bases: Vec<String> = facts.issuance.iter().map(|i| i.asset_base.clone()).collect();
+    if node.issuance_asset_bases != wallet_bases {
+        bail!("node and wallet derive different issuance AssetBases");
+    }
+    facts.txid = node.txid;
+    Ok(facts)
 }
 
 fn load_pending(root: &Path, txid: &str) -> Result<(Vec<u8>, Plan)> {
@@ -215,6 +231,18 @@ fn load_pending(root: &Path, txid: &str) -> Result<(Vec<u8>, Plan)> {
         bail!("prepared transaction file does not match its plan");
     }
     Ok((bytes, plan))
+}
+
+/// Inspect freshly built bytes. A candidate that fails is kept as
+/// `pending/rejected-<sha256>.tx` for review; it has no plan and can never be
+/// broadcast by this tool.
+fn inspect_new(root: &Path, kind: PlanKind, bytes: &[u8]) -> Result<inspect::TxFacts> {
+    facts_for(kind, bytes).or_else(|e| {
+        use sha2::Digest;
+        let name = format!("rejected-{}.tx", hex::encode(sha2::Sha256::digest(bytes)));
+        let _ = pending_dir(root).and_then(|d| write_private(&d.join(&name), bytes));
+        Err(e.context(format!("candidate quarantined as pending/{name}")))
+    })
 }
 
 fn save_plan(root: &Path, bytes: &[u8], plan: &Plan) -> Result<String> {
@@ -304,7 +332,7 @@ async fn main() -> Result<()> {
             let w = wallet::open(&root, &binding.profile, Role::Issuer).await?;
             let height = w.sync().await?;
             let bytes = w.build_issuance(&name, amount).await?;
-            let facts = inspect::facts(&bytes)?;
+            let facts = inspect_new(&root, PlanKind::ZsaIssuance, &bytes)?;
             inspect::expect_issuance(&facts, &name, amount)?;
             let plan = Plan {
                 schema: "zwa-public-zsa-plan/v1".into(),
@@ -341,7 +369,7 @@ async fn main() -> Result<()> {
             }
             let address = recipient.orchard_address().await?;
             let bytes = issuer.build_payment(address, amount, base.to_vec()).await?;
-            let facts = inspect::facts(&bytes)?;
+            let facts = inspect_new(&root, PlanKind::ZsaShieldedTransfer, &bytes)?;
             let fvk = recipient.orchard_fvk().await?;
             inspect::expect_transfer(&bytes, &facts, &fvk, &base, amount)?;
             let plan = Plan {
@@ -359,6 +387,36 @@ async fn main() -> Result<()> {
             save_plan(&root, &bytes, &plan)?;
             print(&plan)
         }
+        Cmd::LabShield => {
+            let (binding, _, _) = checked(&root).await?;
+            if binding.profile.kind != ProfileKind::Lab {
+                bail!("lab-shield exists only for lab roots");
+            }
+            let faucet = wallet::open(&root, &binding.profile, Role::Labfaucet).await?;
+            let height = faucet.sync().await?;
+            let bytes = faucet.build_shield_all().await?;
+            let facts = inspect_new(&root, PlanKind::LabFunding, &bytes)?;
+            if facts.transparent_outputs != 0 {
+                bail!("shielding must not create transparent outputs");
+            }
+            let plan = Plan {
+                schema: "zwa-public-zsa-plan/v1".into(),
+                kind: PlanKind::LabFunding,
+                profile: binding.profile.kind,
+                built_at_height: height,
+                asset_label: None,
+                asset_base: None,
+                amount: 0,
+                recipient_role: Some(Role::Labfaucet),
+                recipient_decryption_checked: false,
+                facts: serde_json::to_value(&facts)?,
+            };
+            let txid = save_plan(&root, &bytes, &plan)?;
+            let tip = faucet.height().await?;
+            gate::record_submission(&root, &txid, u64::from(tip))?;
+            let sent = faucet.submit(tip, &bytes).await?;
+            print(&serde_json::json!({ "labShieldTxid": txid, "lightwalletdReply": sent }))
+        }
         Cmd::LabFund { amount } => {
             let (binding, _, _) = checked(&root).await?;
             if binding.profile.kind != ProfileKind::Lab {
@@ -368,7 +426,7 @@ async fn main() -> Result<()> {
             let issuer = wallet::open(&root, &binding.profile, Role::Issuer).await?;
             let height = faucet.sync().await?;
             let bytes = faucet.build_payment(issuer.orchard_address().await?, amount, vec![]).await?;
-            let facts = inspect::facts_lab_funding(&bytes)?;
+            let facts = inspect_new(&root, PlanKind::LabFunding, &bytes)?;
             let plan = Plan {
                 schema: "zwa-public-zsa-plan/v1".into(),
                 kind: PlanKind::LabFunding,
@@ -411,13 +469,16 @@ async fn main() -> Result<()> {
             check_txid(&txid)?;
             let (binding, mut lwd, seen) = checked(&root).await?;
             let (bytes, plan) = load_pending(&root, &txid)?;
-            let inclusion = chain::inclusion(&mut lwd, &txid).await?;
-            if inclusion.tx_sha256 != plan.facts["sha256"] {
-                bail!("node returned different bytes for this txid");
-            }
+            let expected_sha = plan.facts["sha256"].as_str().context("plan sha256")?;
+            let inclusion = chain::inclusion(&mut lwd, &txid, expected_sha).await?;
             let observed = receipt::wallet_observation(&root, &binding.profile, &plan, inclusion.mined).await?;
             let public = receipt::public_receipt(&binding.profile, &seen, &plan, &facts_for(plan.kind, &bytes)?, &inclusion, &observed)?;
-            receipt::write(&root, &txid, &public, &observed)?;
+            receipt::assert_public_safe(&public)?;
+            // Receipts are written only for mined transactions, so polling
+            // an unconfirmed txid leaves no files behind.
+            if inclusion.mined {
+                receipt::write(&root, &txid, &public, &observed)?;
+            }
             print(&public)
         }
     }

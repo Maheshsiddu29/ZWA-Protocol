@@ -28,7 +28,11 @@ const P2PKH_STANDARD_OUTPUT_SIZE: usize = 34;
 /// Facts that are public on chain, safe for receipts.
 #[derive(Clone, Debug, Serialize)]
 pub struct TxFacts {
+    /// Canonical txid as computed by the node's parser (set by
+    /// `main::full_facts`); equals `wallet_library_txid` unless the wallet
+    /// library normalized Orchard flags.
     pub txid: String,
+    pub wallet_library_txid: String,
     pub size: usize,
     pub sha256: String,
     pub version: &'static str,
@@ -44,6 +48,9 @@ pub struct TxFacts {
     pub sapling_outputs: usize,
     pub orchard_actions: usize,
     pub orchard_flavor: &'static str,
+    /// True when the wallet library's re-serialization cleared `enableZSA`
+    /// on a native-asset Orchard bundle (the only tolerated difference).
+    pub orchard_flags_normalized: bool,
     pub issuance: Option<IssuanceFacts>,
 }
 
@@ -59,14 +66,52 @@ pub struct IssuanceFacts {
     pub note_count: usize,
 }
 
+/// Orchard `flagsOrchard` bit 2 (enableZSA). See `orchard_flags_normalization`.
+const ENABLE_ZSA_FLAG: u8 = 0b100;
+
 pub fn parse(bytes: &[u8]) -> Result<Transaction> {
+    Ok(parse_with_normalization(bytes)?.0)
+}
+
+/// Parse, then require the bytes to round-trip. The wallet library's V6
+/// reader holds a native-asset Orchard bundle as a vanilla bundle and drops
+/// `enableZSA` when re-writing (observed in the lab: 0x07 -> 0x03), while the
+/// node keeps it. Exactly that one-byte difference is tolerated, and only when
+/// the byte sits directly before the bundle's anchor. Anything else fails.
+/// Byte-exact acceptance by the node's own parser is checked separately by
+/// `zwa-node-check`.
+pub fn parse_with_normalization(bytes: &[u8]) -> Result<(Transaction, bool)> {
     let tx = Transaction::read(bytes, BranchId::Zsa).context("transaction does not parse under BranchId::Zsa")?;
     let mut round_trip = Vec::with_capacity(bytes.len());
     tx.write(&mut round_trip)?;
-    if round_trip != bytes {
-        bail!("transaction bytes do not round-trip");
+    if round_trip == bytes {
+        return Ok((tx, false));
     }
-    Ok(tx)
+    let diffs: Vec<usize> = if round_trip.len() == bytes.len() {
+        bytes.iter().zip(&round_trip).enumerate().filter(|(_, (a, b))| a != b).map(|(i, _)| i).collect()
+    } else {
+        vec![]
+    };
+    if orchard_flags_normalization(&tx, bytes, &round_trip, &diffs) {
+        return Ok((tx, true));
+    }
+    bail!(
+        "transaction bytes do not round-trip (len {} vs {}, differing offsets {:?})",
+        bytes.len(),
+        round_trip.len(),
+        diffs.iter().take(8).collect::<Vec<_>>()
+    )
+}
+
+fn orchard_flags_normalization(tx: &Transaction, original: &[u8], round_trip: &[u8], diffs: &[usize]) -> bool {
+    let [k] = diffs else { return false };
+    let k = *k;
+    let Some(bundle) = tx.orchard_bundle() else { return false };
+    let Some(vanilla) = bundle.as_vanilla() else { return false };
+    let anchor = vanilla.anchor().to_bytes();
+    original[k] == round_trip[k] | ENABLE_ZSA_FLAG
+        && round_trip[k] & ENABLE_ZSA_FLAG == 0
+        && original.get(k + 1..k + 33) == Some(&anchor[..])
 }
 
 /// Mirrors the node's `conventional_actions` for the shapes this tool builds.
@@ -116,7 +161,7 @@ pub fn facts_lab_funding(bytes: &[u8]) -> Result<TxFacts> {
 }
 
 fn facts_inner(bytes: &[u8], allow_transparent_inputs: bool) -> Result<TxFacts> {
-    let tx = parse(bytes)?;
+    let (tx, orchard_flags_normalized) = parse_with_normalization(bytes)?;
     if tx.version() != TxVersion::V6 {
         bail!("expected a V6 transaction");
     }
@@ -189,6 +234,7 @@ fn facts_inner(bytes: &[u8], allow_transparent_inputs: bool) -> Result<TxFacts> 
     };
     Ok(TxFacts {
         txid: tx.txid().to_string(),
+        wallet_library_txid: tx.txid().to_string(),
         size: bytes.len(),
         sha256: hex::encode(Sha256::digest(bytes)),
         version: "V6",
@@ -204,6 +250,7 @@ fn facts_inner(bytes: &[u8], allow_transparent_inputs: bool) -> Result<TxFacts> 
         sapling_outputs,
         orchard_actions: tx.orchard_bundle().map_or(0, |b| b.action_count()),
         orchard_flavor,
+        orchard_flags_normalized,
         issuance,
     })
 }

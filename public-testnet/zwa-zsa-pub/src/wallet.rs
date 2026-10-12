@@ -13,7 +13,7 @@ use rlz::api::account::{get_account_ufvk, get_addresses, new_account, NewAccount
 use rlz::api::coin::Coin;
 use rlz::api::network::get_current_height;
 use rlz::api::pay::{extract_transaction, prepare, sign_transaction, PaymentOptions};
-use rlz::pay::pool::{ALL_POOLS, POOL_ORCHARD};
+use rlz::pay::pool::{ALL_POOLS, POOL_ORCHARD, POOL_TRANSPARENT};
 use rlz::pay::Recipient;
 use serde::{Deserialize, Serialize};
 use zcash_address::unified::{self, Container, Encoding};
@@ -239,6 +239,31 @@ impl Wallet {
         let pczt = prepare(&[recipient], options, &self.coin).await.context("plan payment")?;
         let signed = sign_transaction(&pczt, &self.coin).await.context("sign payment")?;
         extract_transaction(&signed).await.context("extract payment")
+    }
+
+    /// LAB ONLY: shield this wallet's entire transparent balance to its own
+    /// Orchard address (recipient pays the fee, so there is no transparent
+    /// change). Coinbase spends may not have transparent outputs.
+    pub async fn build_shield_all(&self) -> Result<Vec<u8>> {
+        let recipient = Recipient {
+            address: self.orchard_address().await?,
+            amount: 0, // replaced by rlz with the full transparent balance
+            pools: None,
+            user_memo: None,
+            memo_bytes: None,
+            price: None,
+            asset_base: vec![],
+            asset_name: None,
+        };
+        let options = PaymentOptions {
+            src_pools: POOL_TRANSPARENT,
+            recipient_pays_fee: true,
+            smart_transparent: true,
+            category: None,
+        };
+        let pczt = prepare(&[recipient], options, &self.coin).await.context("plan shielding")?;
+        let signed = sign_transaction(&pczt, &self.coin).await.context("sign shielding")?;
+        extract_transaction(&signed).await.context("extract shielding")
     }
 
     /// Submit through lightwalletd. Callers must pass the broadcast gate first.

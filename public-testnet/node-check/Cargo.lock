@@ -2937,6 +2937,7 @@ dependencies = [
  "hex",
  "orchard",
  "serde_json",
+ "zcash_primitives",
  "zebra-chain",
 ]
 

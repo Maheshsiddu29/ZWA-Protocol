@@ -80,20 +80,20 @@ fn txid_internal(txid_display: &str) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
-/// Fetch the transaction, recompute its txid from the returned bytes, then
-/// prove membership by finding it in the compact block at the reported height.
-pub async fn inclusion(lwd: &mut Lwd, txid_display: &str) -> Result<Inclusion> {
+/// Fetch the transaction by its canonical (node) txid, require the returned
+/// bytes to be identical to the prepared bytes, then prove membership by
+/// finding the txid in the compact block at the reported height.
+pub async fn inclusion(lwd: &mut Lwd, txid_display: &str, expected_sha256: &str) -> Result<Inclusion> {
     let internal = txid_internal(txid_display)?;
     let raw = lwd
         .get_transaction(TxFilter { block: None, index: 0, hash: internal.clone() })
         .await
         .context("GetTransaction")?
         .into_inner();
-    let tx = crate::inspect::parse(&raw.data)?;
-    if tx.txid().to_string() != txid_display {
-        bail!("returned bytes hash to a different txid");
-    }
     let tx_sha256 = hex::encode(Sha256::digest(&raw.data));
+    if tx_sha256 != expected_sha256 {
+        bail!("node returned different bytes for this txid");
+    }
     let (tip_height, tip_hash) = tip(lwd).await?;
     // lightwalletd reports 0 for mempool and u64::MAX-style sentinels for
     // transactions outside the best chain; only a plausible height counts.

@@ -122,6 +122,7 @@ pub fn public_receipt(
         "transaction": {
             "kind": plan.kind,
             "txid": facts.txid,
+            "txidSource": "community node parser (zebra-chain@6a91831)",
             "sha256": facts.sha256,
             "sizeBytes": facts.size,
             "version": facts.version,
@@ -139,7 +140,7 @@ pub fn public_receipt(
             "observedTipHash": inclusion.observed_tip_hash,
             "confirmations": inclusion.confirmations,
             "observedAtUnix": now_unix(),
-            "method": "lightwalletd GetTransaction; txid recomputed from returned bytes; membership shown by the compact block at the reported height.",
+            "method": "lightwalletd GetTransaction by canonical txid; returned bytes identical to the prepared bytes (SHA-256); membership shown by the compact block at the reported height.",
         },
         "asset": asset,
         "walletObservation": {

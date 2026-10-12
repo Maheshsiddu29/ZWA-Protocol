@@ -14,6 +14,10 @@ zebra-chain = { git = "https://github.com/zcash-shielded-assets/zebra.git", rev 
 orchard = { version = "0.14", features = ["zsa-issuance", "temporary-zebra"] }
 hex = "0.4"
 serde_json = "1.0"
+# The deployed zebrad enables `zcash_primitives/zip-233` through zebra-rpc's
+# `tx_v6` feature. V6 txids depend on it, so the checker must unify the same
+# feature or it computes a different (non-canonical) txid.
+zcash_primitives = { version = "0.28", features = ["zip-233"] }
 
 # Copied verbatim from zcash-shielded-assets/zebra@6a91831 so the checker
 # uses the same Orchard / librustzcash revisions as the deployed node.
