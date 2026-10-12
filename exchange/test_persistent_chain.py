@@ -28,13 +28,15 @@ class ChainIdentityTests(unittest.TestCase):
                         "anchorHash": "a" * 64, "lastStartState": "CHAIN_ACTIVE"}
             (root / "chain-identity.json").write_text(json.dumps(identity))
             info = {"State": {"Running": True}}
-            with (patch.object(chain, "_state_exists", return_value=True),
+            with (patch.object(chain, "_paths", return_value=(root / "chain", root / "chain" / "config")),
+                  patch.object(chain, "_state_exists", return_value=True),
                   patch.object(chain, "_inspect", return_value=info),
                   patch.object(chain, "_validate_container"),
                   patch.object(chain, "_rpc", side_effect=[14, "0" * 64])):
                 result = chain.status(root, "test", 18320)
             self.assertEqual(result["state"], "CHAIN_RESET")
-            with patch.object(chain, "_state_exists", return_value=True):
+            with (patch.object(chain, "_paths", return_value=(root / "chain", root / "chain" / "config")),
+                  patch.object(chain, "_state_exists", return_value=True)):
                 stopped = chain.status(root, "test", 18320)
             self.assertEqual(stopped["state"], "CHAIN_RESET")
 
@@ -47,7 +49,8 @@ class ChainIdentityTests(unittest.TestCase):
                         "anchorHash": "a" * 64, "lastStartState": "CHAIN_ACTIVE"}
             path = root / "chain-identity.json"
             path.write_text(json.dumps(identity))
-            with (patch.object(chain, "_state_exists", return_value=True),
+            with (patch.object(chain, "_paths", return_value=(root / "chain", root / "chain" / "config")),
+                  patch.object(chain, "_state_exists", return_value=True),
                   patch.object(chain, "_inspect", return_value={"State": {"Running": True}}),
                   patch.object(chain, "_validate_container"),
                   patch.object(chain, "_rpc", side_effect=URLError("offline"))):
