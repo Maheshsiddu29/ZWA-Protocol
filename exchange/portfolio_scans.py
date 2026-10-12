@@ -34,6 +34,36 @@ def build(exchange: Path, chain_identity: Path, *, restart: bool = False,
     buyer_native = set()
     seller_native = set()
     scan_heights = set()
+    order_receipts = []
+    orders_dir = exchange / "orders"
+    if orders_dir.is_dir():
+        from .order_ledger import OrderLedger
+        for path in sorted(orders_dir.glob("*/order-receipt.json")):
+            if path.is_symlink() or path.stat().st_size > 8192:
+                raise ValueError("unsafe order receipt")
+            order_receipt = json.loads(path.read_text())
+            if (order_receipt.get("version") != 1 or
+                    order_receipt.get("approvalMode") != "SCRIPTED_TEST_MODE" or
+                    order_receipt.get("rootedNoteLineage") != "UNSUPPORTED" or
+                    order_receipt.get("orderId") != path.parent.name):
+                raise ValueError("unverified order receipt")
+            ledger = OrderLedger(exchange / "exchange.sqlite")
+            order = ledger.get_order(path.parent.name, participant_id=order_receipt["buyerId"])
+            if (order["state"] != "RECEIPT_AVAILABLE" or
+                    order["seller_id"] != order_receipt["sellerId"] or
+                    order["asset_base"] != order_receipt["assetBase"] or
+                    order["quantity"] != order_receipt["quantity"] or
+                    order["quote_digest"] != order_receipt["quoteDigest"]):
+                raise ValueError("order receipt differs from durable ledger")
+            session = read_session(exchange / "order-quotes/gold-1/session-result.json")
+            per_order = read_scans(path.parent / "public-scans.json", session)
+            if (session is None or per_order is None or
+                    session["receipt"]["txid"] != order_receipt["txid"] or
+                    session["receipt"]["height"] != order_receipt["height"] or
+                    session["receipt"]["block_hash"] != order_receipt["blockHash"] or
+                    session["quote"]["paymentAmount"] != order_receipt["paymentZat"]):
+                raise ValueError("order receipt differs from actual checkout")
+            order_receipts.append(order_receipt)
     for item in instruments:
         instrument_id = item["id"]
         asset = item["asset_base"]
@@ -52,8 +82,10 @@ def build(exchange: Path, chain_identity: Path, *, restart: bool = False,
             raise ValueError("trade authorization is not fully verified")
         buyer = parse(scans / f"{instrument_id}-buyer{suffix}.log", "Buyer", asset)
         seller = parse(scans / f"{instrument_id}-seller{suffix}.log", "Seller", asset)
-        if (buyer["assetUnits"] != per_trade["buyerAfter"]["assetUnits"]
-                or seller["assetUnits"] != per_trade["sellerAfter"]["assetUnits"]
+        extra = [r for r in order_receipts if r["assetBase"] == asset]
+        extra_units = sum(r["quantity"] for r in extra)
+        if (buyer["assetUnits"] != per_trade["buyerAfter"]["assetUnits"] + extra_units
+                or seller["assetUnits"] != per_trade["sellerAfter"]["assetUnits"] - extra_units
                 or buyer["height"] < session["receipt"]["height"]
                 or seller["height"] < session["receipt"]["height"]):
             raise ValueError("combined wallet scans differ from settled trade")
@@ -70,6 +102,10 @@ def build(exchange: Path, chain_identity: Path, *, restart: bool = False,
                          "height": session["receipt"]["height"],
                          "paymentZat": session["quote"]["paymentAmount"],
                          "approvalMode": "SCRIPTED_TEST_MODE"})
+    receipts.extend({"instrumentId": r["instrumentId"],
+                     "quoteDigest": r["quoteDigest"], "txid": r["txid"],
+                     "height": r["height"], "paymentZat": r["paymentZat"],
+                     "approvalMode": r["approvalMode"]} for r in order_receipts)
     if len(buyer_native) != 1 or len(seller_native) != 1 or len(scan_heights) != 1:
         raise ValueError("wallet scans are not from one common chain tip")
     height = scan_heights.pop()
