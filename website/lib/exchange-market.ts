@@ -11,7 +11,8 @@ function displayDecimal(mantissa: bigint, exponent: number): string {
 
 export async function goldReference(): Promise<{ value: string; observedAt: string; confidence: string; source: string; trust: string } | null> {
   const key = process.env.PYTH_API_KEY;
-  if (!key) return null;
+  // Require the operator to check the full ID against official feed metadata.
+  if (!key || process.env.PYTH_XAU_USD_FEED_ID_VERIFIED !== feedId) return null;
   try {
     const url = `https://pyth.dourolabs.app/hermes/v2/updates/price/latest?ids%5B%5D=0x${feedId}`;
     const response = await fetch(url, { headers: { Authorization: `Bearer ${key}` }, cache: "no-store", signal: AbortSignal.timeout(4000) });
