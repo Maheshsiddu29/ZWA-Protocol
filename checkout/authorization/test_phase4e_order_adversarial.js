@@ -1,14 +1,18 @@
 "use strict";
-// Negative verification vectors against the actual completed Phase 4E order.
-// This copies public terms and proof artifacts into a disposable private dir.
+// Negative verification vectors against an actual Phase 4E order's proof.
+// Usage: node test_phase4e_order_adversarial.js ROOT ORDER_ID
+// Evidence is only read; mutated copies go to a disposable private dir.
+// Root envelopes are valid for one hour after proof generation, so the
+// positive vector is meaningful only for a recently authorized order.
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
-const root = process.argv[2];
-if (root !== "/private/tmp/zwa4e-phase4e-b") throw Error("pass the preserved Phase 4E root");
-const order = "ec27f52d2e7ad69287f7d4d4357025af";
-const quoteDir = path.join(root, "exchange/order-quotes/gold-1");
+const [root, order] = process.argv.slice(2);
+if (!/^\/private\/tmp\/zwa4e-[A-Za-z0-9-]+$/.test(root || "") || !/^[0-9a-f]{32}$/.test(order || ""))
+  throw Error("usage: ROOT ORDER_ID");
+const legacy = { ec27f52d2e7ad69287f7d4d4357025af: "exchange/order-quotes/gold-1" };
+const quoteDir = path.join(root, legacy[order] || path.join("exchange/orders", order, "quote"));
 const authDir = path.join(root, "exchange/orders", order, "authorization");
 const terms = JSON.parse(fs.readFileSync(path.join(quoteDir, "terms.json")));
 const session = JSON.parse(fs.readFileSync(path.join(quoteDir, "session-result.json")));

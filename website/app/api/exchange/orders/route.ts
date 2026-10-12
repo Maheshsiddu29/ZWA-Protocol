@@ -1,21 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
-import { mutateOrder, ownOrders } from "@/lib/private-orders";
-import { localRequestOrigin } from "@/lib/local-origin";
+import { NextRequest } from "next/server";
+import { mutate, read } from "@/lib/exchange-route";
 
 export const dynamic = "force-dynamic";
-export async function GET() {
-  const orders = await ownOrders();
-  if (!orders) return NextResponse.json({ error: "Orders unavailable" }, { status: 403 });
-  return NextResponse.json({ orders }, { headers: { "Cache-Control": "no-store" } });
-}
-
-export async function POST(request: NextRequest) {
-  if (!localRequestOrigin(request)) return NextResponse.json({ error: "Origin rejected" }, { status: 403 });
-  const raw = await request.text();
-  if (raw.length > 2048) return NextResponse.json({ error: "Request too large" }, { status: 413 });
-  let payload: unknown;
-  try { payload = JSON.parse(raw); } catch { return NextResponse.json({ error: "Invalid request" }, { status: 400 }); }
-  const order = await mutateOrder("request", payload);
-  if (!order) return NextResponse.json({ error: "Request unavailable" }, { status: 409 });
-  return NextResponse.json(order, { status: 201, headers: { "Cache-Control": "no-store" } });
-}
+export const GET = () => read("orders");
+export const POST = (request: NextRequest) => mutate(request, "buy", body =>
+  typeof body.offerId === "string" && Number.isSafeInteger(body.quantity) && typeof body.idempotencyKey === "string"
+    ? { offerId: body.offerId, quantity: body.quantity, idempotencyKey: body.idempotencyKey } : null);

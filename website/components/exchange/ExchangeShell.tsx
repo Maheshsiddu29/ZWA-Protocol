@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 const links = [
   { href: "/exchange", label: "Overview" }, { href: "/exchange/assets", label: "Browse assets" },
   { href: "/exchange/portfolio", label: "Portfolio" }, { href: "/exchange/orders", label: "Orders" },
+  { href: "/exchange/wallet", label: "Wallet" },
   { href: "/exchange/activity", label: "Activity" },
 ];
 
