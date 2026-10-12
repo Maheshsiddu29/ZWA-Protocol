@@ -129,18 +129,21 @@ FAILURE_STAGES = ("BUYER_APPROVAL_NOT_GRANTED", "SELLER_APPROVAL_NOT_GRANTED", "
                   "SIGNER_UNAVAILABLE", "EXECUTION_FAILED", "EXECUTION_UNCERTAIN")
 
 
-def read_events(path: Path | None, session_id: str) -> list[str]:
+def read_event_record(path: Path | None, session_id: str) -> tuple[list[str], str]:
     if path is None or not path.exists():
-        return []
+        return [], "LOCAL_OPERATOR_EVENT_ONLY"
     try:
         if path.is_symlink() or path.stat().st_size > MAX_EVENTS_BYTES:
             raise SessionError("unsafe event result")
         data = json.loads(path.read_bytes())
     except (OSError, ValueError) as exc:
         raise SessionError("invalid event result") from exc
-    if (type(data) is not dict or set(data) != {"version", "sessionId", "stages"}
+    if (type(data) is not dict or set(data) not in ({"version", "sessionId", "stages"},
+                                                     {"version", "sessionId", "stages", "mode"})
             or data["version"] != 1 or data["sessionId"] != session_id
-            or type(data["stages"]) is not list or len(data["stages"]) > len(PUBLIC_STAGES) + 1):
+            or type(data["stages"]) is not list or len(data["stages"]) > len(PUBLIC_STAGES) + 1
+            or data.get("mode", "LOCAL_OPERATOR_EVENT_ONLY") not in
+            ("LOCAL_OPERATOR_EVENT_ONLY", "SCRIPTED_TEST_MODE")):
         raise SessionError("event result schema")
     stages = data["stages"]
     if (not stages or stages[0] != PUBLIC_STAGES[0]
@@ -153,7 +156,11 @@ def read_events(path: Path | None, session_id: str) -> list[str]:
             or (any(stage in FAILURE_STAGES for stage in stages)
                 and (stages[-1] not in FAILURE_STAGES or len(stages) != len(normal) + 1))):
         raise SessionError("event order")
-    return stages
+    return stages, data.get("mode", "LOCAL_OPERATOR_EVENT_ONLY")
+
+
+def read_events(path: Path | None, session_id: str) -> list[str]:
+    return read_event_record(path, session_id)[0]
 
 
 def read_scans(path: Path | None, session: dict) -> dict | None:
@@ -354,7 +361,7 @@ class Engine:
 
     def _live_with_events(self, session: dict) -> tuple[dict, int]:
         try:
-            stages = read_events(self.event_path, session["sessionId"])
+            stages, approval_mode = read_event_record(self.event_path, session["sessionId"])
             if (session["receipt"] is None
                     and (any(stage in stages for stage in PUBLIC_STAGES[5:])
                          or self.scans_path is not None and self.scans_path.exists())):
@@ -368,7 +375,7 @@ class Engine:
         if stages:
             view["operatorStages"] = stages
             view["operatorStage"] = stages[-1]
-            view["approvalEvidence"] = "LOCAL_OPERATOR_EVENT_ONLY"
+            view["approvalEvidence"] = approval_mode
         if scans is not None and code == 200 and view.get("status") in ("PENDING_FINALITY", "FINALIZED"):
             view["walletScans"] = scans
             view["receipt"]["walletScans"] = scans

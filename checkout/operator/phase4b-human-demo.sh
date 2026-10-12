@@ -26,6 +26,14 @@ for parameter in sapling-spend.params sapling-output.params; do
         exit 2
     }
 done
+if ! (cd "$PARAMS_DATA_HOME/ZcashParams" && shasum -a 256 -c > /dev/null <<'CHECKSUMS'
+8e48ffd23abb3a5fd9c5589204f32d9c31285a04b78096ba40a79b75677efc13  sapling-spend.params
+2f0ebbcbb9bb0bcffe95a397e7eba89c29eb4dde6191c339db88570e3f3fb0e4  sapling-output.params
+CHECKSUMS
+); then
+    echo "trusted proving parameter checksum mismatch in $PARAMS_DATA_HOME/ZcashParams" >&2
+    exit 2
+fi
 test "$(docker image inspect --format '{{.Id}}' "$IMAGE")" = "$IMAGE"
 if docker container inspect "$CONTAINER" > /dev/null 2>&1; then
     echo "container name already exists: $CONTAINER" >&2

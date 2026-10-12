@@ -202,6 +202,7 @@ class SessionTests(unittest.TestCase):
             append(self.path, events, "TRANSACTION_INCLUDED")
         active, code = engine.route("/v1/checkout/active")
         self.assertEqual((code, active["operatorStage"]), (200, "AWAITING_BUYER_APPROVAL"))
+        self.assertEqual(active["approvalEvidence"], "LOCAL_OPERATOR_EVENT_ONLY")
         append(self.path, events, "BUYER_APPROVAL_NOT_GRANTED")
         with self.assertRaises(SessionError):
             append(self.path, events, "BUYER_AUTHORIZED")
@@ -216,6 +217,20 @@ class SessionTests(unittest.TestCase):
         self.path.unlink()
         self.assertEqual(engine.route("/v1/checkout/active"),
                          ({"error": {"code": "NO_ACTIVE_SESSION"}}, 404))
+
+    def test_scripted_events_cannot_be_relabelled_as_human(self):
+        self.write(session(self.quote))
+        events = Path(self.temp.name) / "scripted-events.json"
+        append(self.path, events, "SESSION_PREPARED", "SCRIPTED_TEST_MODE")
+        append(self.path, events, "AWAITING_BUYER_APPROVAL", "SCRIPTED_TEST_MODE")
+        active, code = Engine(self.path, FakeRpc(tip=102), events).route("/v1/checkout/active")
+        self.assertEqual((code, active["approvalEvidence"]), (200, "SCRIPTED_TEST_MODE"))
+        with self.assertRaises(SessionError):
+            append(self.path, events, "BUYER_AUTHORIZED")
+        data = json.loads(events.read_text())
+        data["mode"] = "UNRECOGNIZED"
+        events.write_text(json.dumps(data))
+        self.assertEqual(Engine(self.path, FakeRpc(tip=102), events).route("/v1/checkout/active")[1], 503)
 
     def test_wallet_scans_bind_to_exact_session_asset_and_receipt(self):
         rec = receipt(self.quote)

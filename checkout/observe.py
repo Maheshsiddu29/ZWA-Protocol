@@ -8,15 +8,17 @@ import os
 from pathlib import Path
 import tempfile
 
-from .api import FAILURE_STAGES, PUBLIC_STAGES, SessionError, read_events, read_session
+from .api import FAILURE_STAGES, PUBLIC_STAGES, SessionError, read_event_record, read_session
 
 
-def append(session_path: Path, event_path: Path, stage: str) -> None:
+def append(session_path: Path, event_path: Path, stage: str, mode: str = "LOCAL_OPERATOR_EVENT_ONLY") -> None:
     session = read_session(session_path)
     if session is None:
         raise SessionError("session result absent")
     session_id = session["sessionId"]
-    stages = read_events(event_path, session_id)
+    stages, existing_mode = read_event_record(event_path, session_id)
+    if stages and existing_mode != mode:
+        raise SessionError("operator event mode changed")
     if stage in FAILURE_STAGES:
         if stages and stages[-1] in FAILURE_STAGES:
             raise SessionError("terminal event already recorded")
@@ -33,6 +35,8 @@ def append(session_path: Path, event_path: Path, stage: str) -> None:
     if stage == "RECEIPT_AVAILABLE" and session["outcome"] != "ACCEPTED":
         raise SessionError("receipt not accepted")
     payload = {"version": 1, "sessionId": session_id, "stages": stages + [stage]}
+    if mode == "SCRIPTED_TEST_MODE":
+        payload["mode"] = mode
     event_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     fd, name = tempfile.mkstemp(prefix=".event-", dir=event_path.parent)
     try:
@@ -51,8 +55,10 @@ def main() -> None:
     parser.add_argument("session", type=Path)
     parser.add_argument("events", type=Path)
     parser.add_argument("stage", choices=PUBLIC_STAGES + FAILURE_STAGES)
+    parser.add_argument("--mode", choices=("LOCAL_OPERATOR_EVENT_ONLY", "SCRIPTED_TEST_MODE"),
+                        default="LOCAL_OPERATOR_EVENT_ONLY")
     args = parser.parse_args()
-    append(args.session, args.events, args.stage)
+    append(args.session, args.events, args.stage, args.mode)
 
 
 if __name__ == "__main__":
