@@ -14,6 +14,7 @@ from pathlib import Path
 
 from checkout.api import read_scans, read_session
 from checkout.scans import parse
+from .order_paths import APPROVAL_MODES, quote_dir
 
 
 def build(exchange: Path, chain_identity: Path, *, restart: bool = False,
@@ -43,7 +44,7 @@ def build(exchange: Path, chain_identity: Path, *, restart: bool = False,
                 raise ValueError("unsafe order receipt")
             order_receipt = json.loads(path.read_text())
             if (order_receipt.get("version") != 1 or
-                    order_receipt.get("approvalMode") != "SCRIPTED_TEST_MODE" or
+                    order_receipt.get("approvalMode") not in APPROVAL_MODES or
                     order_receipt.get("rootedNoteLineage") != "UNSUPPORTED" or
                     order_receipt.get("orderId") != path.parent.name):
                 raise ValueError("unverified order receipt")
@@ -55,7 +56,7 @@ def build(exchange: Path, chain_identity: Path, *, restart: bool = False,
                     order["quantity"] != order_receipt["quantity"] or
                     order["quote_digest"] != order_receipt["quoteDigest"]):
                 raise ValueError("order receipt differs from durable ledger")
-            session = read_session(exchange / "order-quotes/gold-1/session-result.json")
+            session = read_session(quote_dir(exchange, path.parent.name) / "session-result.json")
             per_order = read_scans(path.parent / "public-scans.json", session)
             if (session is None or per_order is None or
                     session["receipt"]["txid"] != order_receipt["txid"] or

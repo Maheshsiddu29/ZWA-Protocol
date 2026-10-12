@@ -1,12 +1,15 @@
 """Private, durable offers, reservations, and observed settlement events.
 
 Only trusted local service code may write this module. It does not authenticate
-HTTP callers or sign wallets. A reservation is not a Zcash note lock.
+HTTP callers or sign wallets. A reservation is not a Zcash note lock; the
+wallet-level commitment guard below serializes quotes per wallet instead,
+because the independent signers select their own notes.
 """
 
 from __future__ import annotations
 
 from contextlib import contextmanager
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -22,12 +25,26 @@ from .portfolio_scans import build as build_portfolio
 HEX32 = re.compile(r"[0-9a-f]{64}\Z")
 HEX16 = re.compile(r"[0-9a-f]{32}\Z")
 IDENT = re.compile(r"[a-zA-Z0-9_-]{1,80}\Z")
+ADDRESS = re.compile(r"[0-9a-f]{86}\Z")
+PAIRING_CODE = re.compile(r"[A-Z2-7]{10}\Z")
 EXECUTION_STATES = (
     "PROOF_VERIFIED", "TRADE_AUTHORIZED", "BUYER_APPROVED", "SELLER_APPROVED",
     "SUBMITTED", "INCLUDED", "RECONCILED", "RECEIPT_AVAILABLE",
 )
-ALL_STATES = ("BUYER_REQUESTED", "QUOTE_READY", *EXECUTION_STATES,
-              "CANCELLED", "EXPIRED", "REJECTED", "EXECUTION_FAILED", "UNCERTAIN")
+FAILURE_STATES = ("CANCELLED", "EXPIRED", "REJECTED", "EXECUTION_FAILED", "UNCERTAIN")
+ALL_STATES = ("BUYER_REQUESTED", "QUOTE_READY", "BUYER_CONFIRMED", *EXECUTION_STATES,
+              *FAILURE_STATES)
+# While an order is in one of these states its exact quote may consume the
+# buyer's and seller's notes. UNCERTAIN keeps both wallets blocked until an
+# operator reconciles it against the chain.
+WALLET_COMMITTED_STATES = ("QUOTE_READY", "BUYER_CONFIRMED", "PROOF_VERIFIED",
+                           "TRADE_AUTHORIZED", "BUYER_APPROVED", "SELLER_APPROVED",
+                           "SUBMITTED", "INCLUDED", "RECONCILED", "UNCERTAIN")
+PRE_EXECUTION_STATES = ("BUYER_REQUESTED", "QUOTE_READY", "BUYER_CONFIRMED",
+                        "PROOF_VERIFIED", "TRADE_AUTHORIZED")
+PRICE_CLASSIFICATION = "SELLER_FIXED_EXPERIMENTAL"
+ROLES = ("buyer", "seller")
+SCHEMA_VERSION = 3
 
 
 class OrderError(ValueError):
@@ -52,6 +69,24 @@ def _record_id(value: str) -> str:
     return value
 
 
+def _role(value: str) -> str:
+    if value not in ROLES:
+        raise OrderError("invalid wallet role")
+    return value
+
+
+def _positive(value: object, limit: int = 1 << 62) -> int:
+    if type(value) is not int or not 0 < value <= limit:
+        raise OrderError("invalid positive integer")
+    return value
+
+
+def pairing_code_hash(code: str) -> str:
+    if not isinstance(code, str) or not PAIRING_CODE.fullmatch(code):
+        raise OrderError("invalid pairing code")
+    return hashlib.sha256(b"ZWA4E_PAIRING_CODE_V1\0" + code.encode()).hexdigest()
+
+
 class OrderLedger:
     def __init__(self, database: Path):
         if database.is_symlink():
@@ -65,9 +100,25 @@ class OrderLedger:
         self.database = database
         with self._connection() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2):
+            if version not in (0, 1, 2, SCHEMA_VERSION):
                 raise OrderError("unsupported order database schema")
+            if version < SCHEMA_VERSION:
+                self._migrate(db, version)
+
+    def _migrate(self, db: sqlite3.Connection, version: int) -> None:
+        """Bring any earlier schema to v3 in one transaction.
+
+        Existing offers, order IDs, reservations, event sequences, evidence
+        and settlements are copied unchanged; only the orders state constraint
+        widens and new tables are added.
+        """
+        allowed = ",".join("'" + state + "'" for state in ALL_STATES)
+        db.execute("PRAGMA foreign_keys=OFF")
+        try:
+            # executescript() commits any pending transaction before it runs,
+            # so the whole migration is one script that opens its own.
             db.executescript("""
+                BEGIN IMMEDIATE;
                 CREATE TABLE IF NOT EXISTS offers (
                   id TEXT PRIMARY KEY, seller_id TEXT NOT NULL, instrument_id TEXT NOT NULL,
                   asset_base TEXT NOT NULL, chain_genesis TEXT NOT NULL,
@@ -84,8 +135,7 @@ class OrderLedger:
                 CREATE TABLE IF NOT EXISTS orders (
                   id TEXT PRIMARY KEY, offer_id TEXT NOT NULL REFERENCES offers(id),
                   buyer_id TEXT NOT NULL, quantity INTEGER NOT NULL CHECK(quantity > 0),
-                  state TEXT NOT NULL CHECK(state IN
-                    ('BUYER_REQUESTED','QUOTE_READY','CANCELLED','EXPIRED')),
+                  state TEXT NOT NULL,
                   quote_digest TEXT UNIQUE, quote_expiry_height INTEGER,
                   idempotency_key TEXT NOT NULL, created_at INTEGER NOT NULL,
                   updated_at INTEGER NOT NULL,
@@ -96,50 +146,87 @@ class OrderLedger:
                   from_state TEXT, to_state TEXT NOT NULL, occurred_at INTEGER NOT NULL,
                   PRIMARY KEY(order_id,sequence)
                 );
+            """ + f"""
+                CREATE TABLE orders_v3 (
+                  id TEXT PRIMARY KEY, offer_id TEXT NOT NULL REFERENCES offers(id),
+                  buyer_id TEXT NOT NULL, quantity INTEGER NOT NULL CHECK(quantity > 0),
+                  state TEXT NOT NULL CHECK(state IN ({allowed})),
+                  quote_digest TEXT UNIQUE, quote_expiry_height INTEGER,
+                  idempotency_key TEXT NOT NULL, created_at INTEGER NOT NULL,
+                  updated_at INTEGER NOT NULL, UNIQUE(buyer_id,idempotency_key)
+                );
+                INSERT INTO orders_v3 SELECT id,offer_id,buyer_id,quantity,state,quote_digest,
+                  quote_expiry_height,idempotency_key,created_at,updated_at FROM orders;
+                DROP TABLE orders;
+                ALTER TABLE orders_v3 RENAME TO orders;
+                CREATE TABLE IF NOT EXISTS order_evidence (
+                  order_id TEXT NOT NULL REFERENCES orders(id), sequence INTEGER NOT NULL,
+                  kind TEXT NOT NULL, value_json TEXT NOT NULL,
+                  PRIMARY KEY(order_id,sequence),
+                  FOREIGN KEY(order_id,sequence) REFERENCES order_events(order_id,sequence)
+                );
+                CREATE TABLE IF NOT EXISTS order_settlements (
+                  order_id TEXT PRIMARY KEY REFERENCES orders(id),
+                  txid TEXT NOT NULL UNIQUE, quote_digest TEXT NOT NULL UNIQUE
+                );
+                CREATE TABLE offer_prices (
+                  offer_id TEXT PRIMARY KEY REFERENCES offers(id),
+                  seller_id TEXT NOT NULL,
+                  price_zat_per_unit INTEGER NOT NULL CHECK(price_zat_per_unit > 0),
+                  classification TEXT NOT NULL CHECK(classification='{PRICE_CLASSIFICATION}'),
+                  version INTEGER NOT NULL CHECK(version > 0), updated_at INTEGER NOT NULL
+                );
+                CREATE TABLE pairing_requests (
+                  id TEXT PRIMARY KEY, role TEXT NOT NULL CHECK(role IN ('buyer','seller')),
+                  wallet_address TEXT NOT NULL, code_hash TEXT NOT NULL UNIQUE,
+                  companion_pid INTEGER NOT NULL, created_at INTEGER NOT NULL,
+                  expires_at INTEGER NOT NULL,
+                  state TEXT NOT NULL CHECK(state IN ('PENDING','CLAIMED','CONFIRMED','REJECTED')),
+                  account_id TEXT, session_hash TEXT, pairing_id TEXT
+                );
+                CREATE TABLE wallet_pairings (
+                  id TEXT PRIMARY KEY, account_id TEXT NOT NULL,
+                  role TEXT NOT NULL CHECK(role IN ('buyer','seller')),
+                  wallet_address TEXT NOT NULL, session_hash TEXT NOT NULL,
+                  method TEXT NOT NULL CHECK(method='OPERATOR_CONFIRMED_LOCAL_COMPANION'),
+                  created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, revoked_at INTEGER
+                );
+                CREATE TABLE companion_presence (
+                  pairing_id TEXT PRIMARY KEY REFERENCES wallet_pairings(id),
+                  pid INTEGER NOT NULL, mode TEXT NOT NULL, last_seen INTEGER NOT NULL
+                );
+                CREATE TABLE order_quotes (
+                  order_id TEXT PRIMARY KEY REFERENCES orders(id),
+                  quote_digest TEXT NOT NULL UNIQUE, terms_sha256 TEXT NOT NULL,
+                  price_zat_per_unit INTEGER NOT NULL, payment_zat INTEGER NOT NULL,
+                  classification TEXT NOT NULL CHECK(classification='{PRICE_CLASSIFICATION}'),
+                  price_version INTEGER NOT NULL,
+                  buyer_pairing_id TEXT NOT NULL REFERENCES wallet_pairings(id),
+                  seller_pairing_id TEXT NOT NULL REFERENCES wallet_pairings(id),
+                  sponsor_txid TEXT NOT NULL, target_height INTEGER NOT NULL,
+                  valid_until INTEGER NOT NULL, created_at INTEGER NOT NULL
+                );
+                CREATE TABLE order_executions (
+                  order_id TEXT PRIMARY KEY REFERENCES orders(id),
+                  quote_digest TEXT NOT NULL UNIQUE, approval_mode TEXT NOT NULL,
+                  coordinator_pid INTEGER, started_at INTEGER NOT NULL,
+                  finished_at INTEGER, outcome TEXT
+                );
+                CREATE TABLE order_notes (
+                  order_id TEXT PRIMARY KEY REFERENCES orders(id),
+                  note TEXT NOT NULL, updated_at INTEGER NOT NULL
+                );
             """)
-            if version < 2:
-                # Rebuild only the orders table to widen its state constraint.
-                # Existing IDs, reservations, and event sequences are preserved.
-                db.execute("PRAGMA foreign_keys=OFF")
-                allowed = ",".join("'" + state + "'" for state in ALL_STATES)
-                db.executescript(f"""
-                    BEGIN IMMEDIATE;
-                    CREATE TABLE orders_v2 (
-                      id TEXT PRIMARY KEY, offer_id TEXT NOT NULL REFERENCES offers(id),
-                      buyer_id TEXT NOT NULL, quantity INTEGER NOT NULL CHECK(quantity > 0),
-                      state TEXT NOT NULL CHECK(state IN ({allowed})),
-                      quote_digest TEXT UNIQUE, quote_expiry_height INTEGER,
-                      idempotency_key TEXT NOT NULL, created_at INTEGER NOT NULL,
-                      updated_at INTEGER NOT NULL, UNIQUE(buyer_id,idempotency_key)
-                    );
-                    INSERT INTO orders_v2 SELECT * FROM orders;
-                    DROP TABLE orders;
-                    ALTER TABLE orders_v2 RENAME TO orders;
-                    CREATE TABLE order_evidence (
-                      order_id TEXT NOT NULL REFERENCES orders(id), sequence INTEGER NOT NULL,
-                      kind TEXT NOT NULL, value_json TEXT NOT NULL,
-                      PRIMARY KEY(order_id,sequence),
-                      FOREIGN KEY(order_id,sequence) REFERENCES order_events(order_id,sequence)
-                    );
-                    CREATE TABLE order_settlements (
-                      order_id TEXT PRIMARY KEY REFERENCES orders(id),
-                      txid TEXT NOT NULL UNIQUE, quote_digest TEXT NOT NULL UNIQUE
-                    );
-                    PRAGMA user_version=2;
-                    COMMIT;
-                """)
-                db.execute("PRAGMA foreign_keys=ON")
-            else:
-                db.execute("""CREATE TABLE IF NOT EXISTS order_evidence (
-                      order_id TEXT NOT NULL REFERENCES orders(id), sequence INTEGER NOT NULL,
-                      kind TEXT NOT NULL, value_json TEXT NOT NULL,
-                      PRIMARY KEY(order_id,sequence),
-                      FOREIGN KEY(order_id,sequence) REFERENCES order_events(order_id,sequence)
-                    )""")
-                db.execute("""CREATE TABLE IF NOT EXISTS order_settlements (
-                      order_id TEXT PRIMARY KEY REFERENCES orders(id),
-                      txid TEXT NOT NULL UNIQUE, quote_digest TEXT NOT NULL UNIQUE
-                    )""")
+            if db.execute("PRAGMA foreign_key_check").fetchall():
+                raise OrderError("ledger migration would break references")
+            db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+            db.execute("COMMIT")
+        except Exception:
+            if db.in_transaction:
+                db.execute("ROLLBACK")
+            raise
+        finally:
+            db.execute("PRAGMA foreign_keys=ON")
 
     @contextmanager
     def _connection(self):
@@ -162,6 +249,21 @@ class OrderLedger:
             except Exception:
                 db.execute("ROLLBACK")
                 raise
+
+    @staticmethod
+    def _append_event(db, order_id: str, from_state: str | None, to_state: str,
+                      now: int, evidence: dict | None = None) -> int:
+        sequence = db.execute("SELECT COALESCE(MAX(sequence),0)+1 FROM order_events WHERE order_id=?",
+                              (order_id,)).fetchone()[0]
+        db.execute("INSERT INTO order_events VALUES (?,?,?,?,?)",
+                   (order_id, sequence, from_state, to_state, now))
+        if evidence is not None:
+            db.execute("INSERT INTO order_evidence VALUES (?,?,?,?)",
+                       (order_id, sequence, to_state,
+                        json.dumps(evidence, sort_keys=True, separators=(",", ":"))))
+        return sequence
+
+    # ------------------------------------------------------------------ offers
 
     def create_offer(self, *, seller_id: str, instrument_id: str, asset_base: str,
                      chain_genesis: str, scan_height: int, scan_anchor: str,
@@ -202,6 +304,160 @@ class OrderLedger:
                  scan_anchor,inventory_units,capacity,idempotency_key,now))
             return dict(db.execute("SELECT * FROM offers WHERE id=?", (offer_id,)).fetchone())
 
+    def set_price(self, *, seller_id: str, offer_id: str, price_zat_per_unit: int) -> dict:
+        """Record the seller's fixed experimental price for future quotes only.
+
+        Quotes already issued keep the price bound into their exact digest.
+        """
+        _identifier(seller_id); _record_id(offer_id)
+        price = _positive(price_zat_per_unit, 21_000_000 * 100_000_000)
+        now = int(time.time())
+        with self._transaction() as db:
+            offer = db.execute("SELECT * FROM offers WHERE id=?", (offer_id,)).fetchone()
+            if not offer or offer["seller_id"] != seller_id or offer["state"] != "OFFER_CREATED":
+                raise OrderError("offer is unavailable to seller")
+            prior = db.execute("SELECT * FROM offer_prices WHERE offer_id=?", (offer_id,)).fetchone()
+            if prior and prior["price_zat_per_unit"] == price:
+                return dict(prior)
+            version = prior["version"] + 1 if prior else 1
+            db.execute("""INSERT INTO offer_prices VALUES (?,?,?,?,?,?)
+                          ON CONFLICT(offer_id) DO UPDATE SET price_zat_per_unit=excluded.price_zat_per_unit,
+                          version=excluded.version, updated_at=excluded.updated_at""",
+                       (offer_id, seller_id, price, PRICE_CLASSIFICATION, version, now))
+            return dict(db.execute("SELECT * FROM offer_prices WHERE offer_id=?", (offer_id,)).fetchone())
+
+    def offer_price(self, offer_id: str) -> dict | None:
+        _record_id(offer_id)
+        with self._connection() as db:
+            row = db.execute("SELECT * FROM offer_prices WHERE offer_id=?", (offer_id,)).fetchone()
+            return dict(row) if row else None
+
+    def get_offer(self, offer_id: str) -> dict | None:
+        _record_id(offer_id)
+        with self._connection() as db:
+            row = db.execute("SELECT * FROM offers WHERE id=?", (offer_id,)).fetchone()
+            return dict(row) if row else None
+
+    # ----------------------------------------------------------------- pairing
+
+    def create_pairing_request(self, *, role: str, wallet_address: str, code: str,
+                               companion_pid: int, ttl_seconds: int = 300) -> dict:
+        """Called by the wallet companion; the code is shown only in its terminal."""
+        _role(role)
+        if not isinstance(wallet_address, str) or not ADDRESS.fullmatch(wallet_address):
+            raise OrderError("invalid wallet receiving address")
+        _positive(companion_pid); _positive(ttl_seconds, 900)
+        now = int(time.time())
+        request_id = secrets.token_hex(16)
+        with self._transaction() as db:
+            db.execute("INSERT INTO pairing_requests VALUES (?,?,?,?,?,?,?,'PENDING',NULL,NULL,NULL)",
+                       (request_id, role, wallet_address, pairing_code_hash(code),
+                        companion_pid, now, now + ttl_seconds))
+            return dict(db.execute("SELECT * FROM pairing_requests WHERE id=?", (request_id,)).fetchone())
+
+    def claim_pairing(self, *, code: str, account_id: str, role: str, session_hash: str) -> dict:
+        """Called for an authenticated portal session that typed the terminal code."""
+        _identifier(account_id); _role(role); _hex32(session_hash)
+        digest = pairing_code_hash(code)
+        now = int(time.time())
+        with self._transaction() as db:
+            row = db.execute("SELECT * FROM pairing_requests WHERE code_hash=?", (digest,)).fetchone()
+            if (not row or row["state"] != "PENDING" or row["expires_at"] <= now
+                    or row["role"] != role):
+                raise OrderError("pairing code is invalid, expired, or for another wallet role")
+            db.execute("""UPDATE pairing_requests SET state='CLAIMED',account_id=?,session_hash=?
+                          WHERE id=?""", (account_id, session_hash, row["id"]))
+            return {"requestId": row["id"], "role": role, "state": "CLAIMED",
+                    "walletAddress": row["wallet_address"]}
+
+    def pairing_request(self, request_id: str) -> dict:
+        _record_id(request_id)
+        with self._connection() as db:
+            row = db.execute("SELECT * FROM pairing_requests WHERE id=?", (request_id,)).fetchone()
+            if not row:
+                raise OrderError("pairing request does not exist")
+            return dict(row)
+
+    def confirm_pairing(self, request_id: str, *, companion_pid: int,
+                        lifetime_seconds: int = 4 * 60 * 60) -> dict:
+        """Called by the companion after its operator confirms the claiming account."""
+        _record_id(request_id); _positive(lifetime_seconds, 12 * 60 * 60)
+        now = int(time.time())
+        with self._transaction() as db:
+            row = db.execute("SELECT * FROM pairing_requests WHERE id=?", (request_id,)).fetchone()
+            if (not row or row["state"] != "CLAIMED" or row["expires_at"] <= now
+                    or row["companion_pid"] != companion_pid):
+                raise OrderError("pairing request is not awaiting this companion's confirmation")
+            # A wallet or an account has at most one active pairing.
+            db.execute("""UPDATE wallet_pairings SET revoked_at=? WHERE revoked_at IS NULL AND
+                          ((account_id=? AND role=?) OR wallet_address=?)""",
+                       (now, row["account_id"], row["role"], row["wallet_address"]))
+            pairing_id = secrets.token_hex(16)
+            db.execute("""INSERT INTO wallet_pairings VALUES
+                          (?,?,?,?,?,'OPERATOR_CONFIRMED_LOCAL_COMPANION',?,?,NULL)""",
+                       (pairing_id, row["account_id"], row["role"], row["wallet_address"],
+                        row["session_hash"], now, now + lifetime_seconds))
+            db.execute("UPDATE pairing_requests SET state='CONFIRMED',pairing_id=? WHERE id=?",
+                       (pairing_id, request_id))
+            return dict(db.execute("SELECT * FROM wallet_pairings WHERE id=?", (pairing_id,)).fetchone())
+
+    def reject_pairing(self, request_id: str, *, companion_pid: int) -> None:
+        _record_id(request_id)
+        with self._transaction() as db:
+            db.execute("""UPDATE pairing_requests SET state='REJECTED'
+                          WHERE id=? AND companion_pid=? AND state IN ('PENDING','CLAIMED')""",
+                       (request_id, companion_pid))
+
+    def active_pairing(self, *, account_id: str, role: str,
+                       session_hash: str | None = None) -> dict | None:
+        _identifier(account_id); _role(role)
+        now = int(time.time())
+        with self._connection() as db:
+            row = db.execute("""SELECT * FROM wallet_pairings WHERE account_id=? AND role=?
+                                AND revoked_at IS NULL AND expires_at>? ORDER BY created_at DESC
+                                LIMIT 1""", (account_id, role, now)).fetchone()
+        if not row or (session_hash is not None and row["session_hash"] != _hex32(session_hash)):
+            return None
+        return dict(row)
+
+    def pairing(self, pairing_id: str) -> dict | None:
+        _record_id(pairing_id)
+        with self._connection() as db:
+            row = db.execute("SELECT * FROM wallet_pairings WHERE id=?", (pairing_id,)).fetchone()
+            return dict(row) if row else None
+
+    def pairing_usable(self, pairing_id: str) -> bool:
+        row = self.pairing(pairing_id)
+        return bool(row and row["revoked_at"] is None and row["expires_at"] > time.time())
+
+    def revoke_pairing(self, *, account_id: str, role: str, session_hash: str) -> None:
+        _identifier(account_id); _role(role); _hex32(session_hash)
+        with self._transaction() as db:
+            db.execute("""UPDATE wallet_pairings SET revoked_at=? WHERE account_id=? AND role=?
+                          AND session_hash=? AND revoked_at IS NULL""",
+                       (int(time.time()), account_id, role, session_hash))
+
+    def heartbeat(self, pairing_id: str, *, pid: int, mode: str) -> None:
+        _record_id(pairing_id); _positive(pid)
+        if mode not in ("HUMAN_APPROVED", "SCRIPTED_TEST_MODE"):
+            raise OrderError("invalid companion mode")
+        with self._transaction() as db:
+            db.execute("""INSERT INTO companion_presence VALUES (?,?,?,?)
+                          ON CONFLICT(pairing_id) DO UPDATE SET pid=excluded.pid,
+                          mode=excluded.mode,last_seen=excluded.last_seen""",
+                       (pairing_id, pid, mode, int(time.time())))
+
+    def companion_online(self, pairing_id: str, *, stale_seconds: int) -> dict | None:
+        _record_id(pairing_id)
+        with self._connection() as db:
+            row = db.execute("SELECT * FROM companion_presence WHERE pairing_id=?",
+                             (pairing_id,)).fetchone()
+        if not row or row["last_seen"] < time.time() - stale_seconds or not self.pairing_usable(pairing_id):
+            return None
+        return dict(row)
+
+    # ------------------------------------------------------------------ orders
+
     def request_purchase(self, *, offer_id: str, buyer_id: str, quantity: int,
                          idempotency_key: str, chain_genesis: str) -> dict:
         _record_id(offer_id); _identifier(buyer_id); _identifier(idempotency_key); _hex32(chain_genesis)
@@ -232,7 +488,34 @@ class OrderLedger:
             db.execute("INSERT INTO order_events VALUES (?,1,NULL,'BUYER_REQUESTED',?)", (order_id,now))
             return dict(db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone())
 
-    def attach_quote(self, order_id: str, quote: dict, *, observed_height: int) -> dict:
+    @staticmethod
+    def _wallets_committed(db, seller_id: str, buyer_id: str, order_id: str) -> bool:
+        states = ",".join("?" for _ in WALLET_COMMITTED_STATES)
+        row = db.execute(f"""SELECT o.id FROM orders o JOIN offers f ON f.id=o.offer_id
+                             WHERE o.id<>? AND o.state IN ({states})
+                             AND (o.buyer_id=? OR f.seller_id=?) LIMIT 1""",
+                         (order_id, *WALLET_COMMITTED_STATES, buyer_id, seller_id)).fetchone()
+        return row is not None
+
+    def wallets_committed(self, order_id: str) -> bool:
+        """True if another order's live quote may consume either wallet's notes."""
+        _record_id(order_id)
+        with self._connection() as db:
+            row = db.execute("""SELECT o.buyer_id,f.seller_id FROM orders o JOIN offers f
+                                ON f.id=o.offer_id WHERE o.id=?""", (order_id,)).fetchone()
+            if not row:
+                raise OrderError("order does not exist")
+            return self._wallets_committed(db, row["seller_id"], row["buyer_id"], order_id)
+
+    def committed_sponsor_txids(self) -> set[str]:
+        states = ",".join("?" for _ in WALLET_COMMITTED_STATES)
+        with self._connection() as db:
+            return {row[0] for row in db.execute(
+                f"""SELECT q.sponsor_txid FROM order_quotes q JOIN orders o ON o.id=q.order_id
+                    WHERE o.state IN ({states})""", WALLET_COMMITTED_STATES)}
+
+    def attach_quote(self, order_id: str, quote: dict, *, observed_height: int,
+                     meta: dict | None = None) -> dict:
         _record_id(order_id)
         try:
             validate_quote(quote)
@@ -242,6 +525,14 @@ class OrderLedger:
                 or observed_height + 1 != quote["targetHeight"]
                 or observed_height >= quote["transactionExpiry"]):
             raise OrderError("quote is not fresh at the observed chain height")
+        if meta is not None:
+            expected = {"termsSha256", "priceZatPerUnit", "priceVersion", "buyerPairingId",
+                        "sellerPairingId", "validUntil"}
+            if type(meta) is not dict or set(meta) != expected:
+                raise OrderError("quote metadata schema")
+            _hex32(meta["termsSha256"]); _positive(meta["priceZatPerUnit"])
+            _positive(meta["priceVersion"]); _positive(meta["validUntil"])
+            _record_id(meta["buyerPairingId"]); _record_id(meta["sellerPairingId"])
         with self._transaction() as db:
             order = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
             if order and order["state"] == "QUOTE_READY" and order["quote_digest"] == quote["quoteDigest"]:
@@ -251,12 +542,76 @@ class OrderLedger:
             offer = db.execute("SELECT * FROM offers WHERE id=?", (order["offer_id"],)).fetchone()
             if (quote["assetId"] != offer["asset_base"] or quote["quantity"] != order["quantity"]):
                 raise OrderError("quote does not match reserved asset or quantity")
+            if self._wallets_committed(db, offer["seller_id"], order["buyer_id"], order_id):
+                raise OrderError("a wallet's notes are committed to another live quote")
+            if meta is not None:
+                price = db.execute("SELECT * FROM offer_prices WHERE offer_id=?",
+                                   (order["offer_id"],)).fetchone()
+                if (not price or price["price_zat_per_unit"] != meta["priceZatPerUnit"]
+                        or price["version"] != meta["priceVersion"]
+                        or quote["paymentAmount"] != order["quantity"] * meta["priceZatPerUnit"]):
+                    raise OrderError("quote payment differs from the seller's fixed price")
+                for key, role, account in (("buyerPairingId", "buyer", order["buyer_id"]),
+                                           ("sellerPairingId", "seller", offer["seller_id"])):
+                    pairing = db.execute("SELECT * FROM wallet_pairings WHERE id=?",
+                                         (meta[key],)).fetchone()
+                    if (not pairing or pairing["role"] != role or pairing["account_id"] != account
+                            or pairing["revoked_at"] is not None):
+                        raise OrderError("quote receivers are not the paired wallets")
+                states = ",".join("?" for _ in WALLET_COMMITTED_STATES)
+                if db.execute(f"""SELECT 1 FROM order_quotes q JOIN orders o ON o.id=q.order_id
+                                  WHERE q.sponsor_txid=? AND o.state IN ({states})""",
+                              (quote["sponsorOutpointTxid"], *WALLET_COMMITTED_STATES)).fetchone():
+                    raise OrderError("sponsor input is committed to another quote")
             now = int(time.time())
             db.execute("""UPDATE orders SET state='QUOTE_READY',quote_digest=?,
                           quote_expiry_height=?,updated_at=? WHERE id=?""",
                        (quote["quoteDigest"],quote["transactionExpiry"],now,order_id))
-            db.execute("INSERT INTO order_events VALUES (?,2,'BUYER_REQUESTED','QUOTE_READY',?)",
-                       (order_id,now))
+            if meta is not None:
+                db.execute("INSERT INTO order_quotes VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                           (order_id, quote["quoteDigest"], meta["termsSha256"],
+                            meta["priceZatPerUnit"], quote["paymentAmount"], PRICE_CLASSIFICATION,
+                            meta["priceVersion"], meta["buyerPairingId"], meta["sellerPairingId"],
+                            quote["sponsorOutpointTxid"], quote["targetHeight"],
+                            meta["validUntil"], now))
+            self._append_event(db, order_id, "BUYER_REQUESTED", "QUOTE_READY", now)
+            return dict(db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone())
+
+    def order_quote(self, order_id: str) -> dict | None:
+        _record_id(order_id)
+        with self._connection() as db:
+            row = db.execute("SELECT * FROM order_quotes WHERE order_id=?", (order_id,)).fetchone()
+            return dict(row) if row else None
+
+    def confirm_quote(self, order_id: str, *, buyer_id: str, quote_digest: str,
+                      pairing_id: str) -> dict:
+        """Record the buyer's portal confirmation of one server-generated quote.
+
+        This is a purchase request, not a wallet signature. The browser can only
+        echo the digest the server generated; any other value is rejected.
+        """
+        _record_id(order_id); _identifier(buyer_id); _hex32(quote_digest); _record_id(pairing_id)
+        now = int(time.time())
+        with self._transaction() as db:
+            order = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
+            quote = db.execute("SELECT * FROM order_quotes WHERE order_id=?", (order_id,)).fetchone()
+            if not order or order["buyer_id"] != buyer_id or not quote:
+                raise OrderError("order is unavailable to buyer")
+            if order["quote_digest"] != quote_digest or quote["quote_digest"] != quote_digest:
+                raise OrderError("confirmation does not match the current exact quote")
+            if quote["buyer_pairing_id"] != pairing_id:
+                raise OrderError("quote belongs to another wallet pairing")
+            if order["state"] == "BUYER_CONFIRMED":
+                return dict(order)
+            if order["state"] != "QUOTE_READY":
+                raise OrderError("quote is no longer awaiting buyer confirmation")
+            if quote["valid_until"] <= now:
+                raise OrderError("quote has expired")
+            db.execute("UPDATE orders SET state='BUYER_CONFIRMED',updated_at=? WHERE id=?",
+                       (now, order_id))
+            self._append_event(db, order_id, "QUOTE_READY", "BUYER_CONFIRMED", now,
+                               {"quoteDigest": quote_digest, "buyerPairingId": pairing_id,
+                                "confirmation": "PORTAL_PURCHASE_REQUEST_NOT_A_WALLET_SIGNATURE"})
             return dict(db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone())
 
     def close_before_approval(self, order_id: str, *, buyer_id: str,
@@ -271,16 +626,111 @@ class OrderLedger:
                 raise OrderError("order is unavailable to buyer")
             if order["state"] == state:
                 return dict(order)
-            if order["state"] not in ("BUYER_REQUESTED", "QUOTE_READY"):
+            started = db.execute("SELECT 1 FROM order_executions WHERE order_id=?",
+                                 (order_id,)).fetchone()
+            if order["state"] not in PRE_EXECUTION_STATES or started:
                 raise OrderError("reservation cannot be released after approval starts")
             now = int(time.time())
             db.execute("UPDATE offers SET reserved=reserved-? WHERE id=?", (order["quantity"],order["offer_id"]))
             db.execute("UPDATE orders SET state=?,updated_at=? WHERE id=?", (state,now,order_id))
-            sequence = db.execute("SELECT COALESCE(MAX(sequence),0)+1 FROM order_events WHERE order_id=?",
-                                  (order_id,)).fetchone()[0]
-            db.execute("INSERT INTO order_events VALUES (?,?,?,?,?)",
-                       (order_id,sequence,order["state"],state,now))
+            self._append_event(db, order_id, order["state"], state, now)
             return dict(db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone())
+
+    def fail(self, order_id: str, *, expected: str, state: str, evidence: dict,
+             release: bool) -> dict:
+        """Close an order fail-closed from a trusted service observation.
+
+        UNCERTAIN never releases inventory: an accepted transaction may exist.
+        Nothing after submission can be reported as an ordinary failure.
+        """
+        _record_id(order_id)
+        if state not in ("EXPIRED", "REJECTED", "EXECUTION_FAILED", "UNCERTAIN"):
+            raise OrderError("unsupported failure state")
+        if type(evidence) is not dict or "reason" not in evidence:
+            raise OrderError("failure requires an observed reason")
+        if state == "UNCERTAIN" and release:
+            raise OrderError("uncertain execution cannot release inventory")
+        allowed = PRE_EXECUTION_STATES + ("BUYER_APPROVED", "SELLER_APPROVED")
+        if state == "UNCERTAIN":
+            allowed += ("SUBMITTED", "INCLUDED", "RECONCILED")
+        if expected not in allowed:
+            raise OrderError("order cannot fail from this state")
+        payload = json.dumps(evidence, sort_keys=True, separators=(",", ":"))
+        if len(payload) > 8192:
+            raise OrderError("evidence is too large")
+        with self._transaction() as db:
+            order = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
+            if not order:
+                raise OrderError("order does not exist")
+            if order["state"] == state:
+                return dict(order)
+            if order["state"] != expected:
+                raise OrderError("order state changed")
+            now = int(time.time())
+            if release:
+                db.execute("UPDATE offers SET reserved=reserved-? WHERE id=?",
+                           (order["quantity"], order["offer_id"]))
+            db.execute("UPDATE orders SET state=?,updated_at=? WHERE id=?", (state, now, order_id))
+            self._append_event(db, order_id, expected, state, now, json.loads(payload))
+            return dict(db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone())
+
+    def note(self, order_id: str, text: str) -> None:
+        """A non-authoritative progress hint for the participant UI."""
+        _record_id(order_id)
+        if not isinstance(text, str) or not 0 < len(text) <= 240:
+            raise OrderError("invalid note")
+        with self._transaction() as db:
+            db.execute("""INSERT INTO order_notes VALUES (?,?,?) ON CONFLICT(order_id)
+                          DO UPDATE SET note=excluded.note,updated_at=excluded.updated_at""",
+                       (order_id, text, int(time.time())))
+
+    # -------------------------------------------------------------- execution
+
+    def start_execution(self, order_id: str, *, approval_mode: str) -> tuple[dict, bool]:
+        """Insert the single-execution guard. Returns (row, created)."""
+        _record_id(order_id)
+        if approval_mode not in ("HUMAN_APPROVED", "SCRIPTED_TEST_MODE"):
+            raise OrderError("invalid approval mode")
+        with self._transaction() as db:
+            prior = db.execute("SELECT * FROM order_executions WHERE order_id=?", (order_id,)).fetchone()
+            if prior:
+                return dict(prior), False
+            order = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
+            if not order or order["state"] != "TRADE_AUTHORIZED":
+                raise OrderError("only an authorized trade can start execution")
+            db.execute("INSERT INTO order_executions VALUES (?,?,?,NULL,?,NULL,NULL)",
+                       (order_id, order["quote_digest"], approval_mode, int(time.time())))
+            return dict(db.execute("SELECT * FROM order_executions WHERE order_id=?",
+                                   (order_id,)).fetchone()), True
+
+    def set_execution_pid(self, order_id: str, pid: int) -> None:
+        _record_id(order_id); _positive(pid)
+        with self._transaction() as db:
+            db.execute("UPDATE order_executions SET coordinator_pid=? WHERE order_id=? AND coordinator_pid IS NULL",
+                       (pid, order_id))
+
+    def finish_execution(self, order_id: str, outcome: str) -> None:
+        _record_id(order_id)
+        if outcome not in ("ACCEPTED", "FAILED", "UNCERTAIN"):
+            raise OrderError("invalid execution outcome")
+        with self._transaction() as db:
+            db.execute("""UPDATE order_executions SET finished_at=?,outcome=?
+                          WHERE order_id=? AND finished_at IS NULL""",
+                       (int(time.time()), outcome, order_id))
+
+    def execution(self, order_id: str) -> dict | None:
+        _record_id(order_id)
+        with self._connection() as db:
+            row = db.execute("SELECT * FROM order_executions WHERE order_id=?", (order_id,)).fetchone()
+            return dict(row) if row else None
+
+    def orders_in(self, states: tuple[str, ...]) -> list[dict]:
+        marks = ",".join("?" for _ in states)
+        with self._connection() as db:
+            return [dict(row) for row in db.execute(
+                f"""SELECT o.*,f.seller_id,f.instrument_id,f.asset_base,f.chain_genesis
+                    FROM orders o JOIN offers f ON f.id=o.offer_id
+                    WHERE o.state IN ({marks}) ORDER BY o.created_at,o.id""", states)]
 
     def get_order(self, order_id: str, *, participant_id: str) -> dict:
         """Return one private order only to its buyer or seller."""
@@ -297,6 +747,9 @@ class OrderLedger:
                 "SELECT * FROM order_events WHERE order_id=? ORDER BY sequence", (order_id,))]
             result["evidence"] = [dict(e) for e in db.execute(
                 "SELECT * FROM order_evidence WHERE order_id=? ORDER BY sequence", (order_id,))]
+            note = db.execute("SELECT note,updated_at FROM order_notes WHERE order_id=?",
+                              (order_id,)).fetchone()
+            result["note"] = dict(note) if note else None
             return result
 
     def transition(self, order_id: str, *, expected: str, state: str,
@@ -308,7 +761,7 @@ class OrderLedger:
         """
         _record_id(order_id)
         next_state = {
-            "QUOTE_READY": "PROOF_VERIFIED",
+            "BUYER_CONFIRMED": "PROOF_VERIFIED",
             "PROOF_VERIFIED": "TRADE_AUTHORIZED",
             "TRADE_AUTHORIZED": "BUYER_APPROVED",
             "BUYER_APPROVED": "SELLER_APPROVED",
@@ -374,6 +827,15 @@ class OrderLedger:
                     evidence["sellerId"] != offer["seller_id"] or
                     evidence["tipHeight"] + 1 != order["quote_expiry_height"] - 40):
                 raise OrderError("authorized trade differs from reserved quote or chain tip")
+            if state in ("BUYER_APPROVED", "SELLER_APPROVED"):
+                execution = db.execute("SELECT * FROM order_executions WHERE order_id=?",
+                                       (order_id,)).fetchone()
+                quote = db.execute("SELECT 1 FROM order_quotes WHERE order_id=?",
+                                   (order_id,)).fetchone()
+                # Browser-initiated orders must have an execution guard whose
+                # mode matches the recorded approval mode.
+                if quote and (not execution or execution["approval_mode"] != evidence["approvalMode"]):
+                    raise OrderError("approval mode differs from the guarded execution")
             if state == "INCLUDED":
                 submitted = db.execute("SELECT txid FROM order_settlements WHERE order_id=?",
                                        (order_id,)).fetchone()
