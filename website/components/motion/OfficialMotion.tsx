@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const paths = {
   logo: "/animations/logo-lockup-reveal.json",
@@ -10,6 +10,7 @@ const paths = {
 
 export function OfficialMotion({ kind, className = "" }: { kind: keyof typeof paths; className?: string }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [ready, setReady] = useState(false);
   useEffect(() => {
     const node = ref.current;
     if (!node || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
@@ -21,9 +22,10 @@ export function OfficialMotion({ kind, className = "" }: { kind: keyof typeof pa
       const lottie = (await import("lottie-web")).default;
       if (disposed) return;
       animation = lottie.loadAnimation({ container: node, renderer: "svg", loop: false, autoplay: true, path: paths[kind] });
+      animation.addEventListener("DOMLoaded", () => setReady(true));
     }, { rootMargin: "80px" });
     observer.observe(node);
     return () => { disposed = true; observer.disconnect(); animation?.destroy(); };
   }, [kind]);
-  return <div ref={ref} className={className} aria-hidden="true" />;
+  return <div className={className} aria-hidden="true"><div ref={ref} className="motion-canvas" />{kind === "logo" && !ready && <img className="motion-fallback" src="/brand/zwa-logo-light.svg" alt="" />}</div>;
 }

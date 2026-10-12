@@ -35,8 +35,8 @@ export function FilmDialog() {
       <div className="film-dialog-head"><span>ZWA / The film</span><button type="button" onClick={() => setOpen(false)} aria-label="Close film">Close ×</button></div>
       {checking && <p className="film-caption">Checking film asset…</p>}
       {open && !failed && !checking && <video controls preload="none" poster="/video/zwa-poster.webp" onError={() => setFailed(true)}><source src="/video/zwa-promo.mp4" type="video/mp4" />Your browser cannot play this film.</video>}
-      {failed && <div className="film-unavailable"><img src="/video/zwa-poster.webp" alt="ZWA promotional film end card" /><p>The film file is absent from the supplied asset package. The official storyboard and motion assets remain available on this page.</p></div>}
-      <p className="film-caption">28-second promotional film · user-controlled playback</p>
+      {failed && <div className="film-unavailable"><img src="/video/zwa-poster.webp" alt="ZWA promotional film end card" /><p>The film is unavailable in this local preview. Explore the illustrated story and motion below.</p></div>}
+      <p className="film-caption">{failed ? "Film preview unavailable" : "28-second promotional film · user-controlled playback"}</p>
     </dialog>
   </>;
 }
