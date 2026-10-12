@@ -49,12 +49,33 @@ def _say(text: str = "") -> None:
     print(text, flush=True)
 
 
+MAX_ANSWER_BYTES = 1024
+
+
 def _ask(prompt: str) -> str:
-    """Read one line from the controlling terminal, never from a pipe."""
-    with open("/dev/tty", "r+") as tty:
-        tty.write(prompt)
-        tty.flush()
-        return tty.readline().rstrip("\r\n")
+    """Read one line from the controlling terminal, never from a pipe.
+
+    The terminal is opened unbuffered with os.open: a buffered "r+" stream
+    requires seek support, which a macOS tty does not have. EOF, a non-tty
+    device, or an over-long line returns "", which every caller rejects.
+    Without a controlling terminal os.open raises OSError, also a rejection.
+    """
+    fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY)
+    try:
+        if not os.isatty(fd):
+            return ""
+        os.write(fd, prompt.encode())
+        answer = b""
+        while not answer.endswith(b"\n"):
+            chunk = os.read(fd, MAX_ANSWER_BYTES)
+            if not chunk:
+                return ""
+            answer += chunk
+            if len(answer) > MAX_ANSWER_BYTES:
+                return ""
+        return answer.decode("utf-8", "replace").rstrip("\r\n")
+    finally:
+        os.close(fd)
 
 
 def _new_code() -> str:
@@ -94,21 +115,30 @@ class Companion:
             # Disposable automation reads the code from a private file only.
             write_new_json(self.config.exchange / f"pairing-code-{self.role}-{self.pid}.json",
                            {"code": code, "mode": self.mode})
-        while True:
-            row = self.ledger.pairing_request(request["id"])
-            if row["expires_at"] <= time.time():
-                raise SystemExit("pairing code expired; start the companion again")
-            if row["state"] == "CLAIMED":
-                break
-            time.sleep(1)
-        _say(f"Portal account '{row['account_id']}' ({row['role']}) entered this code.")
-        if self.mode == "HUMAN_APPROVED":
-            answer = _ask(f"Type PAIR to let account '{row['account_id']}' request trades for this "
-                          "wallet, or anything else to refuse: ")
-            if answer != "PAIR":
+        try:
+            while True:
+                row = self.ledger.pairing_request(request["id"])
+                if row["expires_at"] <= time.time():
+                    raise SystemExit("pairing code expired; start the companion again")
+                if row["state"] == "CLAIMED":
+                    break
+                time.sleep(1)
+            _say(f"Portal account '{row['account_id']}' ({row['role']}) entered this code.")
+            if self.mode == "HUMAN_APPROVED":
+                try:
+                    answer = _ask(f"Type PAIR to let account '{row['account_id']}' request trades for "
+                                  "this wallet, or anything else to refuse: ")
+                except OSError:
+                    answer = ""
+                if answer != "PAIR":
+                    raise SystemExit("pairing refused; nothing was bound")
+            self.pairing = self.ledger.confirm_pairing(request["id"], companion_pid=self.pid)
+        except BaseException:
+            # A refused, interrupted, expired, or crashed confirmation never
+            # leaves a claimed code behind that could be completed later.
+            if self.pairing is None:
                 self.ledger.reject_pairing(request["id"], companion_pid=self.pid)
-                raise SystemExit("pairing refused; nothing was bound")
-        self.pairing = self.ledger.confirm_pairing(request["id"], companion_pid=self.pid)
+            raise
         _say(f"Paired until {time.strftime('%H:%M', time.localtime(self.pairing['expires_at']))}. "
              "Keep this terminal open; approval requests will appear here.")
 
