@@ -1,0 +1,47 @@
+:root {
+  /* ZWA Protocol tokens (generated from design-tokens.json) */
+  --zwa-brand-blue: #0055FF;
+  --zwa-brand-blue-light: #2D70FF;
+  --zwa-brand-blue-deep: #0047E6;
+  --zwa-neutral-ink: #1D1D1F;
+  --zwa-neutral-secondary: #6E6E73;
+  --zwa-neutral-tertiary: #86868B;
+  --zwa-neutral-fine-print: #8E8E93;
+  --zwa-neutral-white: #FFFFFF;
+  --zwa-neutral-black: #000000;
+  --zwa-stage-light-center: #F2F2F3;
+  --zwa-stage-light-edge: #D6D6D8;
+  --zwa-stage-cool-center: #ECEDF0;
+  --zwa-stage-cool-edge: #C4C6CC;
+  --zwa-stage-end-card: #F6F6F7;
+  --zwa-proof-provenance: #0055FF;
+  --zwa-proof-eligibility: #34BE62;
+  --zwa-proof-settlement: #5E5CE6;
+  --zwa-proof-provenance-track: #DCE5FB;
+  --zwa-proof-eligibility-track: #DFF2E5;
+  --zwa-proof-settlement-track: #E5E5F9;
+  --zwa-accent-leaf: #34BE62;
+  --zwa-accent-leaf-vein: #BEF0CD;
+  --zwa-accent-leaf-stem: #2C8E52;
+  --zwa-accent-door-light: #FFB030;
+  --zwa-accent-sky: #5AC8FA;
+  --zwa-accent-signal-red: #FF453A;
+  --zwa-accent-iris: #3A3A40;
+  --zwa-hero-dark-background: #000000;
+  --zwa-hero-dark-cyan: #36C8FF;
+  --zwa-hero-dark-violet: #8A6BFF;
+  --zwa-font-display: "Inter Display", "SF Pro Display", -apple-system, system-ui, sans-serif;
+  --zwa-font-text: "Inter", "SF Pro Text", -apple-system, system-ui, sans-serif;
+  --zwa-ease-morph: cubic-bezier(0.7, 0, 0.18, 1);
+  --zwa-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --zwa-ease-in: cubic-bezier(0.55, 0, 0.8, 0.2);
+  --zwa-ease-in-out: cubic-bezier(0.45, 0, 0.25, 1);
+  --zwa-ease-snap: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --zwa-dur-morph: 900ms;
+  --zwa-dur-ring-fill: 1000ms;
+  --zwa-word-stagger: 75ms;
+  --zwa-shadow-object: 0 22px 46px rgba(30, 34, 48, 0.16);
+  --zwa-shadow-card: 0 16px 40px rgba(30, 34, 48, 0.16);
+  --zwa-radius-card: 28px;
+  --zwa-stage-light: radial-gradient(circle at 50% 43%, #F2F2F3 0%, #E4E4E6 55%, #D6D6D8 100%);
+}

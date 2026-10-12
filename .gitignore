@@ -42,3 +42,6 @@ tmp/
 .DS_Store
 .idea/
 .vscode/
+
+# Source brand package stays outside commits; selected production copies are in website/public/.
+design-assets/

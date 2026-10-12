@@ -1,0 +1,361 @@
+{
+  "$description": "ZWA Protocol design tokens, extracted from the promo film, hero loop and brand kit source code.",
+  "color": {
+    "brand": {
+      "blue": {
+        "$type": "color",
+        "$value": "#0055FF"
+      },
+      "blue-light": {
+        "$type": "color",
+        "$value": "#2D70FF"
+      },
+      "blue-deep": {
+        "$type": "color",
+        "$value": "#0047E6"
+      }
+    },
+    "neutral": {
+      "ink": {
+        "$type": "color",
+        "$value": "#1D1D1F"
+      },
+      "secondary": {
+        "$type": "color",
+        "$value": "#6E6E73"
+      },
+      "tertiary": {
+        "$type": "color",
+        "$value": "#86868B"
+      },
+      "fine-print": {
+        "$type": "color",
+        "$value": "#8E8E93"
+      },
+      "white": {
+        "$type": "color",
+        "$value": "#FFFFFF"
+      },
+      "black": {
+        "$type": "color",
+        "$value": "#000000"
+      }
+    },
+    "stage": {
+      "light-center": {
+        "$type": "color",
+        "$value": "#F2F2F3"
+      },
+      "light-edge": {
+        "$type": "color",
+        "$value": "#D6D6D8"
+      },
+      "cool-center": {
+        "$type": "color",
+        "$value": "#ECEDF0"
+      },
+      "cool-edge": {
+        "$type": "color",
+        "$value": "#C4C6CC"
+      },
+      "end-card": {
+        "$type": "color",
+        "$value": "#F6F6F7"
+      }
+    },
+    "proof": {
+      "provenance": {
+        "$type": "color",
+        "$value": "#0055FF"
+      },
+      "eligibility": {
+        "$type": "color",
+        "$value": "#34BE62"
+      },
+      "settlement": {
+        "$type": "color",
+        "$value": "#5E5CE6"
+      },
+      "provenance-track": {
+        "$type": "color",
+        "$value": "#DCE5FB"
+      },
+      "eligibility-track": {
+        "$type": "color",
+        "$value": "#DFF2E5"
+      },
+      "settlement-track": {
+        "$type": "color",
+        "$value": "#E5E5F9"
+      }
+    },
+    "accent": {
+      "leaf": {
+        "$type": "color",
+        "$value": "#34BE62"
+      },
+      "leaf-vein": {
+        "$type": "color",
+        "$value": "#BEF0CD"
+      },
+      "leaf-stem": {
+        "$type": "color",
+        "$value": "#2C8E52"
+      },
+      "door-light": {
+        "$type": "color",
+        "$value": "#FFB030"
+      },
+      "sky": {
+        "$type": "color",
+        "$value": "#5AC8FA"
+      },
+      "signal-red": {
+        "$type": "color",
+        "$value": "#FF453A"
+      },
+      "iris": {
+        "$type": "color",
+        "$value": "#3A3A40"
+      }
+    },
+    "hero-dark": {
+      "background": {
+        "$type": "color",
+        "$value": "#000000"
+      },
+      "cyan": {
+        "$type": "color",
+        "$value": "#36C8FF"
+      },
+      "violet": {
+        "$type": "color",
+        "$value": "#8A6BFF"
+      },
+      "note": {
+        "$description": "cyan and violet are approximate display values of the tone-mapped hero loop"
+      }
+    }
+  },
+  "font": {
+    "family": {
+      "display": {
+        "$type": "fontFamily",
+        "$value": [
+          "Inter Display",
+          "SF Pro Display",
+          "-apple-system",
+          "system-ui",
+          "sans-serif"
+        ]
+      },
+      "text": {
+        "$type": "fontFamily",
+        "$value": [
+          "Inter",
+          "SF Pro Text",
+          "-apple-system",
+          "system-ui",
+          "sans-serif"
+        ]
+      }
+    },
+    "wordmark": {
+      "zwa": {
+        "$type": "typography",
+        "$value": {
+          "fontFamily": "Inter Display",
+          "fontWeight": 900,
+          "letterSpacing": "-0.0167em"
+        }
+      },
+      "protocol": {
+        "$type": "typography",
+        "$value": {
+          "fontFamily": "Inter Display",
+          "fontWeight": 300,
+          "letterSpacing": "-0.025em"
+        }
+      },
+      "word-gap": {
+        "$type": "dimension",
+        "$value": "0.2em"
+      }
+    },
+    "headline": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "Inter Display",
+        "fontWeight": 600,
+        "fontSize": "64px",
+        "letterSpacing": "-0.025em",
+        "lineHeight": 1.05
+      }
+    },
+    "hero-headline": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "Inter Display",
+        "fontWeight": 600,
+        "fontSize": "clamp(40px, 7vw, 92px)",
+        "letterSpacing": "-0.035em",
+        "lineHeight": 1.02
+      }
+    },
+    "eyebrow": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "Inter",
+        "fontWeight": 600,
+        "fontSize": "19px",
+        "letterSpacing": "0.1em",
+        "textTransform": "uppercase"
+      }
+    },
+    "body": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "Inter",
+        "fontWeight": 500,
+        "fontSize": "18px",
+        "lineHeight": 1.55
+      }
+    }
+  },
+  "motion": {
+    "easing": {
+      "morph": {
+        "$type": "cubicBezier",
+        "$value": [
+          0.7,
+          0,
+          0.18,
+          1
+        ],
+        "$description": "every shape morph in the film"
+      },
+      "out": {
+        "$type": "cubicBezier",
+        "$value": [
+          0.16,
+          1,
+          0.3,
+          1
+        ],
+        "$description": "reveals, pops, burst"
+      },
+      "in": {
+        "$type": "cubicBezier",
+        "$value": [
+          0.55,
+          0,
+          0.8,
+          0.2
+        ],
+        "$description": "exits"
+      },
+      "in-out": {
+        "$type": "cubicBezier",
+        "$value": [
+          0.45,
+          0,
+          0.25,
+          1
+        ],
+        "$description": "ring fills, camera"
+      },
+      "snap": {
+        "$type": "cubicBezier",
+        "$value": [
+          0.34,
+          1.56,
+          0.64,
+          1
+        ],
+        "$description": "logo lock overshoot (~6%)"
+      }
+    },
+    "duration": {
+      "morph": {
+        "$type": "duration",
+        "$value": "900ms"
+      },
+      "word-reveal": {
+        "$type": "duration",
+        "$value": "900ms"
+      },
+      "word-stagger": {
+        "$type": "duration",
+        "$value": "75ms"
+      },
+      "ring-fill": {
+        "$type": "duration",
+        "$value": "1000ms"
+      },
+      "logo-lock": {
+        "$type": "duration",
+        "$value": "1200ms"
+      },
+      "beat-120bpm": {
+        "$type": "duration",
+        "$value": "500ms"
+      }
+    },
+    "text-reveal": {
+      "$description": "per word: opacity 0->1, blur 12px->0, translateY 26px->0, ease out; exit: blur 10px, -14px, ease in"
+    }
+  },
+  "radius": {
+    "token": {
+      "$type": "dimension",
+      "$value": "28%"
+    },
+    "card": {
+      "$type": "dimension",
+      "$value": "28px"
+    },
+    "app-icon": {
+      "$type": "dimension",
+      "$value": "22.3%"
+    },
+    "pill": {
+      "$type": "dimension",
+      "$value": "999px"
+    }
+  },
+  "shadow": {
+    "object": {
+      "$type": "shadow",
+      "$value": {
+        "color": "rgba(30,34,48,0.16)",
+        "offsetX": "0px",
+        "offsetY": "22px",
+        "blur": "46px",
+        "spread": "0px"
+      }
+    },
+    "card": {
+      "$type": "shadow",
+      "$value": {
+        "color": "rgba(30,34,48,0.16)",
+        "offsetX": "0px",
+        "offsetY": "16px",
+        "blur": "40px",
+        "spread": "0px"
+      }
+    }
+  },
+  "stroke": {
+    "ring-width-ratio": {
+      "$description": "ring stroke = 30 / 174 of the outer ring radius; rings at radius 174 / 130 / 86"
+    },
+    "fingerprint": {
+      "$type": "dimension",
+      "$value": "12px"
+    },
+    "icon": {
+      "$type": "dimension",
+      "$value": "1.75px"
+    }
+  }
+}
