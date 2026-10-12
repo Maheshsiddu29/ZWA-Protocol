@@ -258,3 +258,13 @@ h1,h2,h3,h4 { font-optical-sizing:auto; }
 .demo-research-intro { max-width:720px; margin:0 0 35px; }
 .demo-research-intro h2 { font-size:clamp(38px,4.2vw,64px); margin:10px 0 14px; }
 .demo-research-intro p:last-child { color:var(--body); }
+/* Public ZSA testnet verification page */
+.testnet-receipt { margin:30px 0; padding:30px; border:1px solid #e1e2e6; background:#fff; }
+.testnet-panel { padding:26px 0; border-top:1px solid var(--line); min-width:0; }
+.checkout-product-grid>.testnet-panel { padding:26px; background:#f7f8fa; border-top:0; }
+.testnet-panel h4 { font-size:20px; margin:6px 0 10px; }
+.testnet-empty { margin-top:30px; }
+.testnet-code { background:#111318; color:#e6e8ee; padding:18px; font:12px/1.6 ui-monospace,monospace; overflow-x:auto; white-space:pre; }
+.testnet-list { margin:10px 0 0; padding-left:18px; color:var(--body); font-size:14px; line-height:1.6; }
+.testnet-list li { margin:6px 0; }
+@media(max-width:760px) { .testnet-receipt { padding:20px; } }
