@@ -226,6 +226,7 @@ h1,h2,h3,h4 { font-optical-sizing:auto; }
 .checkout-progress { display:grid; grid-template-columns:repeat(6,1fr); border-block:1px solid var(--line); margin:24px 0 36px; }
 .checkout-progress span { padding:16px 8px; border-right:1px solid var(--line); font-size:11px; font-weight:700; color:#8b8c92; text-transform:uppercase; letter-spacing:.04em; }
 .checkout-progress span.reached { color:var(--blue); background:#f1f5ff; }
+.checkout-progress span:nth-child(2).reached { color:#8a5b00; background:#fff4de; }
 .checkout-product-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; margin:18px 0; }
 .checkout-product-grid>section,.checkout-quote,.checkout-receipt { padding:30px; background:#f7f8fa; min-width:0; }
 .checkout-asset img { display:block; height:130px; max-width:100%; margin:8px 0; }

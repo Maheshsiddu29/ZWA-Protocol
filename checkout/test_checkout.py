@@ -208,6 +208,10 @@ class SessionTests(unittest.TestCase):
         events.write_text(json.dumps({"version": 1, "sessionId": "00" * 32,
                                       "stages": ["SESSION_PREPARED"]}))
         self.assertEqual(engine.route("/v1/checkout/active")[1], 503)
+        from .api import PUBLIC_STAGES
+        events.write_text(json.dumps({"version": 1, "sessionId": self.quote["quoteDigest"],
+                                      "stages": list(PUBLIC_STAGES)}))
+        self.assertEqual(engine.route("/v1/checkout/active")[1], 503)
         events.unlink()
         self.path.unlink()
         self.assertEqual(engine.route("/v1/checkout/active"),
@@ -228,6 +232,11 @@ class SessionTests(unittest.TestCase):
         block = {"hash": rec["block_hash"], "tx": [rec["txid"]], "confirmations": 1}
         active, code = Engine(self.path, FakeRpc(tip=103, block=block), scans_path=output).route("/v1/checkout/active")
         self.assertEqual((code, active["walletScans"]["sellerAfter"]["nativeZat"]), (200, 10000))
+        events = Path(self.temp.name) / "events.json"
+        events.write_text(json.dumps({"version": 1, "sessionId": self.quote["quoteDigest"],
+                                      "stages": ["SESSION_PREPARED", "AWAITING_BUYER_APPROVAL",
+                                                 "BUYER_APPROVAL_NOT_GRANTED"]}))
+        self.assertEqual(Engine(self.path, FakeRpc(tip=103, block=block), events, output).route("/v1/checkout/active")[1], 503)
         bad = json.loads(output.read_text())
         bad["assetId"] = "ff" * 32
         output.write_text(json.dumps(bad))

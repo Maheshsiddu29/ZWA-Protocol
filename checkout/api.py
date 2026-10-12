@@ -359,6 +359,8 @@ class Engine:
                     and (any(stage in stages for stage in PUBLIC_STAGES[5:])
                          or self.scans_path is not None and self.scans_path.exists())):
                 raise SessionError("settlement observation without receipt")
+            if session["receipt"] is not None and any(stage in FAILURE_STAGES for stage in stages):
+                raise SessionError("failure event conflicts with accepted receipt")
             scans = read_scans(self.scans_path, session) if session["receipt"] is not None else None
         except SessionError:
             return {"error": {"code": "INVALID_SESSION_OBSERVATION"}}, 503
