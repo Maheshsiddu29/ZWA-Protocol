@@ -31,6 +31,23 @@ The pinned Zebra image drops recent non-finalized blocks at shutdown, even with 
 
 Private evidence is in `ROOT/exchange/`: `instrument-registry.json`, per-instrument issuance and chain responses, `trades/<instrumentId>/` with exact quote/proof/receipt/scan evidence, `portfolio.json`, and `portfolio-after-restart.json`. The portfolio files contain private balance data and are **not** public catalog or API fixtures. The `chain-identity.json` file contains pinned image/config identity, genesis hash, and the last explicitly checked block anchor.
 
+## Read-only browser portfolio and seller inventory
+
+Provision four distinct local portal accounts with `python3 website/scripts/provision-local-roles.py /private/tmp/zwa4d-roles-my-run`, then source its mode-0600 output only in the website server shell. For the stock provisioner, the buyer and seller account IDs are `buyer` and `seller`.
+
+```sh
+cd website
+source /private/tmp/zwa4d-roles-my-run
+export ZWA_PRIVATE_EXCHANGE_ROOT=/private/tmp/zwa4e-my-run
+export ZWA_CHAIN_RPC_PORT=18320
+export ZWA_PORTFOLIO_BUYER_ID=buyer
+export ZWA_PORTFOLIO_SELLER_ID=seller
+npm run build
+./node_modules/.bin/next start -H 127.0.0.1 -p 3216
+```
+
+Open `http://127.0.0.1:3216/exchange/connect` in separate browser sessions. Log in as the provisioned buyer for `/exchange/portfolio` and as the seller for `/seller`. These pages read only the newest private combined wallet scan, and only after the live pinned Zebra RPC confirms the same genesis, saved block anchor, scan tip, and every listed transaction's block membership. If the node stops, the chain changes, the scan is stale, or the configured portal account does not match, no private holdings are rendered. The buyer page receives only buyer balances; the seller page receives only seller inventory and proceeds. Auditor and unrelated accounts cannot open either role page. This is portal authentication and observation, **not wallet pairing or signing**.
+
 ## Check state, stop, restart, and rescan later
 
 ```sh
