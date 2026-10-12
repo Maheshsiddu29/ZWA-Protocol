@@ -254,3 +254,6 @@ h1,h2,h3,h4 { font-optical-sizing:auto; }
 .checkout-receipt .checkout-live-grid { margin-top:18px; }
 @media(max-width:900px) { .checkout-progress { grid-template-columns:repeat(3,1fr); }.checkout-product-grid { grid-template-columns:1fr; } }
 @media(max-width:520px) { .checkout-empty { grid-template-columns:1fr; padding:20px; }.checkout-empty img { width:130px; }.checkout-quote-grid { grid-template-columns:1fr; }.checkout-quote-grid .total { grid-column:auto; }.checkout-progress { grid-template-columns:repeat(2,1fr); }.checkout-product-grid>section,.checkout-quote,.checkout-receipt { padding:20px; } }
+.demo-research-intro { max-width:720px; margin:0 0 35px; }
+.demo-research-intro h2 { font-size:clamp(38px,4.2vw,64px); margin:10px 0 14px; }
+.demo-research-intro p:last-child { color:var(--body); }
