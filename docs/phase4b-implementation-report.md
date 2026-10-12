@@ -74,6 +74,8 @@ See [the operator runbook](phase4b-operator-runbook.md) for exact startup, appro
 - `cbf448d` — fixed website proxy and branded live checkout page.
 - `78be689` — pinned human wallet launcher and operator runbook.
 - `6548e40` — product-first page order and explicit independent verifier boundary.
-- This report and screenshot set are in the final local report commit.
+- `7700399` — evidence report, screenshots and fail-closed observation hardening.
+- `e5c248c` — early occupied-port and container-name checks for the operator launcher.
+- The latest report text is in the final local documentation commit.
 
 The next accepted run must record the actual new txid, block, buyer/seller before-and-after scans, public API receipt, direct owner confirmation that both approvals were typed manually, and a second fresh run following the runbook. The browser's current no-session screenshots cannot substitute for a live session screenshot. No push, merge, PR or deployment has occurred.
