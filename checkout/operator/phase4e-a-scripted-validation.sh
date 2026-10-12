@@ -293,6 +293,13 @@ PYTHONPATH="$PRODUCT_DIR" python3 -m exchange.persistent_chain checkpoint --root
 FEE_HEIGHT=$((FEE_HEIGHT + 1))
 done
 
+# This pinned Zebra persists finalized state but drops its recent non-finalized
+# window on restart. Mine enough empty blocks to make the last purchase's
+# anchored block durable before stopping; no additional wallet approval occurs.
+# The checkpoint anchors at least 100 blocks below the tip, so it must follow
+# this mining for the anchor to cover every accepted purchase.
+coord mine-empty --count 1100
+PYTHONPATH="$PRODUCT_DIR" python3 -m exchange.persistent_chain checkpoint --root "$ROOT" --container "$CONTAINER" --port "$PORT" > "$BASE_X/post-trade-anchor.json"
 mkdir -p "$BASE_X/portfolio-scans"
 for instrument in zwa-gold-reference zwa-treasury-style zwa-credit-participation; do
     asset=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["asset_base"])' "$BASE_X/instruments/$instrument-issuance.json")
@@ -300,11 +307,6 @@ for instrument in zwa-gold-reference zwa-treasury-style zwa-credit-participation
     seller balances --asset "$asset" | tee "$BASE_X/portfolio-scans/$instrument-seller.log"
 done
 PYTHONPATH="$PRODUCT_DIR" python3 -m exchange.portfolio_scans "$BASE_X" "$ROOT/chain-identity.json" "$BASE_X/portfolio.json"
-
-# This pinned Zebra persists finalized state but drops its recent non-finalized
-# window on restart. Mine enough empty blocks to make the last purchase's
-# anchored block durable before stopping; no additional wallet approval occurs.
-coord mine-empty --count 1100
 # An actual node restart must preserve the accepted transactions and scanned holdings.
 PYTHONPATH="$PRODUCT_DIR" python3 -m exchange.persistent_chain stop --root "$ROOT" --container "$CONTAINER" --port "$PORT" > "$BASE_X/chain-stopped.json"
 PYTHONPATH="$PRODUCT_DIR" python3 -m exchange.persistent_chain start --root "$ROOT" --container "$CONTAINER" --port "$PORT" > "$BASE_X/chain-restarted.json"
