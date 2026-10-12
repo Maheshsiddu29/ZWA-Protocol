@@ -215,18 +215,28 @@ The Halo2 lineage workspace maintains **separate frozen dependencies and tooling
 
 **Primary stack:** Rust, Halo2, Orchard note primitives, Circom/Groth16, Poseidon, experimental QEDIT ZSA/Zebra tooling, Python read-only checkout services, and Next.js UI work.
 
-## 9. Roadmap
+## 9. Development Roadmap
 
-| Milestone | Focus |
+ZWA is being developed alongside the evolution of Zcash's privacy-preserving asset infrastructure. The protocol already has working building blocks in rooted provenance verification, earlier private-policy proofs, and experimental asset settlement. The next phase focuses on connecting these capabilities as the underlying Zcash/ZSA stack and its transaction interfaces mature.
+
+| Direction | Development focus |
 |---|---|
-| **Verifier integration** | Publish reproducible proof fixtures and a consistent real-verdict interface |
-| **Policy integration** | Authenticate issuer/credential roots and bind eligibility decisions to verified intents |
-| **Secure settlement integration** | Review signer scope, wallet-control challenges and settlement adapter before connecting purchase execution |
-| **Expanded coverage** | Investigate additional note classes, swap-output ancestry, split flows and richer issuer policies |
-| **Production readiness** | Independent cryptographic review, security hardening, custody/legal assessment, and mature Zcash asset support |
+| **Unified verification experience** | Bring authenticated lineage evidence, reproducible adversarial cases, and precise verifier verdicts into a developer-facing workflow. |
+| **Private policy integration** | Extend issuer- and credential-root authentication, exact-trade binding, and application-level eligibility checks into the evolving transaction flow. |
+| **Private asset settlement** | Evolve the independently approved ZSA-for-shielded-ZEC experiment toward stronger wallet authorization and settlement interfaces as Zcash asset primitives mature. |
+| **Broader asset coverage** | Extend supported lineage relations beyond the current normal-step class, including evaluation of swap outputs, split flows, and additional asset structures. |
+| **Ecosystem interoperability** | Align proof formats, verifier interfaces, asset tooling, and operational safeguards with emerging Zcash/ZSA capabilities and developer standards. |
 
-## 10. Security & Status
+The objective is a modular foundation for verifying asset origins and enforcing application-level transaction rules without requiring the public disclosure of sensitive witness data.
 
-ZWA is **experimental software, not an audited production RWA exchange**. The checkout uses pinned experimental QEDIT/Zebra ZSA components, not generally available production Zcash mainnet asset functionality. A valid lineage proof does not establish legal title, unspentness, ownership, compliance, or authorization of arbitrary transfers. Private witnesses remain hidden, while public proof tuples and relevant chain references may remain visible.
+## 10. Protocol Maturity & Ecosystem Alignment
 
-Earlier ZK-ORIGIN-derived work is attributed to [ZKChainForge/zk-origin](https://github.com/ZKChainForge/zk-origin) (source commit `eae3f3e19dd63562364149ecb000f2de7296d025`); original attribution and licensing notices are retained. No project-wide ZWA license is asserted here.
+ZWA's current technical results span three independently validated workstreams: a frozen Halo2 rooted-lineage verifier with chain-context authentication, earlier zero-knowledge issuer/eligibility proof components, and a recorded human-approved ZSA-for-shielded-ZEC exchange on an experimental regtest stack.
+
+These components establish concrete foundations for ZWA's architecture. Their integration will advance in parallel with the Zcash ecosystem's evolving support for custom shielded assets, transaction authorization, and developer infrastructure.
+
+**Current implementation scope:** the lineage verifier proves a specified normal-step ancestry relation, not arbitrary ownership or value history; the recorded checkout is a separate settlement experiment and does not itself establish lineage or investor eligibility for its purchased note. The tested experimental Action Group authorization and expiry semantics require further protocol-level evolution before supporting reusable production approvals. Cryptographic review, deployment-specific security engineering, and applicable asset/custody requirements remain part of any production rollout.
+
+ZWA is designed to remain compatible with that progression: preserve the proven verification core, expand supported relationships and policies, and adopt stronger Zcash asset-settlement primitives as they become available.
+
+**Acknowledgment:** Earlier ZK-ORIGIN-derived work is attributed to [ZKChainForge/zk-origin](https://github.com/ZKChainForge/zk-origin) (source commit `eae3f3e19dd63562364149ecb000f2de7296d025`); existing attribution and licensing notices are retained.
