@@ -433,6 +433,16 @@ class ExecutionTests(Phase4ECBase):
         self.assertEqual(stable["policy"], "RESTART_DURABLE_UNDER_PINNED_ZEBRA_POLICY_NOT_FINALITY")
         self.assertEqual(self.ledger.execution(order["id"])["outcome"], "ACCEPTED")
 
+    def test_legacy_receipt_without_execution_never_triggers_mining(self):
+        order = self.ready()
+        with self.ledger._transaction() as db:  # A pre-4E-C settled order shape.
+            db.execute("UPDATE orders SET state='RECEIPT_AVAILABLE' WHERE id=?", (order["id"],))
+        (self.config.order_dir(order["id"]) / "order-receipt.json").write_text("{}")
+        height = self.tools.height
+        self.service.tick()
+        self.assertEqual(self.tools.height, height)
+        self.assertFalse((self.config.order_dir(order["id"]) / "stabilization.json").exists())
+
     def test_buyer_rejection_terminates_window_and_releases(self):
         order = self.started()
         self.attest(order["id"], "buyer", result="REJECTED")

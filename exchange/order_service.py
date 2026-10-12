@@ -597,8 +597,11 @@ class OrderService:
     # ---------------------------------------------------------- durability
 
     def stabilize_if_due(self) -> None:
+        # Only orders this service executed; pre-4E-C receipts are never
+        # reprocessed and never trigger mining on their own.
         due = [order for order in self.ledger.orders_in(("RECEIPT_AVAILABLE",))
-               if (order_dir(self.config.exchange, order["id"]) / "order-receipt.json").exists()
+               if self.ledger.execution(order["id"]) is not None
+               and (order_dir(self.config.exchange, order["id"]) / "order-receipt.json").exists()
                and not (order_dir(self.config.exchange, order["id"]) / "stabilization.json").exists()]
         if not due or self.ledger.orders_in(WALLET_COMMITTED_STATES):
             return
