@@ -1,0 +1,17 @@
+{
+  "failed": 0,
+  "passed": 46,
+  "performance": {
+    "A4AuthorizeMs": 27.142,
+    "CKNAuthorizeMs": 27.791,
+    "checkpoint-cknMs": 22.904,
+    "concurrent8MaxMs": 138.627,
+    "concurrent8MeanMs": 87.383,
+    "firstA7Ms": 25.154,
+    "firstHandlerUs": 24767,
+    "jsonBase64DecodeUs": 33,
+    "pending-a4Ms": 24.056,
+    "startupMs": 9789.984374998312,
+    "warmedA7MsMean": 23.525
+  }
+}

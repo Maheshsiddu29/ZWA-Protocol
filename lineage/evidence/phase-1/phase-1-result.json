@@ -1,0 +1,134 @@
+{
+ "phase": "production-integration-phase-1",
+ "start_commit": "b01796228199ec824ce4a85c8fffe0386bc50d12",
+ "end_commit": "the commit that adds this file (parent 7cbfd75384f3588f2daa1ab17801a2e9fa6e4d3c)",
+ "verification_commit": "7cbfd75384f3588f2daa1ab17801a2e9fa6e4d3c",
+ "branch": "integration/lineage-phase-1",
+ "pushed": false,
+ "research_repository": "ZWA-Lineage-Research",
+ "research_branch": "research/post-h1f-engineering-baseline",
+ "research_head": "3e7115d0e4c2f1cf36355f028447fc1b58290583",
+ "research_baseline_unchanged": true,
+ "research_baseline_hash_before": "7c05d1e9b3884e30fc901535f0d8ca95f9430204a379f0182c248416760ca4bc",
+ "research_baseline_hash_after": "7c05d1e9b3884e30fc901535f0d8ca95f9430204a379f0182c248416760ca4bc",
+ "research_baseline_files": 1699,
+ "research_baseline_method": "post-h1f/engineering-baseline/scripts/baseline-hash.sh; per-file listings before and after compared byte for byte (identical)",
+ "freeze_package_tree_before_after": "2554af47101877b11ce24958397f9237e016c176",
+ "engineering_baseline_tree_before_after": "cf2080351ce1e7885b90c2c1209d7ea8d67dd16e",
+ "source_pins_sha256": "2478e1828fddc4a1685c100016c9223e52b2a18dc1f145a8633dbc35ecf89585",
+ "research_worktree_clean_after": true,
+ "lineage_relation": "NormalLineageStepV2",
+ "verifier_version": "zwa-lineage 0.1.0, verifier_id lineage-v2-l1 (R2B-L1 circuit, frozen prover::verify, SingleVerifier)",
+ "vk_digest": "a2b349d7470504b6b5de3214f1783bc06d28c2f4e73111f9568652d0615b36b3",
+ "vk_digest_method": "sha256 of format!(\"{:?}\", vk.pinned()), recomputed at load from frozen keygen_vk; equals research R2B_L1_VK",
+ "parameter_identity": "Params::new(11); sha256(Params::write) = 1eab6f93a080ce41b908d935c04bd2e3ed1ac23f277c15d11c499d56d28fa0f7 (production pin derived in Phase 1 from frozen params(); research recorded k only)",
+ "step_proof_len": 5120,
+ "design_a_integrated": true,
+ "root_authentication": "INTERFACE ONLY - NOT WIRED (NotWiredRootAuthenticator -> PENDING_AUTHENTICATION); successes sealed crate-private",
+ "terminal_authentication": "INTERFACE ONLY - NOT WIRED (NotWiredTerminalAuthenticator -> PENDING_AUTHENTICATION); successes sealed crate-private",
+ "chain_context_authentication": "INTERFACE ONLY - NOT WIRED (NotWiredChainContext -> PENDING_AUTHENTICATION); finality/reorg result types defined",
+ "chain_ref_support": "chain_ref v1 parse/encode/id ported from research encoding; byte-identical to research layer-b chainref on fixture refs and 238 decode vectors (truncation, extension, empty, every single-bit flip at bits 0 and 7 of each byte, non-canonical root); carried in container v2 and statement id; no Layer-B validation yet",
+ "golden_fixture_status": "N=3 frozen rooted fixture: Design A LINEAGE_PROOF_VALID; rooted PENDING_AUTHENTICATION (chain_context PENDING, design_a PASSED); never VERIFIED",
+ "ckn_status": "CKN: Design A LINEAGE_PROOF_VALID (as research recorded: DA-01 ACCEPT / CKN-JOINS); rooted PENDING_AUTHENTICATION, never VERIFIED. Its Layer-B rejection (CHECKPOINTED_HISTORY / UNKNOWN_FUTURE) needs the Phase 2 chain view",
+ "negative_fixture_status": "24 adversarial tests pass (all 20 brief categories plus too-many-steps, container framing, proof-length-through-wire, pending-does-not-mask-rejection); every case fails closed with a specific code",
+ "differential_status": "20 AGREE, 4 CONTRACT_DIVERGENCE (all stricter, all reject on both sides), 0 disagreements against the live frozen research Design-A verifier; recorded rows DA-01, DA-03..DA-06, CB-00, CB-00c, CB-13a, CB-13b, CB-14a, CB-15i, CB-15j, CB-15k reproduced at the Design-A layer (CB-15j against production, since its first failure precedes Design A)",
+ "differential_divergences": [
+  {
+   "id": "D-CKN-TRAIL",
+   "research": "ACCEPT",
+   "production": "DA_NONCANONICAL_PROOF(1)",
+   "reason": "contract §G1/§G2 (A2AM-F4): production rejects trailing proof bytes; the research verifier ignores them"
+  },
+  {
+   "id": "D-N3-SHORT",
+   "research": "DA_PROOF(0)",
+   "production": "DA_NONCANONICAL_PROOF(0)",
+   "reason": "contract §G2: wrong proof length is rejected before verification with its own code"
+  },
+  {
+   "id": "D-N3-15J",
+   "research": "DA_ROOT",
+   "production": "ROOT_MALFORMED",
+   "reason": "the reference Design-A verifier compares endpoint bytes without canonicalizing them (DA_ROOT); production canonicalizes root_cmx first, which is what the research rooted object records (CB-15j)"
+  },
+  {
+   "id": "D-N3-TERM-NC",
+   "research": "DA_TERMINAL",
+   "production": "TERM_MALFORMED",
+   "reason": "Phase 1 brief §9: terminal_cmx is canonicalized before any proof check; the reference reaches DA_TERMINAL only after verifying every proof"
+  }
+ ],
+ "performance": {
+  "host": "Apple M3 Pro, arm64, release build",
+  "verifier_load_us": 632504,
+  "runs": 10,
+  "decode_and_canonicalize_us_max": 6,
+  "step_verify_us_min_median_max": [
+   3753,
+   3903.5,
+   4278
+  ],
+  "design_a_total_us_min_median_max": [
+   11438,
+   11719.5,
+   12289
+  ],
+  "process_max_rss_bytes": 12632064,
+  "memory_per_verification": "UNMEASURED"
+ },
+ "tests_passed": 53,
+ "tests_failed": 0,
+ "tests_breakdown": {
+  "unit": 10,
+  "adversarial": 24,
+  "differential": 5,
+  "golden": 9,
+  "doc": 5
+ },
+ "protocol_core_checks": {
+  "cargo_fmt": "OK",
+  "cargo_clippy_-D_warnings": "OK",
+  "cargo_test_passed": 95,
+  "cargo_test_failed": 0,
+  "npm_test": "15/15"
+ },
+ "per_commit_build_check": "each of the 6 implementation commits: clippy --all-targets -D warnings exit 0 and cargo test exit 0 in a clean detached worktree",
+ "dependency_audit": "cargo audit 0.22.2 --no-fetch, local advisory-db 1e640cd5 (2026-09-23): 1 vulnerability (RUSTSEC-2026-0258 h2 0.3.27) and 2 unmaintained warnings (atomic-polyfill, rustls-pemfile), all only via test-only dev-dependency zwa-layer-b (reqwest); none in the library's normal dependency graph on the host target; nothing upgraded",
+ "secret_scan": "no private-key, mnemonic, spending-key or credential pattern in new files; fixtures hold public tuples and proofs only",
+ "independent_human_review": "PENDING",
+ "known_limitations": [
+  "root, terminal and chain-context authentication, chain view, finality tracker and provenance policy not implemented; rooted path stops at PENDING_AUTHENTICATION",
+  "PENDING_AUTHENTICATION is an addition to the contract section H status list (requested by the Phase 1 brief); owner review should confirm",
+  "request container v2 carries no root/terminal authentication evidence yet; Phase 2 adds a new container version",
+  "build depends on sibling ZWA-Lineage-Research checkout and the pinned offline cargo home; not in protocol-core CI",
+  "parameter digest is a new production pin (research recorded k = 11 only)",
+  "cargo tree --target all cannot resolve offline (non-host crates absent from pinned cache); dependency-graph claims are for the host target",
+  "matcher hook not wired (LineageResult::permits_trade_verification exists; matcher integration is Phase 2)",
+  "research A2a-M conformance rows DA-01..DA-06 are labelled N=3 fixture but computed over CKN proofs (observation only; research not modified)",
+  "independent human review of the research pending (RV-1)"
+ ],
+ "commands": [
+  "ZWA-Lineage-Research/post-h1f/engineering-baseline/scripts/baseline-hash.sh <out> (before and after)",
+  "CARGO_HOME=zsa-feasibility/.cargo-home lineage/scripts/check.sh <evidence-dir>",
+  "cargo run --offline --locked --release --example measure_n3 -- 10 (under /usr/bin/time -l)",
+  "cargo run --offline --locked --release --example frozen_identity",
+  "cargo fmt --check && cargo clippy --offline --workspace --all-targets -- -D warnings && cargo test --offline --workspace && npm test (protocol core)",
+  "cargo audit --no-fetch --db ~/.cargo/advisory-db --file lineage/Cargo.lock",
+  "per commit: cargo clippy --offline --locked --all-targets -- -D warnings; cargo test --offline --locked (clean detached worktree)"
+ ],
+ "local_commits": [
+  "ef31c52668838e9b6de1a24fa4fe79c5b060e9af feat(lineage): add isolated lineage workspace and canonical domain model",
+  "e1daf456ad4a7886a3bc2591c9be10ed8671511e feat(lineage): integrate the frozen R2B-L1 verifier and Design A",
+  "0bb5f48b0fbf9f7e67c97eb70155b08c782f77e3 feat(lineage): add rooted authentication interfaces and verdict orchestration",
+  "e2fa30911c6fc33d300d92d9f5501e02923cd1af test(lineage): add golden, adversarial and differential tests",
+  "b5c0d861f7108794a278365c82450ba46717044a docs(lineage): document the production integration boundary",
+  "7cbfd75384f3588f2daa1ab17801a2e9fa6e4d3c build(lineage): add offline check script and N=3 measurement example",
+  "(this commit) test(lineage): record Phase 1 validation evidence"
+ ],
+ "verdict": [
+  "PRODUCTION ZWA INTEGRATION PHASE 1 COMPLETE",
+  "CORE LINEAGE VERIFIER INTEGRATED",
+  "FROZEN RESEARCH BASELINE UNCHANGED"
+ ],
+ "next_stage": "PRODUCTION ZWA INTEGRATION PHASE 2 — END-TO-END ROOTED LINEAGE + SETTLEMENT"
+}

@@ -1,0 +1,5 @@
+$ cargo audit --no-fetch --stale --file Cargo.lock
+exit 1
+error: error loading advisory database: I/O operation failed: failed to read directory `/Users/mahesh/Desktop/Colosseum/ZWA/zsa-feasibility/.cargo-home/advisory-db/crates`: No such file or directory (os error 2)
+Caused by:
+  -> failed to read directory `/Users/mahesh/Desktop/Colosseum/ZWA/zsa-feasibility/.cargo-home/advisory-db/crates`: No such file or directory (os error 2)

@@ -1,0 +1,98 @@
+{
+  "fixture": "n3 (freeze/FROZEN_ROOTED_FIXTURE.md)",
+  "request_bytes": 15886,
+  "runs": 10,
+  "samples": [
+    {
+      "decode_and_canonicalize_us": 6,
+      "design_a_total_us": 12289,
+      "step_verify_us": [
+        4099,
+        4278,
+        3911
+      ]
+    },
+    {
+      "decode_and_canonicalize_us": 2,
+      "design_a_total_us": 11885,
+      "step_verify_us": [
+        3924,
+        3896,
+        4064
+      ]
+    },
+    {
+      "decode_and_canonicalize_us": 1,
+      "design_a_total_us": 12261,
+      "step_verify_us": [
+        4224,
+        4121,
+        3914
+      ]
+    },
+    {
+      "decode_and_canonicalize_us": 1,
+      "design_a_total_us": 11744,
+      "step_verify_us": [
+        3881,
+        3922,
+        3940
+      ]
+    },
+    {
+      "decode_and_canonicalize_us": 1,
+      "design_a_total_us": 11488,
+      "step_verify_us": [
+        3817,
+        3850,
+        3820
+      ]
+    },
+    {
+      "decode_and_canonicalize_us": 0,
+      "design_a_total_us": 11508,
+      "step_verify_us": [
+        3754,
+        3870,
+        3884
+      ]
+    },
+    {
+      "decode_and_canonicalize_us": 1,
+      "design_a_total_us": 12124,
+      "step_verify_us": [
+        4030,
+        3960,
+        4133
+      ]
+    },
+    {
+      "decode_and_canonicalize_us": 0,
+      "design_a_total_us": 11639,
+      "step_verify_us": [
+        3771,
+        3988,
+        3879
+      ]
+    },
+    {
+      "decode_and_canonicalize_us": 1,
+      "design_a_total_us": 11695,
+      "step_verify_us": [
+        3883,
+        3768,
+        4043
+      ]
+    },
+    {
+      "decode_and_canonicalize_us": 1,
+      "design_a_total_us": 11438,
+      "step_verify_us": [
+        3824,
+        3860,
+        3753
+      ]
+    }
+  ],
+  "verifier_load_us": 632504
+}

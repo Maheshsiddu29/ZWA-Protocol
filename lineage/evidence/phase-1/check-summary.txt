@@ -1,0 +1,29 @@
+== fixture pins
+step-proofs/ckn-s0.bin: OK
+step-proofs/ckn-s1.bin: OK
+step-proofs/ckn-s2.bin: OK
+step-proofs/lb-fforeign0.bin: OK
+step-proofs/lb-fforeign1.bin: OK
+step-proofs/lb-fforeign2.bin: OK
+step-proofs/lb-fforeign3.bin: OK
+step-proofs/lb-s1.bin: OK
+step-proofs/lb-s2.bin: OK
+step-proofs/lb-s2b.bin: OK
+step-proofs/lb-s3.bin: OK
+step-proofs/lb-s3b.bin: OK
+fixtures.json: OK
+== cargo fmt --check
+== cargo clippy (all targets, -D warnings)
+== cargo test
+     Running unittests src/lib.rs (target/debug/deps/zwa_lineage-2c1bcf63fbc38c16)
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.94s
+     Running tests/adversarial.rs (target/debug/deps/adversarial-b8a5da5622fe236d)
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.94s
+     Running tests/differential.rs (target/debug/deps/differential-088b8b150b9c83c8)
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.36s
+     Running tests/golden.rs (target/debug/deps/golden-b821942df38cdf14)
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.68s
+   Doc-tests zwa_lineage
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.34s
+== lock unchanged
+PASS

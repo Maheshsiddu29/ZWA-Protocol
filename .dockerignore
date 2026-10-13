@@ -1,0 +1,23 @@
+# Only what the engine and web images copy; never wallet state or secrets.
+**/node_modules
+**/.next
+**/target
+**/__pycache__
+.git
+lineage
+public-testnet
+docs
+tests
+matcher
+rfq
+frontend
+scripts
+crates
+website/docs
+**/*.sqlite
+**/seed.hex
+**/sponsor-seed.hex
+**/.env
+**/.env.*
+deploy/env
+deploy/.env

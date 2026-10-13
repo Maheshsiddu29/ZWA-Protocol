@@ -5,6 +5,10 @@ target/
 # Node
 node_modules/
 
+# Python checkout API
+__pycache__/
+*.pyc
+
 # Circom and snarkjs generated artifacts
 *.r1cs
 *.wtns
@@ -21,11 +25,15 @@ verification_key.json
 *.pem
 *.key
 
-# Wallet and database state
+# Wallet and database state (wallet homes live outside the repository; these
+# anchored patterns must not match source directories such as app/exchange/wallet)
 *.db
 *.sqlite
 *.sqlite3
-wallet*/
+/wallet*/
+**/wallet-data*/
+**/seed.hex
+**/sponsor-seed.hex
 
 # Logs and temporary proof output
 *.log
@@ -38,3 +46,9 @@ tmp/
 .DS_Store
 .idea/
 .vscode/
+
+# Source brand package stays outside commits; selected production copies are in website/public/.
+design-assets/
+deploy/build/
+deploy/env/
+deploy/.env

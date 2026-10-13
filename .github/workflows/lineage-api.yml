@@ -1,0 +1,72 @@
+name: production-lineage-api
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  production:
+    runs-on: ubuntu-latest
+    env:
+      CARGO_HOME: ${{ runner.temp }}/zwa-cargo-home
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: ZWA-Protocol
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Fetch locked external dependencies
+        run: cargo fetch --manifest-path ZWA-Protocol/lineage/Cargo.toml --locked
+      - name: Pinned source, formatting, clippy, and production regressions
+        working-directory: ZWA-Protocol/lineage
+        run: scripts/check.sh
+      - name: Production verifier dependency boundary
+        working-directory: ZWA-Protocol/lineage
+        run: |
+          cargo tree --offline --locked -p zwa-lineage --edges normal > /tmp/zwa-verifier-tree.txt
+          if rg -n '(^|[[:space:]])(h2|reqwest|hyper) v' /tmp/zwa-verifier-tree.txt; then exit 1; fi
+      - name: Build and exercise real localhost HTTP server
+        working-directory: ZWA-Protocol/lineage
+        run: |
+          cargo build --offline --locked -p zwa-lineage-api
+          python3 apps/api/tests/http_integration.py
+      - name: Secret pattern scan
+        working-directory: ZWA-Protocol
+        run: |
+          if rg -n --hidden -- '-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----|AKIA[0-9A-Z]{16}' lineage/apps lineage/vendor/r2b-l1; then exit 1; fi
+
+  frozen-differential:
+    runs-on: macos-latest
+    env:
+      CARGO_HOME: ${{ runner.temp }}/zwa-cargo-home
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: ZWA-Protocol
+      - uses: actions/checkout@v4
+        with:
+          repository: Maheshsiddu29/ZWA-Lineage-Research
+          ref: 3e7115d0e4c2f1cf36355f028447fc1b58290583
+          path: ZWA-Lineage-Research
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Prepare locked research-only absolute Orchard source alias
+        run: |
+          mkdir -p /Users/mahesh/Desktop/Colosseum/ZWA/zsa-feasibility
+          ln -s "$CARGO_HOME" /Users/mahesh/Desktop/Colosseum/ZWA/zsa-feasibility/.cargo-home
+          cargo fetch --manifest-path ZWA-Protocol/lineage/research-tests/Cargo.toml --locked
+      - name: Frozen baseline before
+        run: ZWA-Lineage-Research/post-h1f/engineering-baseline/scripts/baseline-hash.sh /tmp/zwa-baseline-before.txt ZWA-Lineage-Research
+      - name: Full frozen differential and 236-row accounting
+        working-directory: ZWA-Protocol/lineage
+        run: scripts/check-research.sh
+      - name: Frozen baseline after
+        run: |
+          ZWA-Lineage-Research/post-h1f/engineering-baseline/scripts/baseline-hash.sh /tmp/zwa-baseline-after.txt ZWA-Lineage-Research
+          cmp /tmp/zwa-baseline-before.txt /tmp/zwa-baseline-after.txt

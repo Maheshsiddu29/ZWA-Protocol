@@ -1,0 +1,89 @@
+{
+  "actionEvaluated": true,
+  "eligibility": "NOT_EVALUATED",
+  "lineagePermission": "ALLOWED",
+  "settlement": "NOT_EXECUTED",
+  "timeline": [
+    {
+      "stage": "ISSUANCE_ROOT",
+      "status": "PASSED"
+    },
+    {
+      "stage": "LINEAGE_STEPS",
+      "status": "PASSED"
+    },
+    {
+      "stage": "CHAIN_CONTEXT",
+      "status": "PASSED"
+    },
+    {
+      "stage": "TERMINAL_OUTPUT",
+      "status": "PASSED"
+    },
+    {
+      "stage": "FINALITY",
+      "status": "PASSED"
+    },
+    {
+      "stage": "TRADE_PERMISSION",
+      "status": "PASSED"
+    }
+  ],
+  "totalHandlerUs": 22641,
+  "tradePermission": {
+    "allowed": true,
+    "reason": "VERIFIED"
+  },
+  "transportDecodeUs": 17,
+  "trustSource": "PINNED_REGTEST_FIXTURE",
+  "verification": {
+    "chain_ref_id": "ee6075c9caf6e6778b49a683c2e979b6a58fa335ebfbf9231f4a558e799c368f",
+    "code": null,
+    "finality_state": "FINALIZED",
+    "history_mode": "FV",
+    "lineage_statement_id": "cab5ee103ee86cd682376abd96ac87f1c8313b111563a77149aea60576721455",
+    "message": null,
+    "mode": "rooted",
+    "obligations": {
+      "chain_context": "PASSED",
+      "context": "PASSED",
+      "design_a": "PASSED",
+      "finality": "PASSED",
+      "parse": "PASSED",
+      "root": "PASSED",
+      "terminal": "PASSED"
+    },
+    "research_code": null,
+    "root_height": 1,
+    "snapshot_id": "A7",
+    "snapshot_sha256": "28651a629cf0d8075c5d0ac7a7f93db45dd10729e5ba0dc48c156f903f3b8300",
+    "status": "VERIFIED",
+    "step": null,
+    "steps": 3,
+    "terminal_height": 4,
+    "timing_us": {
+      "chain_context": 1,
+      "decode": 13,
+      "design_a": 11318,
+      "finality": 2,
+      "root_auth": 3456,
+      "steps": [
+        3843,
+        3709,
+        3763
+      ],
+      "terminal_auth": 7335,
+      "total": 22378
+    },
+    "verifier": {
+      "params_k": 11,
+      "params_sha256": "1eab6f93a080ce41b908d935c04bd2e3ed1ac23f277c15d11c499d56d28fa0f7",
+      "proof_system": "halo2_proofs QED-it ef3d0ba (IPA/Vesta), plonk::verify_proof, SingleVerifier, Blake2bRead",
+      "relation": "NormalLineageStepV2",
+      "step_proof_len": 5120,
+      "verifier_id": "lineage-v2-l1",
+      "vk_id": "a2b349d7470504b6b5de3214f1783bc06d28c2f4e73111f9568652d0615b36b3"
+    }
+  },
+  "verificationId": "8f898d93cdc45987361b79f86d0760817fea319e1a112bdd6b574ce195845318"
+}

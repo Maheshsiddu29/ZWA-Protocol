@@ -1,0 +1,157 @@
+# ZWA hosted judge demo: one Linux host, Docker Compose.
+#
+#   internet ──443──▶ caddy ──▶ web (Next.js) ──▶ portal (fixed-action API)
+#                                                    │  order-service, demo-signer
+#                                                    ▼
+#                                                  zebra (pinned regtest; never published)
+#
+# Only caddy publishes ports. Every engine service and zebra sit on an
+# internal network with no route out. See deploy/README.md.
+name: zwa-demo
+
+x-engine: &engine
+  image: zwa-engine:${ZWA_ENGINE_TAG:-local}
+  user: "10001:10001"
+  read_only: true
+  tmpfs: ["/tmp:size=64m,mode=1777"]
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  environment:
+    ZWA_PRIVATE_EXCHANGE_ROOT: /var/lib/zwa/zwa4e-demo
+  volumes:
+    - zwa-root:/var/lib/zwa
+    - zwa-params:/opt/zwa/params/ZcashParams:ro
+  networks: [internal]
+  restart: unless-stopped
+  logging: &logging
+    driver: json-file
+    options: { max-size: "10m", max-file: "5" }
+
+services:
+  zebra:
+    # Must be the pinned image ID sha256:540a3429…5185 (checked by deploy/scripts/preflight.sh).
+    image: ${ZWA_ZEBRA_IMAGE:-qedit/zebra-zsa-swap-pinned:latest}
+    entrypoint: ["target/release/zebrad", "-c", "/config/regtest-config.toml"]
+    volumes:
+      - zebra-state:/data
+      - ./zebra/regtest-config.toml:/config/regtest-config.toml:ro
+    networks: [internal]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    mem_limit: 4g
+    cpus: 2
+    logging: *logging
+
+  params:
+    # One-shot: copy the trusted Sapling parameters from the host into a
+    # named volume and verify them. Engines mount that volume read-only;
+    # Landlock rules do not apply to some host bind-mount filesystems.
+    <<: *engine
+    profiles: [setup]
+    restart: "no"
+    volumes:
+      - ${ZWA_PARAMS_DIR:?set to the host directory holding the checksummed ZcashParams}:/src:ro
+      - zwa-params:/opt/zwa/params/ZcashParams
+    entrypoint: ["sh", "-c"]
+    command:
+      - >-
+        cp /src/sapling-spend.params /src/sapling-output.params /opt/zwa/params/ZcashParams/ &&
+        cd /opt/zwa/params/ZcashParams &&
+        printf '%s  %s\n%s  %s\n'
+        8e48ffd23abb3a5fd9c5589204f32d9c31285a04b78096ba40a79b75677efc13 sapling-spend.params
+        2f0ebbcbb9bb0bcffe95a397e7eba89c29eb4dde6191c339db88570e3f3fb0e4 sapling-output.params
+        | sha256sum -c -
+
+  bootstrap:
+    <<: *engine
+    profiles: [setup]
+    restart: "no"
+    command: ["python3", "-m", "exchange.demo_bootstrap", "--root", "/var/lib/zwa/zwa4e-demo",
+              "--rpc-host", "zebra", "--rpc-port", "18232", "--params-data-home", "/opt/zwa/params",
+              "--tx-tool-dir", "/opt/zwa/tx-tool", "--node-bin", "/usr/local/bin/node"]
+    depends_on: [zebra]
+
+  order-service:
+    <<: *engine
+    command: ["python3", "-m", "exchange.order_service", "serve", "--root", "/var/lib/zwa/zwa4e-demo"]
+    depends_on: [zebra]
+    mem_limit: 3g
+    cpus: 2
+
+  demo-signer:
+    <<: *engine
+    command: ["python3", "-m", "exchange.demo_signer", "serve", "--root", "/var/lib/zwa/zwa4e-demo"]
+    depends_on: [zebra]
+    mem_limit: 1g
+    cpus: 1
+
+  portal:
+    <<: *engine
+    command: ["python3", "-m", "exchange.portal_server", "--root", "/var/lib/zwa/zwa4e-demo", "--port", "8790"]
+    environment:
+      ZWA_PRIVATE_EXCHANGE_ROOT: /var/lib/zwa/zwa4e-demo
+      ZWA_PORTAL_TOKEN: ${ZWA_PORTAL_TOKEN:?set a random token of at least 32 characters}
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8790/healthz', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    depends_on: [zebra]
+    mem_limit: 512m
+    cpus: 1
+
+  web:
+    image: zwa-web:${ZWA_WEB_TAG:-local}
+    user: "10001:10001"
+    read_only: true
+    tmpfs: ["/tmp:size=64m,mode=1777", "/app/.next/cache:size=128m,uid=10001,gid=10001"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    env_file: [./env/web.env]
+    environment:
+      ZWA_DEMO_MODE: "1"
+      ZWA_PORTAL_URL: http://portal:8790
+      ZWA_PORTAL_TOKEN: ${ZWA_PORTAL_TOKEN}
+      ZWA_PORTFOLIO_SELLER_ID: dealer
+      ZWA_PUBLIC_ORIGIN: ${ZWA_PUBLIC_ORIGIN:?set to https://your-demo-domain}
+      ZWA_TRUST_PROXY: "1"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks: [internal, edge]
+    depends_on: [portal]
+    restart: unless-stopped
+    mem_limit: 768m
+    cpus: 1
+    logging: *logging
+
+  caddy:
+    image: caddy:2.8.4-alpine
+    ports: ["${ZWA_BIND_ADDRESS:-127.0.0.1}:${ZWA_HTTP_PORT:-80}:80", "${ZWA_BIND_ADDRESS:-127.0.0.1}:${ZWA_HTTPS_PORT:-443}:443"]
+    environment:
+      ZWA_SITE_ADDRESS: ${ZWA_SITE_ADDRESS:?set to the public domain name}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [edge]
+    depends_on: [web]
+    restart: unless-stopped
+    mem_limit: 256m
+    cpus: 0.5
+    logging: *logging
+
+networks:
+  internal:
+    internal: true
+  edge: {}
+
+volumes:
+  zwa-root: {}
+  zwa-params: {}
+  zebra-state: {}
+  caddy-data: {}
+  caddy-config: {}

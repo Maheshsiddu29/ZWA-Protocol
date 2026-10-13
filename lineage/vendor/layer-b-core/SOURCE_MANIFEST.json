@@ -1,0 +1,61 @@
+{
+  "research_commit": "3e7115d0e4c2f1cf36355f028447fc1b58290583",
+  "files": [
+    {
+      "research_path": "post-h1f/layer-b/experiments/src/chainref.rs",
+      "production_path": "vendor/layer-b-core/src/chainref.rs",
+      "research_sha256": "e242a5845eb915168a2c9c0b9691ee220c11de99976ba45cdcb6842475eb9736",
+      "production_sha256": "e242a5845eb915168a2c9c0b9691ee220c11de99976ba45cdcb6842475eb9736",
+      "byte_identical": true,
+      "extraction": "whole file"
+    },
+    {
+      "research_path": "post-h1f/layer-b/experiments/src/finality.rs",
+      "production_path": "vendor/layer-b-core/src/finality.rs",
+      "research_sha256": "a4d1b094bde00891038fbaf5a7e0024dd26832743889c4fd66b33f1a13b26efb",
+      "production_sha256": "a4d1b094bde00891038fbaf5a7e0024dd26832743889c4fd66b33f1a13b26efb",
+      "byte_identical": true,
+      "extraction": "whole file"
+    },
+    {
+      "research_path": "post-h1f/layer-b/experiments/src/policy.rs",
+      "production_path": "vendor/layer-b-core/src/policy.rs",
+      "research_sha256": "5a53e20f2ec53342469ffab71e10503949e470d13a23c93e7ee2123bf03dd46b",
+      "production_sha256": "5a53e20f2ec53342469ffab71e10503949e470d13a23c93e7ee2123bf03dd46b",
+      "byte_identical": true,
+      "extraction": "whole file"
+    },
+    {
+      "research_path": "post-h1f/layer-b/experiments/src/root.rs",
+      "production_path": "vendor/layer-b-core/src/root.rs",
+      "research_sha256": "7e1e649ad4bd1747b4f6c0e9643643d0f2812b8239891373972a81986249c793",
+      "production_sha256": "b56844b3a9f32bf9a41dba7789e0fdb8b9db9efe158c6014012efe4347d7f1c7",
+      "byte_identical": false,
+      "extraction": "deterministic exclusion of research-only functions; retained verifier function text unchanged"
+    },
+    {
+      "research_path": "post-h1f/layer-b/experiments/src/terminal.rs",
+      "production_path": "vendor/layer-b-core/src/terminal.rs",
+      "research_sha256": "e84864e0c52314a43e842dcd40fe0347f76c94acc69d232ec618a30ed762ac53",
+      "production_sha256": "7a085d2b099bc37a527b969daa36d0125ef6eaf82ac6fc341ccbdd123ab598b6",
+      "byte_identical": false,
+      "extraction": "deterministic exclusion of research-only functions; retained verifier function text unchanged"
+    },
+    {
+      "research_path": "post-h1f/layer-b/experiments/src/util.rs",
+      "production_path": "vendor/layer-b-core/src/util.rs",
+      "research_sha256": "38766fa5d1c853280795de847a53b35bb462f69da73b887bb23edc25326a171d",
+      "production_sha256": "0a8fc339cbd73ee5fa4de64b7c532089cf99abc9f2d91035f7b2a3a1b19e4342",
+      "byte_identical": false,
+      "extraction": "deterministic exclusion of research-only functions; retained verifier function text unchanged"
+    },
+    {
+      "research_path": "post-h1f/layer-b/experiments/src/view.rs",
+      "production_path": "vendor/layer-b-core/src/view.rs",
+      "research_sha256": "d2dbb7250bed2bdd2e19d43d5dce0f86ccc23528cc914d136ad95abd567d0b9b",
+      "production_sha256": "bb281660ab4dc8cf6c207f10c608ee656b73862443ca873a5e36e801b735cd42",
+      "byte_identical": false,
+      "extraction": "deterministic exclusion of research-only functions; retained verifier function text unchanged"
+    }
+  ]
+}

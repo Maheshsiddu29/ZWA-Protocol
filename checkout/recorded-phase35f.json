@@ -1,0 +1,28 @@
+{
+  "terms": {
+    "version": 1,
+    "network": "regtest",
+    "consensus_branch_id": 2290649224,
+    "asset_base": "a2f7897b34d296f005e728bb660a4f3c19a0dc2e7611d17cddcef5853d000c86",
+    "quantity": 7,
+    "price_zat": 10000,
+    "matcher_fee_zat": 0,
+    "network_fee_zat": 5000,
+    "buyer_receive_address": "8184e66ea0164bc5ce102838e0b941575e40b8dbcb640daed80704092254b9505f821bbda35fd5ea16be25",
+    "seller_proceeds_address": "7bec872e5b1a54f599b6cc81754bdfb477df4e2ad4e403df4d5cdf58441bbd738f7719c350e9ed57c44ea2",
+    "fee_sponsor_txid": "52d16b3f37b8e0a2cc1cf889b5ac7f8be6de18aef724fd601afbef1d9843cf6e",
+    "fee_sponsor_index": 0,
+    "fee_sponsor_input_zat": 625000000,
+    "fee_sponsor_change_zat": 624995000,
+    "target_height": 103,
+    "tx_expiry_height": 143,
+    "group_expiry_height": 113,
+    "nonce": "cc0883e314fef49e53086f4eeb44fb68b9a95ee071f6e1a3ec9109d9ad532699"
+  },
+  "receipt": {
+    "txid": "99d9982716cbbeb1937691fef76511f0485e527c7cce4961e4510c1b9f21fb25",
+    "height": 103,
+    "blockHash": "1a7e7d08f4d20be37c05b6fa69f84a4eea5bc487ce8e9dd5438eba2de3da56da",
+    "txBytes": 28060
+  }
+}

@@ -1,0 +1,115 @@
+{
+  "runs": [
+    {
+      "chain_ref_us": 0,
+      "decode_us": 4,
+      "design_a_us": 11534,
+      "finality_us": 1,
+      "matcher_gate_us": 0,
+      "root_auth_us": 3549,
+      "run": 1,
+      "terminal_auth_us": 7587,
+      "total_us": 22814
+    },
+    {
+      "chain_ref_us": 0,
+      "decode_us": 2,
+      "design_a_us": 11406,
+      "finality_us": 0,
+      "matcher_gate_us": 0,
+      "root_auth_us": 3333,
+      "run": 2,
+      "terminal_auth_us": 7374,
+      "total_us": 22227
+    },
+    {
+      "chain_ref_us": 0,
+      "decode_us": 1,
+      "design_a_us": 11062,
+      "finality_us": 0,
+      "matcher_gate_us": 0,
+      "root_auth_us": 3329,
+      "run": 3,
+      "terminal_auth_us": 7340,
+      "total_us": 21856
+    },
+    {
+      "chain_ref_us": 0,
+      "decode_us": 1,
+      "design_a_us": 11195,
+      "finality_us": 0,
+      "matcher_gate_us": 0,
+      "root_auth_us": 3325,
+      "run": 4,
+      "terminal_auth_us": 7487,
+      "total_us": 22115
+    },
+    {
+      "chain_ref_us": 0,
+      "decode_us": 1,
+      "design_a_us": 11187,
+      "finality_us": 0,
+      "matcher_gate_us": 0,
+      "root_auth_us": 3316,
+      "run": 5,
+      "terminal_auth_us": 7299,
+      "total_us": 21911
+    },
+    {
+      "chain_ref_us": 0,
+      "decode_us": 2,
+      "design_a_us": 11255,
+      "finality_us": 0,
+      "matcher_gate_us": 0,
+      "root_auth_us": 3319,
+      "run": 6,
+      "terminal_auth_us": 7322,
+      "total_us": 22003
+    },
+    {
+      "chain_ref_us": 0,
+      "decode_us": 2,
+      "design_a_us": 12604,
+      "finality_us": 0,
+      "matcher_gate_us": 0,
+      "root_auth_us": 3308,
+      "run": 7,
+      "terminal_auth_us": 8180,
+      "total_us": 24205
+    },
+    {
+      "chain_ref_us": 0,
+      "decode_us": 2,
+      "design_a_us": 11355,
+      "finality_us": 0,
+      "matcher_gate_us": 0,
+      "root_auth_us": 3404,
+      "run": 8,
+      "terminal_auth_us": 7381,
+      "total_us": 22251
+    },
+    {
+      "chain_ref_us": 0,
+      "decode_us": 2,
+      "design_a_us": 11240,
+      "finality_us": 0,
+      "matcher_gate_us": 0,
+      "root_auth_us": 3358,
+      "run": 9,
+      "terminal_auth_us": 7345,
+      "total_us": 22052
+    },
+    {
+      "chain_ref_us": 0,
+      "decode_us": 1,
+      "design_a_us": 11039,
+      "finality_us": 0,
+      "matcher_gate_us": 0,
+      "root_auth_us": 3315,
+      "run": 10,
+      "terminal_auth_us": 7412,
+      "total_us": 21869
+    }
+  ],
+  "snapshot": "A7"
+}

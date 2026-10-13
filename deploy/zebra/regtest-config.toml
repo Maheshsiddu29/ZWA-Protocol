@@ -1,0 +1,18 @@
+[mining]
+miner_address = 'tmLTZegcJN5zaufWQBARHkvqC62mTumm3jR'
+
+[network]
+network = "Regtest"
+[network.testnet_parameters.activation_heights]
+NU5 = 1
+NU6 = 1
+NU7 = 1
+SWAP = 1
+
+[state]
+ephemeral = false
+cache_dir = "/data/state"
+
+[rpc]
+listen_addr = "0.0.0.0:18232"
+enable_cookie_auth = false

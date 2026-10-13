@@ -1,0 +1,41 @@
+[package]
+name = "zwa-node-check"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Deserialize prepared transactions with the community node's own zebra-chain and recompute AssetBase"
+publish = false
+
+# Standalone workspace pinned to the node's crate graph (not the wallet's).
+[workspace]
+
+[dependencies]
+zebra-chain = { git = "https://github.com/zcash-shielded-assets/zebra.git", rev = "6a91831a6a9c18f667f59ab956c9437bf0bb5c5f", features = ["tx_v6"] }
+orchard = { version = "0.14", features = ["zsa-issuance", "temporary-zebra"] }
+hex = "0.4"
+serde_json = "1.0"
+# The deployed zebrad enables `zcash_primitives/zip-233` through zebra-rpc's
+# `tx_v6` feature. V6 txids depend on it, so the checker must unify the same
+# feature or it computes a different (non-canonical) txid.
+zcash_primitives = { version = "0.28", features = ["zip-233"] }
+
+# Copied verbatim from zcash-shielded-assets/zebra@6a91831 so the checker
+# uses the same Orchard / librustzcash revisions as the deployed node.
+[patch.crates-io]
+orchard = { git = "https://github.com/zcash-shielded-assets/orchard.git", rev = "ed66d7e71d80edf5b4f62802729ee4da16bebd0e" }
+sapling-crypto = { git = "https://github.com/QED-it/sapling-crypto.git", rev = "e785faaa5eaf67bd2cb328fdd82a345df44e5754" }
+zcash_note_encryption = { git = "https://github.com/hhanh00/zcash_note_encryption.git", rev = "0f6f999c96821afa4bdcc323c8e277ab1ca56199" }
+halo2_gadgets = { git = "https://github.com/zcash-shielded-assets/halo2.git", rev = "d687ce0e3e913549cab370ec66765e6d59d4612f" }
+halo2_proofs = { git = "https://github.com/zcash-shielded-assets/halo2.git", rev = "d687ce0e3e913549cab370ec66765e6d59d4612f" }
+halo2_poseidon = { git = "https://github.com/zcash-shielded-assets/halo2.git", rev = "d687ce0e3e913549cab370ec66765e6d59d4612f" }
+zcash_primitives = { git = "https://github.com/hhanh00/librustzcash.git", rev = "09c0ea88cd6ed93160cadb2406176baac0b1338c" }
+zcash_proofs = { git = "https://github.com/hhanh00/librustzcash.git", rev = "09c0ea88cd6ed93160cadb2406176baac0b1338c" }
+zcash_protocol = { git = "https://github.com/hhanh00/librustzcash.git", rev = "09c0ea88cd6ed93160cadb2406176baac0b1338c" }
+zcash_address = { git = "https://github.com/hhanh00/librustzcash.git", rev = "09c0ea88cd6ed93160cadb2406176baac0b1338c" }
+zcash_encoding = { git = "https://github.com/hhanh00/librustzcash.git", rev = "09c0ea88cd6ed93160cadb2406176baac0b1338c" }
+zcash_keys = { git = "https://github.com/hhanh00/librustzcash.git", rev = "09c0ea88cd6ed93160cadb2406176baac0b1338c" }
+zcash_history = { git = "https://github.com/hhanh00/librustzcash.git", rev = "09c0ea88cd6ed93160cadb2406176baac0b1338c" }
+zcash_transparent = { git = "https://github.com/hhanh00/librustzcash.git", rev = "09c0ea88cd6ed93160cadb2406176baac0b1338c" }
+equihash = { git = "https://github.com/hhanh00/librustzcash.git", rev = "09c0ea88cd6ed93160cadb2406176baac0b1338c" }
+sinsemilla = { git = "https://github.com/zcash/sinsemilla.git", rev = "aabb707e862bc3d7b803c77d14e5a771bcee3e8c" }
+zcash_spec = { git = "https://github.com/QED-it/zcash_spec.git", rev = "c031bec62f1ea5a395d97e807ba831d206324cbe" }

@@ -1,0 +1,213 @@
+{
+  "info": {
+    "name": "ZWA Checkout Read-Only Phase 3.5H.1",
+    "_postman_id": "d853d8b8-82d7-4ddd-aaea-f3d6d7611732",
+    "description": "Read-only local regtest API. No purchase or signing request. The receipt-not-yet-available case requires a fresh active quote.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Checkout info",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/v1/checkout/info",
+        "description": ""
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "pm.test('JSON and no store', function () { pm.response.to.have.header('Content-Type'); pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store'); });",
+              "pm.test('regtest read-only metadata', function () { pm.response.to.have.status(200); pm.expect(body.version).to.eql(1); pm.expect(body.network).to.eql('regtest'); pm.expect(body.demoOnly).to.eql(true); pm.expect(body.signingAvailableOverHttp).to.eql(false); pm.expect(body.trustSource).to.eql('EXPERIMENTAL_REGTEST'); pm.expect(body.availability.state).to.be.oneOf(['AVAILABLE','NODE_UNAVAILABLE','WRONG_NETWORK']); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Sample quote",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/v1/checkout/sample-quote",
+        "description": ""
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "pm.test('JSON and no store', function () { pm.response.to.have.header('Content-Type'); pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store'); });",
+              "pm.test('recorded sponsored quote', function () { pm.response.to.have.status(200); pm.expect(body.source).to.eql('RECORDED_REGTEST_EVIDENCE'); pm.expect(body.actionable).to.eql(false); pm.expect(body.quote.quantity).to.eql(7); pm.expect(body.quote.paymentAmount).to.eql(10000); pm.expect(body.quote.maximumTotalDebit).to.eql(10000); pm.expect(body.quote.networkFee).to.eql(5000); pm.expect(body.quote.feePayer).to.eql('DISPOSABLE_REGTEST_SPONSOR'); pm.expect(body.quote.matcherFee).to.eql(0); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Recorded human session",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/v1/checkout/sessions/recorded-phase35h",
+        "description": ""
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "pm.test('JSON and no store', function () { pm.response.to.have.header('Content-Type'); pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store'); });",
+              "pm.test('human run is recorded', function () { pm.response.to.have.status(200); pm.expect(body.sessionId).to.eql('recorded-phase35h'); pm.expect(body.status).to.eql('RECORDED_REGTEST_EVIDENCE'); pm.expect(body.actionable).to.eql(false); pm.expect(body.receipt.sessionId).to.eql(body.sessionId); pm.expect(body.receipt.txid).to.eql('aaeb15b837d5b44fc6aaf6d88b36ac9b802cd53e6cd2cf292ef8450db6826dfd'); pm.expect(body.receipt.finality).to.eql('UNKNOWN'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Recorded human receipt",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/v1/checkout/sessions/recorded-phase35h/receipt",
+        "description": ""
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "pm.test('JSON and no store', function () { pm.response.to.have.header('Content-Type'); pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store'); });",
+              "pm.test('matching historical receipt', function () { pm.response.to.have.status(200); pm.expect(body.sessionId).to.eql('recorded-phase35h'); pm.expect(body.txid).to.eql('aaeb15b837d5b44fc6aaf6d88b36ac9b802cd53e6cd2cf292ef8450db6826dfd'); pm.expect(body.height).to.eql(103); pm.expect(body.blockHash).to.eql('7ece7eadb0fda860e9d2f49add753174da9a04d4e64a4a1c3ced90e15f0cd13a'); pm.expect(body.purchaseSettlement).to.eql('ACCEPTED'); pm.expect(body.rootedLineage).to.eql('UNSUPPORTED'); pm.expect(body.investorEligibility).to.eql('NOT_EVALUATED'); pm.expect(body.finality).to.eql('UNKNOWN'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Live session after node stopped",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/v1/checkout/sessions/{{human_session_id}}",
+        "description": "Run only after the original disposable node is stopped; a fresh chain with the same RPC port is not evidence for this transaction."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "pm.test('JSON and no store', function () { pm.response.to.have.header('Content-Type'); pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store'); });",
+              "pm.test('old live session fails closed', function () { pm.response.to.have.status(503); pm.expect(body.sessionId).to.eql(pm.collectionVariables.get('human_session_id')); pm.expect(body.status).to.eql(null); pm.expect(body.error.code).to.eql('NODE_UNAVAILABLE'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Nonexistent session",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/v1/checkout/sessions/1111111111111111111111111111111111111111111111111111111111111111",
+        "description": ""
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "pm.test('JSON and no store', function () { pm.response.to.have.header('Content-Type'); pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store'); });",
+              "pm.test('missing session', function () { pm.response.to.have.status(404); pm.expect(body.error.code).to.eql('NOT_FOUND'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Malformed session ID",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/v1/checkout/sessions/bad!",
+        "description": ""
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "pm.test('JSON and no store', function () { pm.response.to.have.header('Content-Type'); pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store'); });",
+              "pm.test('malformed ID is absent', function () { pm.response.to.have.status(404); pm.expect(body.error.code).to.eql('NOT_FOUND'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Receipt not yet available",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/v1/checkout/sessions/{{quote_ready_session_id}}/receipt",
+        "description": "Set quote_ready_session_id to a genuine active QUOTE_READY session and run before any submission. Skip this request otherwise."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "pm.test('JSON and no store', function () { pm.response.to.have.header('Content-Type'); pm.expect(pm.response.headers.get('Cache-Control')).to.eql('no-store'); });",
+              "pm.test('valid quote has no receipt yet', function () { pm.response.to.have.status(404); pm.expect(body.error.code).to.eql('RECEIPT_NOT_AVAILABLE'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Unavailable backend (manual transport check)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{unavailable_base_url}}/v1/checkout/info",
+        "description": "With nothing listening on unavailable_base_url, Postman reports a connection error and does not execute test scripts. Verify the UI treats it as UNAVAILABLE. This request does not execute payments."
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://127.0.0.1:18745"
+    },
+    {
+      "key": "unavailable_base_url",
+      "value": "http://127.0.0.1:18746"
+    },
+    {
+      "key": "human_session_id",
+      "value": "bcfeece4d3e52834990a51780e772fd46d8b85ac90255e71b6f854afa9707f0d"
+    },
+    {
+      "key": "quote_ready_session_id",
+      "value": "SET_FROM_FRESH_ACTIVE_QUOTE"
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+# Same cfg the community node is built with (start-zsatestnet.sh).
+[build]
+rustflags = ['--cfg', 'zcash_unstable="nu7"']

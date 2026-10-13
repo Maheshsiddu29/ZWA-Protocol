@@ -1,0 +1,121 @@
+{
+  "runs": [
+    {
+      "chain_ref_us": 0,
+      "decode_us": 4,
+      "design_a_us": 11375,
+      "finality_us": 1,
+      "matcher_gate_us": 0,
+      "root_auth_us": 3518,
+      "run": 1,
+      "terminal_auth_us": 7248,
+      "total_us": 22283
+    },
+    {
+      "chain_ref_us": 0,
+      "decode_us": 2,
+      "design_a_us": 11841,
+      "finality_us": 0,
+      "matcher_gate_us": 0,
+      "root_auth_us": 3330,
+      "run": 2,
+      "terminal_auth_us": 7854,
+      "total_us": 23134
+    },
+    {
+      "chain_ref_us": 0,
+      "decode_us": 3,
+      "design_a_us": 16640,
+      "finality_us": 1,
+      "matcher_gate_us": 0,
+      "root_auth_us": 3490,
+      "run": 3,
+      "terminal_auth_us": 7454,
+      "total_us": 27710
+    },
+    {
+      "chain_ref_us": 0,
+      "decode_us": 3,
+      "design_a_us": 11289,
+      "finality_us": 0,
+      "matcher_gate_us": 0,
+      "root_auth_us": 3132,
+      "run": 4,
+      "terminal_auth_us": 7329,
+      "total_us": 21863
+    },
+    {
+      "chain_ref_us": 0,
+      "decode_us": 1,
+      "design_a_us": 11511,
+      "finality_us": 0,
+      "matcher_gate_us": 0,
+      "root_auth_us": 3112,
+      "run": 5,
+      "terminal_auth_us": 7248,
+      "total_us": 21976
+    },
+    {
+      "chain_ref_us": 0,
+      "decode_us": 1,
+      "design_a_us": 11538,
+      "finality_us": 0,
+      "matcher_gate_us": 0,
+      "root_auth_us": 3242,
+      "run": 6,
+      "terminal_auth_us": 7452,
+      "total_us": 22344
+    },
+    {
+      "chain_ref_us": 0,
+      "decode_us": 1,
+      "design_a_us": 11205,
+      "finality_us": 0,
+      "matcher_gate_us": 0,
+      "root_auth_us": 3188,
+      "run": 7,
+      "terminal_auth_us": 7210,
+      "total_us": 21710
+    },
+    {
+      "chain_ref_us": 0,
+      "decode_us": 1,
+      "design_a_us": 11123,
+      "finality_us": 0,
+      "matcher_gate_us": 0,
+      "root_auth_us": 3101,
+      "run": 8,
+      "terminal_auth_us": 7565,
+      "total_us": 21895
+    },
+    {
+      "chain_ref_us": 0,
+      "decode_us": 1,
+      "design_a_us": 11249,
+      "finality_us": 0,
+      "matcher_gate_us": 0,
+      "root_auth_us": 3353,
+      "run": 9,
+      "terminal_auth_us": 7242,
+      "total_us": 21953
+    },
+    {
+      "chain_ref_us": 0,
+      "decode_us": 1,
+      "design_a_us": 11028,
+      "finality_us": 0,
+      "matcher_gate_us": 0,
+      "root_auth_us": 3144,
+      "run": 10,
+      "terminal_auth_us": 7288,
+      "total_us": 21570
+    }
+  ],
+  "snapshot": "A7",
+  "summary": {
+    "mean_total_us": 22643.8,
+    "mean_design_a_us": 11879.9,
+    "mean_root_auth_us": 3261,
+    "mean_terminal_auth_us": 7389
+  }
+}

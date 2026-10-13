@@ -1,0 +1,101 @@
+{
+  "demo": true,
+  "description": "The same N=3 evidence at tip 4",
+  "expected": "PENDING_FINALITY",
+  "fixture": {
+    "name": "n3-v3.bin",
+    "sha256": "0821a7abafca556bdcf9403ed9e040603194bf5d46650316d42554ee9c96ebb0"
+  },
+  "matchesExpected": true,
+  "observed": "PENDING_FINALITY",
+  "result": {
+    "actionEvaluated": false,
+    "eligibility": "NOT_EVALUATED",
+    "lineagePermission": "DENIED",
+    "settlement": "NOT_EXECUTED",
+    "timeline": [
+      {
+        "stage": "ISSUANCE_ROOT",
+        "status": "PASSED"
+      },
+      {
+        "stage": "LINEAGE_STEPS",
+        "status": "PASSED"
+      },
+      {
+        "stage": "CHAIN_CONTEXT",
+        "status": "PASSED"
+      },
+      {
+        "stage": "TERMINAL_OUTPUT",
+        "status": "PASSED"
+      },
+      {
+        "stage": "FINALITY",
+        "status": "FAILED"
+      },
+      {
+        "stage": "TRADE_PERMISSION",
+        "status": "FAILED"
+      }
+    ],
+    "tradePermission": {
+      "allowed": false,
+      "reason": "PENDING_FINALITY"
+    },
+    "trustSource": "PINNED_REGTEST_FIXTURE",
+    "verification": {
+      "chain_ref_id": "ee6075c9caf6e6778b49a683c2e979b6a58fa335ebfbf9231f4a558e799c368f",
+      "code": "REFERENCE_NOT_FINAL",
+      "finality_state": "ACCEPTED",
+      "history_mode": "FV",
+      "lineage_statement_id": "cab5ee103ee86cd682376abd96ac87f1c8313b111563a77149aea60576721455",
+      "message": "chain_ref is not yet final; re-submit later",
+      "mode": "rooted",
+      "obligations": {
+        "chain_context": "PASSED",
+        "context": "PASSED",
+        "design_a": "PASSED",
+        "finality": "FAILED",
+        "parse": "PASSED",
+        "root": "PASSED",
+        "terminal": "PASSED"
+      },
+      "research_code": "NOT_FINAL",
+      "root_height": 1,
+      "snapshot_id": "A4",
+      "snapshot_sha256": "b1cf498742737f15a30af75c30a0a12e0701257a1c6a2e891902c42acc6f3cde",
+      "status": "PENDING_FINALITY",
+      "step": null,
+      "steps": 3,
+      "terminal_height": 4,
+      "timing_us": {
+        "chain_context": 1,
+        "decode": 14,
+        "design_a": 11728,
+        "finality": 2,
+        "root_auth": 3255,
+        "steps": [
+          3834,
+          3893,
+          3999
+        ],
+        "terminal_auth": 7701,
+        "total": 22971
+      },
+      "verifier": {
+        "params_k": 11,
+        "params_sha256": "1eab6f93a080ce41b908d935c04bd2e3ed1ac23f277c15d11c499d56d28fa0f7",
+        "proof_system": "halo2_proofs QED-it ef3d0ba (IPA/Vesta), plonk::verify_proof, SingleVerifier, Blake2bRead",
+        "relation": "NormalLineageStepV2",
+        "step_proof_len": 5120,
+        "verifier_id": "lineage-v2-l1",
+        "vk_id": "a2b349d7470504b6b5de3214f1783bc06d28c2f4e73111f9568652d0615b36b3"
+      }
+    },
+    "verificationId": "8f898d93cdc45987361b79f86d0760817fea319e1a112bdd6b574ce195845318"
+  },
+  "scenarioId": "pending-a4",
+  "scenarioName": "A4 pending finality",
+  "snapshot": "A4"
+}
