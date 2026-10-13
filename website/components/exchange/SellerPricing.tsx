@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import { postJson } from "@/components/exchange/client-api";
+import { zec } from "@/lib/exchange";
 
 type Offer = { offerId: string; name: string; availableUnits: number; priceZatPerUnit: number | null };
 
+/** The seller's fixed price per offer; it applies to new quotes only. */
 export function SellerPricing({ offers, csrf }: { offers: Offer[]; csrf: string }) {
   const [prices, setPrices] = useState<Record<string, number | null>>(
     Object.fromEntries(offers.map(offer => [offer.offerId, offer.priceZatPerUnit])));
@@ -15,21 +17,20 @@ export function SellerPricing({ offers, csrf }: { offers: Offer[]; csrf: string 
     const value = Number(draft[offerId]);
     if (!Number.isSafeInteger(value) || value < 1) { setMessage("Enter a whole number of zatoshis."); return; }
     const result = await postJson(`/api/exchange/offers/${offerId}/price`, csrf, { priceZatPerUnit: value });
-    if (result.ok) { setPrices({ ...prices, [offerId]: result.data.priceZatPerUnit }); setMessage("Price saved for new quotes."); }
+    if (result.ok) { setPrices({ ...prices, [offerId]: result.data.priceZatPerUnit }); setDraft({ ...draft, [offerId]: "" }); setMessage("Saved. New quotes use this price."); }
     else setMessage(result.data?.error ?? "Price was not saved.");
   }
 
-  return <section className="exchange-panel exchange-pricing">
-    <span className="exchange-eyebrow">OFFER PRICING</span>
-    <h2>Your fixed experimental prices</h2>
-    <p>Each new quote uses the price set here. A quote already shown to a buyer keeps its exact price. These are seller-set test prices, not oracle or market prices.</p>
-    {offers.map(offer => <div className="exchange-price-row" key={offer.offerId}>
-      <div><strong>{offer.name}</strong><span>{offer.availableUnits} units offered · current price {prices[offer.offerId] ? `${prices[offer.offerId]!.toLocaleString("en-US")} zatoshis / unit` : "not set"}</span></div>
-      <label htmlFor={`price-${offer.offerId}`}>Zatoshis per unit</label>
-      <input id={`price-${offer.offerId}`} inputMode="numeric" value={draft[offer.offerId] ?? ""}
-             onChange={e => setDraft({ ...draft, [offer.offerId]: e.target.value })} placeholder="1000" />
-      <button className="exchange-link-button" type="button" onClick={() => save(offer.offerId)}>Save price</button>
-    </div>)}
-    {message && <p role="status">{message}</p>}
-  </section>;
+  return <div className="panel">
+    <p className="label">Listings and prices</p>
+    <p className="small muted">A quote already shown to a buyer keeps its exact price. Prices are set by you, not by an oracle.</p>
+    <div className="list" style={{ marginTop: 12 }}>{offers.map(offer => <div className="list-row" key={offer.offerId}>
+      <span><strong>{offer.name}</strong><small>{offer.availableUnits.toLocaleString("en-US")} units available</small></span>
+      <span className="num hide-sm">{prices[offer.offerId] ? zec(prices[offer.offerId]) : "No price"}<small>{prices[offer.offerId]?.toLocaleString("en-US")} zat / unit</small></span>
+      <input className="field" aria-label={`New price for ${offer.name} in zatoshis`} inputMode="numeric" placeholder="zatoshis"
+             value={draft[offer.offerId] ?? ""} onChange={e => setDraft({ ...draft, [offer.offerId]: e.target.value })} style={{ minHeight: 40 }} />
+      <button className="button button-small button-outline" type="button" disabled={!draft[offer.offerId]} onClick={() => save(offer.offerId)}>Save</button>
+    </div>)}</div>
+    {message && <p className="small" role="status" style={{ marginTop: 10 }}>{message}</p>}
+  </div>;
 }

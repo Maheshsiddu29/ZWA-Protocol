@@ -1,29 +1,90 @@
+import type { Metadata } from "next";
 import Link from "next/link";
-import { Protected } from "@/components/exchange/Protected";
-import { assetById, boundActiveAsset } from "@/lib/exchange";
-import { participantPortfolio } from "@/lib/persistent-portfolio";
-import { market, ownOrders } from "@/lib/private-orders";
-import { SellerPricing } from "@/components/exchange/SellerPricing";
+import { DealerPolicy } from "@/components/exchange/DealerPolicy";
+import { OrderList } from "@/components/exchange/OrderList";
 import { SellerListing } from "@/components/exchange/SellerListing";
-import { csrfToken, currentSession } from "@/lib/exchange-auth";
-import { stateLabel, zat } from "@/lib/order-labels";
+import { SellerPricing } from "@/components/exchange/SellerPricing";
+import { assetName, zec } from "@/lib/exchange";
+import { csrfToken, currentSession, demoMode } from "@/lib/exchange-auth";
+import { participantPortfolio } from "@/lib/persistent-portfolio";
+import { market, ownOrders, walletStatus } from "@/lib/private-orders";
 
+export const metadata: Metadata = { title: "Seller desk" };
 export const dynamic = "force-dynamic";
+
+const SignOut = () => <form action="/api/exchange/logout" method="post"><button className="link-button quiet" type="submit">Sign out</button></form>;
+
 export default async function SellerPage() {
-  const portfolio = await participantPortfolio("seller");
-  const orders = await ownOrders();
   const session = await currentSession();
-  const offers = (await market())?.instruments.filter(item => item.sellerId) ?? [];
-  const active = process.env.ZWA_PRIVATE_EXCHANGE_ROOT ? null : await boundActiveAsset();
-  const scan = active?.checkout.walletScans;
-  return <Protected role="seller" eyebrow="SELLER / LOCAL WALLET" title="Seller desk." intro="The seller wallet controls its own issued inventory and approves the exact terms independently. This portal observes the local session and never signs for the wallet.">
-    {portfolio ? <><p className="exchange-caveat">Inventory rescanned at experimental chain height {portfolio.scanHeight.toLocaleString("en-US")} · {portfolio.state.replaceAll("_", " ")}. Wallet proceeds: {portfolio.nativeZat.toLocaleString("en-US")} zatoshis.</p>{portfolio.holdings.map(holding => <div className="exchange-order" key={holding.assetBase}><div><span>Instrument</span><strong>{assetById(holding.instrumentId)?.name ?? holding.instrumentId}</strong></div><div><span>AssetBase</span><code>{holding.assetBase}</code></div><div><span>Current inventory</span><strong>{holding.units.toLocaleString("en-US")} units</strong></div>{portfolio.receipts.filter(item => item.instrumentId === holding.instrumentId).map(receipt => <div key={receipt.txid}><span>Received payment</span><strong>{receipt.paymentZat.toLocaleString("en-US")} zatoshis · tx {receipt.txid} · {receipt.approvalMode.replaceAll("_", " ").toLowerCase()}</strong></div>)}</div>)}</> : active && scan ? <div className="exchange-order"><div><span>Instrument</span><strong>{active.asset.name}</strong></div><div><span>AssetBase</span><code>{active.checkout.quote?.assetId}</code></div><div><span>Inventory scan</span><strong>{scan.sellerBefore.assetUnits} → {scan.sellerAfter.assetUnits} units</strong></div><div><span>Native ZEC scan</span><strong>{scan.sellerBefore.nativeZat} → {scan.sellerAfter.nativeZat} zatoshis</strong></div><Link href="/demo#checkout">Inspect settlement ↗</Link></div> : <div className="exchange-empty"><h2>No reconciled sale is active.</h2><p>Offer creation and signing remain in the independent local seller wallet process.</p></div>}
-    <p className="exchange-caveat"><Link href="/exchange/wallet">Seller wallet pairing ↗</Link></p>
-    {session?.role === "seller" && portfolio && <SellerListing csrf={csrfToken(session)} scanHeight={portfolio.scanHeight}
-      holdings={portfolio.holdings.filter(h => h.units > 0 && !offers.some(o => o.instrumentId === h.instrumentId))
-        .map(h => ({ instrumentId: h.instrumentId, name: assetById(h.instrumentId)?.name ?? h.instrumentId, units: h.units }))} />}
-    {session?.role === "seller" && offers.length > 0 && <SellerPricing offers={offers} csrf={csrfToken(session)} />}
-    {orders?.length ? <h2 className="exchange-subhead">Incoming orders</h2> : null}
-    {orders?.map(order => <Link className="exchange-order-row" key={order.id} href={`/exchange/orders/${order.id}`}><div><span className="exchange-eyebrow">{order.instrumentId} · buyer {order.buyerId}</span><strong>{order.awaitingWallet === "seller" ? "Your wallet approval is needed" : stateLabel[order.state] ?? order.state}</strong></div><div><span>{order.quantity} unit{order.quantity === 1 ? "" : "s"}</span><strong>{order.quote ? zat(order.quote.paymentZat) : "Quote pending"}</strong></div><div><span>{order.receipt ? `Received · tx ${order.receipt.txid.slice(0, 12)}…` : order.proofVerified ? "Groth16 verified" : "Proof pending"}</span><strong>Open ↗</strong></div></Link>)}
-  </Protected>;
+  if (!session || session.role !== "seller") return <section className="page"><div className="shell">
+    <header className="page-head"><div><p className="eyebrow">Seller</p><h1>Seller desk</h1>
+      <p className="lede">{demoMode() ? "The demo dealer lists inventory, sets prices and receives proceeds. Its wallet signs sales under a standing policy." : "List inventory, set prices and approve sales from your own wallet."}</p></div></header>
+    <div className="empty"><h2>Seller sign-in required</h2><p>The seller desk is available to the provisioned seller account{demoMode() ? " that operates the demo dealer" : ""}.</p>
+      <Link className="button button-blue" href="/sign-in">Sign in</Link></div>
+  </div></section>;
+
+  const csrf = csrfToken(session);
+  const [orders, listing, desk] = await Promise.all([ownOrders(), market(), walletStatus()]);
+  const offers = (listing?.instruments ?? []).filter(item => item.sellerId === session.id);
+  const pricing = offers.map(o => ({ offerId: o.offerId, name: o.name, availableUnits: o.availableUnits, priceZatPerUnit: o.priceZatPerUnit }));
+  const open = (orders ?? []).filter(o => !["RECEIPT_AVAILABLE", "CANCELLED", "EXPIRED", "REJECTED", "EXECUTION_FAILED"].includes(o.state));
+  const proceeds = (orders ?? []).filter(o => o.receipt).reduce((sum, o) => sum + (o.receipt?.paymentZat ?? 0), 0);
+
+  if (desk?.mode === "DEMO_DEALER_STANDING_POLICY") return <section className="page"><div className="shell">
+    <header className="page-head"><div><p className="eyebrow">Seller · {session.id}</p><h1>Dealer desk</h1>
+      <p className="lede">Inventory and proceeds come from scans of the dealer wallet. Sales are signed automatically, but only inside the standing policy below.</p></div>
+      <div className="actions"><SignOut /></div></header>
+    <div className="metrics">
+      <div><span>Wallet ZEC</span><strong>{zec(desk.nativeZat)}</strong></div>
+      <div><span>Proceeds from settled sales</span><strong>{zec(proceeds)}</strong></div>
+      <div><span>Orders in progress</span><strong>{open.length}</strong></div>
+    </div>
+    <div className="split" style={{ marginTop: 20 }}>
+      <div className="stack">
+        <div className="panel">
+          <p className="label">Inventory</p>
+          <div className="list" style={{ marginTop: 12 }}>{(desk.holdings ?? []).map(h => <div className="list-row" key={h.assetBase}>
+            <span><strong>{assetName(h.instrumentId)}</strong><small>Scanned at block {h.scanHeight.toLocaleString("en-US")}</small></span>
+            <span className="hide-sm" /><span className="hide-sm" /><span className="num">{h.units.toLocaleString("en-US")} units</span></div>)}</div>
+          {!desk.holdings?.length && <p className="muted small">No current inventory scan.</p>}
+        </div>
+        {pricing.length > 0 && <SellerPricing offers={pricing} csrf={csrf} />}
+      </div>
+      <aside className="panel panel-muted">
+        <p className="label">Standing policy</p>
+        <DealerPolicy initial={desk.policy ?? "ACTIVE"} csrf={csrf} />
+        <dl className="facts" style={{ marginTop: 14 }}>
+          <div><dt>Signs only</dt><dd>Listed assets at your current price, to a live demo wallet, with proceeds to this wallet</dd></div>
+          <div><dt>Per order</dt><dd>Up to {desk.limits?.maxUnitsPerOrder} units and {zec(desk.limits?.maxPaymentZatPerOrder)}</dd></div>
+          <div><dt>Sponsored fees</dt><dd>{desk.sponsoredLastHour} of {desk.limits?.maxSponsoredOrdersPerHour} this hour</dd></div>
+          <div><dt>Signer</dt><dd>{desk.signerOnline ? "Online" : "Offline: new orders wait"}</dd></div>
+          <div><dt>Address</dt><dd className="hash">{desk.walletAddress}</dd></div>
+        </dl>
+      </aside>
+    </div>
+    <div className="section-title"><h2>Orders</h2></div>
+    <OrderList orders={orders ?? []} empty="No orders yet." />
+  </div></section>;
+
+  // Owner mode: the seller approves each sale in their own wallet companion.
+  const portfolio = await participantPortfolio("seller");
+  return <section className="page"><div className="shell">
+    <header className="page-head"><div><p className="eyebrow">Seller · {session.id}</p><h1>Seller desk</h1>
+      <p className="lede">Your wallet controls its inventory and approves each sale in its own terminal. This page never signs.</p></div>
+      <div className="actions"><Link className="button button-outline button-small" href="/wallet">Wallet pairing</Link><SignOut /></div></header>
+    <div className="metrics">
+      <div><span>Wallet ZEC</span><strong>{zec(portfolio?.nativeZat)}</strong></div>
+      <div><span>Proceeds from settled sales</span><strong>{zec(proceeds)}</strong></div>
+      <div><span>Orders in progress</span><strong>{open.length}</strong></div>
+    </div>
+    <div className="stack" style={{ marginTop: 20 }}>
+      {portfolio && <SellerListing csrf={csrf} scanHeight={portfolio.scanHeight}
+        holdings={portfolio.holdings.filter(h => h.units > 0 && !offers.some(o => o.instrumentId === h.instrumentId))
+          .map(h => ({ instrumentId: h.instrumentId, name: assetName(h.instrumentId), units: h.units }))} />}
+      {pricing.length > 0 && <SellerPricing offers={pricing} csrf={csrf} />}
+      {!portfolio && <p className="notice notice-warn">No current wallet scan. Inventory appears once the chain and a fresh scan agree.</p>}
+    </div>
+    <div className="section-title"><h2>Orders</h2></div>
+    <OrderList orders={orders ?? []} empty="No orders yet." />
+  </div></section>;
 }

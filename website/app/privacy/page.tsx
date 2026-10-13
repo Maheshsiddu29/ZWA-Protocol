@@ -1,3 +1,17 @@
 import type { Metadata } from "next";
-export const metadata:Metadata={title:"Privacy"};
-export default function PrivacyPage(){return <section className="subpage"><div className="shell"><p className="eyebrow">Site privacy</p><h1>Privacy</h1><p className="legal-copy">This website does not add analytics or account tracking. The verifier demo sends selected scenario IDs or proof bytes to this site&apos;s server, which forwards them to a local verifier. The checkout panel requests read-only evidence from a separate local service. Do not upload private keys, wallet databases, identity records, or other secrets as proof evidence.</p><p className="legal-copy">The local backend&apos;s operational logging and retention depend on how it is run. Consult the repository documentation before exposing these services to other users.</p></div></section>}
+
+export const metadata: Metadata = { title: "Privacy" };
+
+export default function PrivacyPage() {
+  return <section className="page"><div className="shell">
+    <header className="page-head"><div><p className="eyebrow">Legal</p><h1>Privacy</h1></div></header>
+    <div className="legal-copy">
+      <p>This site has no analytics, advertising or third-party tracking.</p>
+      <h2>Demo sessions</h2>
+      <p>Starting a demo sets one signed, HTTP-only session cookie. The server stores a hash of the session identifier, the disposable wallet it created for you, your orders and their receipts on the experimental chain. To limit abuse, it also stores a keyed hash of your network address for one hour; the address itself is not stored.</p>
+      <p>Ending a session, or letting it expire, deletes the wallet&apos;s keys. Order records and receipts are kept so the exchange&apos;s ledger stays consistent.</p>
+      <h2>What not to enter</h2>
+      <p>Never enter a real seed phrase, private key, password or personal information anywhere on this site. The demo never asks for them.</p>
+    </div>
+  </div></section>;
+}

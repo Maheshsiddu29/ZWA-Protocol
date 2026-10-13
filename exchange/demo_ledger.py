@@ -78,6 +78,12 @@ class DemoLedger(OrderLedger):
                         now + policy.wallet_lifetime_seconds))
             return dict(db.execute("SELECT * FROM demo_wallets WHERE id=?", (wallet_id,)).fetchone())
 
+    def forget_client_hashes(self) -> int:
+        """Drop rate-limit buckets once they no longer count toward any cap."""
+        with self._transaction() as db:
+            return db.execute("UPDATE demo_wallets SET client_hash='forgotten' WHERE created_at<=? "
+                              "AND client_hash<>'forgotten'", (int(time.time()) - 3600,)).rowcount
+
     # --------------------------------------------------------------- lookups
 
     def wallet_for_session(self, account_id: str, session_hash: str) -> dict | None:

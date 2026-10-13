@@ -2,10 +2,17 @@ import "server-only";
 import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 
-export type Role = "buyer" | "seller" | "issuer" | "auditor";
-export const roles: Role[] = ["buyer", "seller", "issuer", "auditor"];
+export type Role = "buyer" | "seller";
+export const roles: Role[] = ["buyer", "seller"];
 type Account = { id: string; role: Role; salt: string; hash: string };
-const cookieName = "zwa_demo_session";
+/** "account": an operator-provisioned password login. "demo": a judge session
+ *  bound server-side to one disposable custodial demo wallet. */
+export type SessionKind = "account" | "demo";
+const cookieName = "zwa_session";
+const accountLifetimeMs = 4 * 60 * 60 * 1000;
+export const demoAccount = /^judge-[0-9a-f]{20}$/;
+
+export const demoMode = () => process.env.ZWA_DEMO_MODE === "1";
 
 function configuration(): { accounts: Account[]; secret: Buffer } | null {
   try {
@@ -20,6 +27,12 @@ function mac(payload: string, secret: Buffer): string {
   return createHmac("sha256", secret).update(payload).digest("hex");
 }
 
+/** Non-reversible rate-limit bucket for a client address. */
+export function clientHash(client: string): string | null {
+  const config = configuration();
+  return config ? mac(`client|${client}`, config.secret) : null;
+}
+
 export function authenticate(id: string, password: string): { id: string; role: Role } | null {
   const config = configuration();
   if (!config || !id || !password || id.length > 80 || password.length > 512) return null;
@@ -30,16 +43,19 @@ export function authenticate(id: string, password: string): { id: string; role: 
   return { id: account.id, role: account.role };
 }
 
-export function sessionValue(account: { id: string; role: Role }): string {
+/** A fresh random session ID; its hash binds wallet records and CSRF tokens. */
+export const newSid = () => randomBytes(16).toString("hex");
+
+export function sessionValue(account: { id: string; role: Role }, kind: SessionKind = "account",
+                             sid: string = newSid(), expiresAt?: number): string {
   const config = configuration();
-  if (!config) throw new Error("Role authentication is not provisioned");
-  // The random session ID binds wallet pairings and CSRF tokens to this login.
-  const sid = randomBytes(16).toString("hex");
-  const payload = Buffer.from(JSON.stringify({ id: account.id, role: account.role, sid, exp: Date.now() + 4 * 60 * 60 * 1000 })).toString("base64url");
+  if (!config) throw new Error("Session signing is not provisioned");
+  const exp = expiresAt ?? Date.now() + accountLifetimeMs;
+  const payload = Buffer.from(JSON.stringify({ id: account.id, role: account.role, kind, sid, exp })).toString("base64url");
   return `${payload}.${mac(payload, config.secret)}`;
 }
 
-export type Session = { id: string; role: Role; sid: string };
+export type Session = { id: string; role: Role; sid: string; kind: SessionKind; exp: number };
 
 export async function currentSession(): Promise<Session | null> {
   const value = (await cookies()).get(cookieName)?.value;
@@ -50,27 +66,27 @@ export async function currentSession(): Promise<Session | null> {
   const expected = mac(payload, config.secret);
   if (!timingSafeEqual(Buffer.from(tag, "hex"), Buffer.from(expected, "hex"))) return null;
   try {
-    const data = JSON.parse(Buffer.from(payload, "base64url").toString()) as { id: string; role: Role; sid: string; exp: number };
+    const data = JSON.parse(Buffer.from(payload, "base64url").toString()) as Session;
     if (typeof data.exp !== "number" || data.exp <= Date.now() || !roles.includes(data.role)) return null;
     if (typeof data.sid !== "string" || !/^[0-9a-f]{32}$/.test(data.sid)) return null;
-    if (!config.accounts.some((entry) => entry.id === data.id && entry.role === data.role)) return null;
-    return { id: data.id, role: data.role, sid: data.sid };
+    if (data.kind === "demo") {
+      // The backend re-checks every demo request against its live wallet record.
+      if (!demoMode() || data.role !== "buyer" || !demoAccount.test(data.id)) return null;
+    } else if (data.kind !== "account" || !config.accounts.some((entry) => entry.id === data.id && entry.role === data.role)) {
+      return null;
+    }
+    return { id: data.id, role: data.role, sid: data.sid, kind: data.kind, exp: data.exp };
   } catch { return null; }
 }
 
-export async function currentAccount(): Promise<{ id: string; role: Role } | null> {
-  const session = await currentSession();
-  return session ? { id: session.id, role: session.role } : null;
-}
-
 /** Stable, non-reversible session identifier given to the exchange bridge. */
-export function sessionHash(session: Session): string {
+export function sessionHash(session: { sid: string }): string {
   return createHash("sha256").update(`ZWA4E_PORTAL_SESSION_V1|${session.sid}`).digest("hex");
 }
 
 export function csrfToken(session: Session): string {
   const config = configuration();
-  if (!config) throw new Error("Role authentication is not provisioned");
+  if (!config) throw new Error("Session signing is not provisioned");
   return mac(`csrf|${session.id}|${session.role}|${session.sid}`, config.secret);
 }
 
@@ -80,8 +96,10 @@ export async function csrfValid(header: string | null): Promise<boolean> {
   return timingSafeEqual(Buffer.from(header, "hex"), Buffer.from(csrfToken(session), "hex"));
 }
 
-export async function hasRole(role: Role): Promise<boolean> {
-  return (await currentAccount())?.role === role;
+/** Cookie attributes: Secure whenever the site is served over HTTPS. */
+export function cookieOptions(maxAgeSeconds: number) {
+  const secure = (process.env.ZWA_PUBLIC_ORIGIN || "").startsWith("https://");
+  return { httpOnly: true, sameSite: "strict" as const, secure, path: "/", maxAge: Math.max(0, Math.floor(maxAgeSeconds)) };
 }
 
 export const authCookie = cookieName;

@@ -38,38 +38,40 @@ export function WalletPairing({ initial, csrf }: { initial: Status; csrf: string
   }
 
   const human = status.approvalMode === "HUMAN_APPROVED";
-  return <div className="exchange-wallet">
-    <section className="exchange-panel">
-      <span className="exchange-eyebrow">{status.role.toUpperCase()} WALLET</span>
+  return <div className="split">
+    <div className="panel">
+      <p className="label">{status.role} wallet</p>
       {status.paired ? <>
         <h2>Wallet paired</h2>
-        <div className="exchange-facts">
-          <div><span>Receiving address</span><strong className="exchange-hash">{status.walletAddress}</strong></div>
-          <div><span>Companion</span><strong>{status.companionOnline ? "Connected" : "Not connected — start it to approve trades"}</strong></div>
-          <div><span>Pairing ends</span><strong>{status.expiresAt ? new Date(status.expiresAt * 1000).toLocaleTimeString() : "—"}</strong></div>
-          <div><span>Approval mode</span><strong>{human ? "Human approval in your wallet terminal" : "Scripted test mode (not human approval)"}</strong></div>
-        </div>
-        <button className="exchange-link-button" type="button" disabled={busy} onClick={unpair}>Unpair this wallet</button>
+        <dl className="facts">
+          <div><dt>Receiving address</dt><dd className="hash">{status.walletAddress}</dd></div>
+          <div><dt>Companion</dt><dd>{status.companionOnline ? "Connected" : "Not connected. Start it to approve trades."}</dd></div>
+          <div><dt>Pairing ends</dt><dd>{status.expiresAt ? new Date(status.expiresAt * 1000).toLocaleTimeString() : "—"}</dd></div>
+          <div><dt>Approval</dt><dd>{human ? "Typed by you in the wallet terminal" : "Scripted test signer (not human approval)"}</dd></div>
+        </dl>
+        <button className="link-button quiet" type="button" disabled={busy} onClick={unpair}>Unpair this wallet</button>
       </> : <>
-        <h2>Pair your local wallet</h2>
-        <ol className="exchange-numbered">
+        <h2>Pair your wallet</h2>
+        <ol className="small" style={{ paddingLeft: 18, lineHeight: 1.8 }}>
           <li>In your own terminal, start the ZWA wallet companion for your {status.role} wallet.</li>
           <li>Enter the one-time code it shows.</li>
           <li>Confirm this account in the companion by typing <code>PAIR</code>.</li>
         </ol>
-        <form onSubmit={pair} className="exchange-inline-form">
-          <label htmlFor="pairing-code">Pairing code</label>
-          <input id="pairing-code" value={code} onChange={e => setCode(e.target.value)} placeholder="ABCDE-FGHIJ"
-                 autoComplete="off" maxLength={16} required />
-          <button className="exchange-button" type="submit" disabled={busy}>Pair wallet <span>↗</span></button>
+        <form onSubmit={pair}>
+          <label className="field-label" htmlFor="pairing-code">Pairing code</label>
+          <div className="form-row" style={{ marginTop: 6 }}>
+            <input className="field" id="pairing-code" value={code} onChange={e => setCode(e.target.value)} placeholder="ABCDE-FGHIJ"
+                   autoComplete="off" maxLength={16} required style={{ flex: "1 1 200px" }} />
+            <button className="button button-blue button-small" type="submit" disabled={busy}>Pair wallet</button>
+          </div>
         </form>
       </>}
-      {message && <p role="status">{message}</p>}
-    </section>
-    <aside className="exchange-panel">
-      <span className="exchange-eyebrow">WHAT PAIRING MEANS</span>
-      <p>Pairing links this signed-in account to one local wallet companion for a few hours. It shows that the person using this browser can also see and type into that wallet&apos;s terminal.</p>
-      <p>It is not a wallet login and it never gives this website a key. Every trade is still reviewed and approved inside the wallet itself, where the default answer is reject.</p>
+      {message && <p className="small" role="status" style={{ marginTop: 10 }}>{message}</p>}
+    </div>
+    <aside className="panel panel-muted">
+      <p className="label">What pairing means</p>
+      <p className="small">Pairing links this signed-in account to one local wallet companion for a few hours. It shows that the person using this browser can also see and type into that wallet&apos;s terminal.</p>
+      <p className="small">It is not a wallet login and never gives this website a key. Every trade is reviewed and approved inside the wallet itself, where the default answer is reject.</p>
     </aside>
   </div>;
 }

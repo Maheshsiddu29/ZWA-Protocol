@@ -2,7 +2,7 @@ import "server-only";
 
 import { lstat, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
-import { currentAccount, type Role } from "@/lib/exchange-auth";
+import { currentSession, type Role } from "@/lib/exchange-auth";
 
 type Holding = { instrumentId: string; assetBase: string; buyerUnits: number; sellerUnits: number };
 type Receipt = { instrumentId: string; txid: string; height: number; paymentZat: number; approvalMode: string };
@@ -22,7 +22,7 @@ export type ParticipantPortfolio = {
 };
 
 const hex64 = /^[0-9a-f]{64}$/;
-const rootPattern = /^\/private\/tmp\/zwa4e-[A-Za-z0-9-]+$/;
+const rootPattern = /^(?:\/private\/tmp|\/var\/lib\/zwa)\/zwa4e-[A-Za-z0-9-]+$/;
 const integer = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) >= 0;
 
 function validSnapshot(value: unknown): value is Snapshot {
@@ -112,7 +112,8 @@ async function liveSnapshot(root: string, snapshot: Snapshot, port: number): Pro
 }
 
 export async function participantPortfolio(role: "buyer" | "seller"): Promise<ParticipantPortfolio | null> {
-  const account = await currentAccount();
+  const account = await currentSession();
+  if (account?.kind !== "account") return null;
   const expected = role === "buyer" ? process.env.ZWA_PORTFOLIO_BUYER_ID : process.env.ZWA_PORTFOLIO_SELLER_ID;
   if (!account || account.role !== (role as Role) || !expected || account.id !== expected) return null;
   const root = process.env.ZWA_PRIVATE_EXCHANGE_ROOT || "";

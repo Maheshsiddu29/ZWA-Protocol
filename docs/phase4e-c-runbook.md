@@ -28,7 +28,7 @@ market price. Issuer and credential roots are disposable test authorities.
 Use five terminals, all starting in
 `/Users/mahesh/Desktop/Colosseum/ZWA/ZWA-Brand-Integration`.
 
-**1. Portal credentials (once).** Choose four passwords of 16+ characters.
+**1. Portal credentials (once).** Choose a buyer and a seller password of 16+ characters.
 
 ```sh
 python3 website/scripts/provision-local-roles.py /private/tmp/zwa4d-roles-phase4e-c-human
@@ -45,7 +45,7 @@ PYTHONPATH=$PWD python3 -m exchange.order_service serve --root /private/tmp/zwa4
 
 ```sh
 cd website
-source /private/tmp/zwa4d-roles-phase4e-c-human
+set -a; source /private/tmp/zwa4d-roles-phase4e-c-human; set +a
 ZWA_PRIVATE_EXCHANGE_ROOT=/private/tmp/zwa4e-phase4e-b ZWA_CHAIN_RPC_PORT=18321 \
 ZWA_PORTFOLIO_BUYER_ID=buyer ZWA_PORTFOLIO_SELLER_ID=seller \
 ./node_modules/.bin/next start -H 127.0.0.1 -p 3216
@@ -72,19 +72,19 @@ Use two separate browser sessions so the cookies don't collide: the seller at
 profiles).
 
 Seller:
-1. Open `/exchange/connect` and sign in as `seller`.
+1. Open `/sign-in` and sign in as `seller`.
 2. Open **Wallet**, enter the seller companion's code, then type `PAIR` in the
    seller companion terminal.
 3. Open **Seller**, enter `1000` for ZWA Gold Reference Unit, and choose **Save price**.
 
 Buyer:
-1. Sign in as `buyer`.
+1. Open `/sign-in` and sign in as `buyer`.
 2. Open **Wallet**, enter the buyer companion's code, then type `PAIR` in the
    buyer companion terminal.
-3. Open **Browse assets → ZWA Gold Reference Unit**, keep quantity 1, and choose **Buy**.
+3. Open **Exchange → ZWA Gold Reference Unit**, keep quantity 1, and choose **Get exact quote**.
 4. Review the exact quote (1,000 zatoshis; the network fee is paid by the test
-   sponsor), then choose **Request purchase**.
-5. Wait for "Approve in your wallet companion". The Groth16 proof has already
+   sponsor), tick **I confirm these exact terms**, then choose **Confirm purchase**.
+5. Wait for "Approve in your wallet companion" on the order page. The Groth16 proof has already
    been generated and verified at this point.
 
 Wallet approvals (owner only, within the coordinator's 300-second window):

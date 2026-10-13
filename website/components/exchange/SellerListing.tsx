@@ -16,13 +16,13 @@ export function SellerListing({ holdings, scanHeight, csrf }: { holdings: Holdin
     if (result.ok) router.refresh(); else setMessage(result.data?.error ?? "Offer was not created.");
   }
   if (!holdings.length) return null;
-  return <section className="exchange-panel exchange-pricing">
-    <span className="exchange-eyebrow">UNLISTED INVENTORY</span>
-    <h2>Offer wallet inventory</h2>
-    {holdings.map(holding => <div className="exchange-price-row" key={holding.instrumentId}>
-      <div><strong>{holding.name}</strong><span>{holding.units} units in your scanned wallet</span></div>
-      <button className="exchange-link-button" type="button" onClick={() => list(holding)}>Offer {holding.units} units</button>
-    </div>)}
-    {message && <p role="alert">{message}</p>}
-  </section>;
+  return <div className="panel">
+    <p className="label">Unlisted inventory</p>
+    <div className="list" style={{ marginTop: 12 }}>{holdings.map(holding => <div className="list-row" key={holding.instrumentId}>
+      <span><strong>{holding.name}</strong><small>{holding.units} units in your scanned wallet</small></span>
+      <span className="hide-sm" /><span className="hide-sm" />
+      <button className="button button-small button-outline" type="button" onClick={() => list(holding)}>Offer {holding.units} units</button>
+    </div>)}</div>
+    {message && <p className="inline-error" role="alert">{message}</p>}
+  </div>;
 }

@@ -584,6 +584,13 @@ class SessionTests(DemoBase):
         with self.assertRaisesRegex(OrderError, "capacity"):
             self.handle("demo-start", "anonymous", "anonymous", "8" * 64, {"clientHash": "7" * 64})
 
+    def test_client_hashes_are_forgotten_after_the_admission_window(self):
+        row = self.ledger.request_wallet(session_hash=SESSION_A, client_hash=CLIENT, policy=self.policy)
+        with self.ledger._transaction() as db:
+            db.execute("UPDATE demo_wallets SET created_at=created_at-3601 WHERE id=?", (row["id"],))
+        self.service.tick()
+        self.assertEqual(self.ledger.wallet(row["id"])["client_hash"], "forgotten")
+
     def test_session_binding_rejects_other_sessions_forged_roles_and_accounts(self):
         judge = self.judge(SESSION_A)
         other = self.judge(SESSION_B)
@@ -622,6 +629,31 @@ class SessionTests(DemoBase):
         self.ledger.set_setting("dealerPolicy", "PAUSED")
         with self.assertRaisesRegex(PortalError, "paused"):
             self.buy(judge, key="third-order")
+
+    def test_public_market_is_read_only_and_reveals_no_participant(self):
+        self.judge()
+        market = self.handle("public-market", "anonymous", "anonymous", "0" * 64)
+        gold = next(o for o in market["instruments"] if o["instrumentId"] == "zwa-gold-reference")
+        self.assertEqual((gold["priceZatPerUnit"], gold["sellerId"]), (1000, None))
+        with self.assertRaises(PortalError):
+            self.handle("public-market", "anonymous", "anonymous", "0" * 64, {"x": 1})
+        with self.assertRaises(PortalError):
+            self.handle("buy", "anonymous", "anonymous", "0" * 64, {})
+
+    def test_public_transaction_check_reports_only_chain_facts(self):
+        self.tools.blocks[150] = {"tx": ["ab" * 32], "hash": block_hash(150)}
+        original = self.tools.rpc
+        self.tools.rpc = lambda m, p=None: ({"height": 150, "hex": "00" * 40} if m == "getrawtransaction" and p[0] == "ab" * 32
+                                           else (_ for _ in ()).throw(ToolError("unknown")) if m == "getrawtransaction"
+                                           else original(m, p))
+        found = self.handle("verify-tx", "anonymous", "anonymous", "0" * 64, {"txid": "ab" * 32})
+        self.assertEqual((found["included"], found["height"], found["confirmations"], found["sizeBytes"]),
+                         (True, 150, self.tools.height - 149, 40))
+        self.assertEqual(set(found) - {"chainActive", "found", "included", "height", "blockHash", "confirmations",
+                                       "tipHeight", "sizeBytes", "genesisHash"}, set())
+        self.assertFalse(self.handle("verify-tx", "anonymous", "anonymous", "0" * 64, {"txid": "cd" * 32})["found"])
+        with self.assertRaises(PortalError):
+            self.handle("verify-tx", "anonymous", "anonymous", "0" * 64, {"txid": "../x"})
 
     def test_ending_a_session_invalidates_it(self):
         judge = self.judge()

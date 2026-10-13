@@ -72,7 +72,7 @@ class DemoOperator:
         self.ledger.ensure_dealer_pairing(account_id=self.policy.dealer_account_id,
                                           wallet_address=self.dealer_address())
         for step in (self.create_requested, self.expire_due, self.confirm_funding,
-                     self.retire_expired, self.resolve_unexecuted):
+                     self.retire_expired, self.resolve_unexecuted, self.ledger.forget_client_hashes):
             try:
                 step()
             except (DemoError, OrderError, ToolError, OSError, ValueError) as exc:

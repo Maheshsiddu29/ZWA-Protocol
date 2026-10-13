@@ -1,13 +1,15 @@
 import "server-only";
 
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import type { NextRequest } from "next/server";
-import { csrfValid, currentSession, sessionHash } from "@/lib/exchange-auth";
-import { localRequestOrigin } from "@/lib/local-origin";
+import { csrfValid, currentSession, demoMode, sessionHash, type Session } from "@/lib/exchange-auth";
+import { allow } from "@/lib/rate-limit";
+import { requestOrigin } from "@/lib/request-origin";
 
 const accountId = /^[a-zA-Z0-9_-]{1,80}$/;
-const rootPattern = /^\/private\/tmp\/zwa4e-[A-Za-z0-9-]+$/;
+const rootPattern = /^(?:\/private\/tmp|\/var\/lib\/zwa)\/zwa4e-[A-Za-z0-9-]+$/;
 
 export type PrivateQuote = {
   digest: string; assetBase: string; quantity: number; paymentZat: number;
@@ -37,19 +39,34 @@ export type PrivateOrder = {
 export type MarketOffer = {
   offerId: string; instrumentId: string; name: string; issuerId: string; assetBase: string;
   issuanceTxid: string; issuanceHeight: number; availableUnits: number; inventoryVerifiedAtTip: boolean;
+  inventoryScanHeight?: number | null;
   priceZatPerUnit: number | null; priceClassification: string | null; priceVersion: number | null;
   sellerId: string | null;
 };
-export type Market = { chainActive: boolean; chainHeight?: number; instruments: MarketOffer[] };
+export type Market = {
+  chainActive: boolean; chainHeight?: number; instruments: MarketOffer[];
+  demo?: { dealerPolicy: "ACTIVE" | "PAUSED"; maxUnitsPerOrder: number; maxPaymentZatPerOrder: number };
+};
+export type Holding = { instrumentId: string; assetBase: string; units: number; scanHeight: number };
+/** Pairing status (owner mode), the judge's custodial wallet, or the dealer desk. */
 export type WalletStatus = {
   paired: boolean; role: "buyer" | "seller"; approvalMode: string; method?: string;
-  walletAddress?: string; pairedAt?: number; expiresAt?: number; companionOnline?: boolean;
+  walletAddress?: string | null; pairedAt?: number; expiresAt?: number; companionOnline?: boolean;
+  mode?: "CUSTODIAL_DEMO_WALLET" | "DEMO_DEALER_STANDING_POLICY";
+  state?: "REQUESTED" | "CREATED" | "FUNDING" | "READY" | "EXPIRED" | "RETIRED" | "FAILED";
+  fundingTxid?: string | null; fundingHeight?: number | null; createdAt?: number; readyAt?: number | null;
+  nativeZat?: number | null; scanHeight?: number | null; holdings?: Holding[];
+  ordersUsed?: number; openOrderId?: string | null; chainActive?: boolean; chainHeight?: number | null;
+  limits?: { maxOrders?: number; maxUnitsPerOrder: number; maxPaymentZatPerOrder: number; maxSponsoredOrdersPerHour?: number };
+  signerOnline?: boolean; policy?: "ACTIVE" | "PAUSED"; sponsoredLastHour?: number;
 };
 export type BridgeResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
-async function participant() {
+async function participant(): Promise<Session | null> {
   const session = await currentSession();
-  if (!session || !["buyer", "seller"].includes(session.role) || !accountId.test(session.id)) return null;
+  if (!session || !accountId.test(session.id)) return null;
+  if (session.kind === "demo") return demoMode() ? session : null;
+  // Operator-provisioned accounts are pinned to the configured participants.
   const expected = session.role === "buyer" ? process.env.ZWA_PORTFOLIO_BUYER_ID : process.env.ZWA_PORTFOLIO_SELLER_ID;
   if (!expected || session.id !== expected) return null;
   return session;
@@ -58,7 +75,7 @@ async function participant() {
 function runPortal(request: object): Promise<BridgeResult<unknown> | null> {
   const project = path.resolve(process.cwd(), "..");
   return new Promise((resolve) => {
-    const child = spawn("python3", ["-m", "exchange.portal"], {
+    const child = spawn(process.env.ZWA_PYTHON || "python3", ["-m", "exchange.portal"], {
       cwd: project, env: { NODE_ENV: process.env.NODE_ENV, PATH: process.env.PATH ?? "/usr/bin:/bin", PYTHONPATH: project,
         ZWA_PRIVATE_EXCHANGE_ROOT: process.env.ZWA_PRIVATE_EXCHANGE_ROOT ?? "" },
       stdio: ["pipe", "pipe", "ignore"],
@@ -78,12 +95,31 @@ function runPortal(request: object): Promise<BridgeResult<unknown> | null> {
   });
 }
 
-/** Call one fixed exchange action as the authenticated buyer or seller. */
+const rootConfigured = () => rootPattern.test(process.env.ZWA_PRIVATE_EXCHANGE_ROOT ?? "");
+
+/** Call one fixed exchange action as the authenticated participant. */
 export async function exchangeAction<T>(action: string, payload: Record<string, unknown> = {}): Promise<BridgeResult<T> | null> {
   const session = await participant();
-  if (!session || !rootPattern.test(process.env.ZWA_PRIVATE_EXCHANGE_ROOT ?? "")) return null;
+  if (!session || !rootConfigured()) return null;
   return await runPortal({ action, actor: session.id, role: session.role,
     sessionHash: sessionHash(session), payload }) as BridgeResult<T> | null;
+}
+
+/** Admit a new judge session for this sid (anonymous; caps enforced in the ledger). */
+export async function startDemo(sid: string, clientHash: string): Promise<BridgeResult<{ accountId: string; expiresAt: number }> | null> {
+  if (!demoMode() || !rootConfigured()) return null;
+  return await runPortal({ action: "demo-start", actor: "anonymous", role: "anonymous",
+    sessionHash: sessionHash({ sid }), payload: { clientHash } }) as BridgeResult<{ accountId: string; expiresAt: number }> | null;
+}
+
+const anonymousHash = createHash("sha256").update("ZWA_ANONYMOUS_MARKET_V1").digest("hex");
+
+/** The dealer's public listings, readable without a session in demo mode. */
+export async function publicMarket(): Promise<Market | null> {
+  if (!demoMode() || !rootConfigured()) return null;
+  const result = await runPortal({ action: "public-market", actor: "anonymous", role: "anonymous",
+    sessionHash: anonymousHash, payload: {} }) as BridgeResult<Market> | null;
+  return result?.ok ? result.data : null;
 }
 
 async function data<T>(action: string, payload: Record<string, unknown> = {}): Promise<T | null> {
@@ -93,13 +129,16 @@ async function data<T>(action: string, payload: Record<string, unknown> = {}): P
 
 export const ownOrder = (id: string) => /^[0-9a-f]{32}$/.test(id) ? data<PrivateOrder>("order", { orderId: id }) : Promise.resolve(null);
 export const ownOrders = async () => (await data<{ orders: PrivateOrder[] }>("orders"))?.orders ?? null;
-export const market = () => data<Market>("market");
+export const market = async () => (await data<Market>("market")) ?? (await publicMarket());
 export const walletStatus = () => data<WalletStatus>("wallet");
+export const participantSession = participant;
 
 /** Shared checks for every state-changing exchange route. */
 export async function mutationAllowed(request: NextRequest): Promise<boolean> {
-  if (!localRequestOrigin(request)) return false;
+  if (!requestOrigin(request)) return false;
   if (Number(request.headers.get("content-length") || 0) > 2048) return false;
+  const session = await currentSession();
+  if (!session || !allow(`mutation|${session.sid}`, 20, 30)) return false;
   return csrfValid(request.headers.get("x-zwa-csrf"));
 }
 
@@ -110,4 +149,15 @@ export async function readSmallJson(request: NextRequest): Promise<Record<string
     const value = JSON.parse(raw || "{}");
     return value && typeof value === "object" && !Array.isArray(value) ? value : null;
   } catch { return null; }
+}
+
+export type TxCheck = { chainActive: boolean; found: boolean; included?: boolean; height?: number; blockHash?: string | null;
+  confirmations?: number; tipHeight?: number; sizeBytes?: number; genesisHash?: string };
+
+/** Read-only inclusion check of one txid on the demo chain. */
+export async function verifyDemoTx(txid: string): Promise<TxCheck | null> {
+  if (!demoMode() || !rootConfigured() || !/^[0-9a-f]{64}$/.test(txid)) return null;
+  const result = await runPortal({ action: "verify-tx", actor: "anonymous", role: "anonymous",
+    sessionHash: anonymousHash, payload: { txid } }) as BridgeResult<TxCheck> | null;
+  return result?.ok ? result.data : null;
 }

@@ -175,6 +175,27 @@ class Portal:
         self.ledger.set_setting("dealerPolicy", payload["policy"])
         return self.dealer_desk(actor)
 
+    def verify_tx(self, payload: dict) -> dict:
+        """Public chain facts for one txid on the demo chain; nothing private."""
+        if set(payload) != {"txid"} or not HEX32.fullmatch(str(payload["txid"])):
+            raise PortalError("verification request schema")
+        active, tip = self.live()
+        if not active:
+            return {"chainActive": False, "found": False}
+        try:
+            tx = self._rpc("getrawtransaction", [payload["txid"], 1])
+        except Exception:
+            return {"chainActive": True, "found": False, "tipHeight": tip}
+        height = tx.get("height") if isinstance(tx, dict) else None
+        if type(height) is not int or height < 0:
+            return {"chainActive": True, "found": True, "included": False, "tipHeight": tip}
+        block = self._rpc("getblock", [str(height), 1])
+        included = isinstance(block, dict) and payload["txid"] in block.get("tx", [])
+        return {"chainActive": True, "found": True, "included": included, "height": height,
+                "blockHash": block.get("hash") if included else None,
+                "confirmations": tip - height + 1 if included else 0, "tipHeight": tip,
+                "sizeBytes": len(tx.get("hex", "")) // 2, "genesisHash": self._identity()["genesisHash"]}
+
     def demo_end(self, actor: str, session: str) -> dict:
         if not self.demo or not self.ledger.end_session(actor, session):
             raise PortalError("demo session expired")
@@ -443,11 +464,18 @@ def handle(request: dict) -> dict:
                                              ("action", "actor", "role", "sessionHash", "payload"))
     if not isinstance(session, str) or not HEX32.fullmatch(session) or type(payload) is not dict:
         raise PortalError("invalid participant")
-    if action == "demo-start":
-        # The only anonymous action: admit a new judge session under the caps.
-        if actor != "anonymous" or role != "anonymous":
+    if action in ("demo-start", "public-market", "verify-tx"):
+        # The only anonymous actions: admit a judge session under the caps, read
+        # the dealer's public listings, and check a transaction's inclusion in
+        # the demo chain. None of them reveals a participant or an order.
+        if actor != "anonymous" or role != "anonymous" or (action == "public-market" and payload):
             raise PortalError("invalid participant")
-        return Portal(load_config()).demo_start(session, payload)
+        portal = Portal(load_config())
+        if not portal.demo:
+            raise PortalError("the hosted demo is not enabled on this exchange")
+        if action == "verify-tx":
+            return portal.verify_tx(payload)
+        return portal.demo_start(session, payload) if action == "demo-start" else portal.market("anonymous")
     if not isinstance(actor, str) or not IDENT.fullmatch(actor) or role not in ("buyer", "seller"):
         raise PortalError("invalid participant")
     portal = Portal(load_config())
