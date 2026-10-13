@@ -29,9 +29,9 @@ use wallet::{write_private, Role};
 #[derive(Parser)]
 #[command(name = "zwa-zsa-pub", about = "Isolated ZWA client for the community ZSA Testnet")]
 struct Cli {
-    /// Owner-only root: /private/tmp/zwa-pub-lab-* or /private/tmp/zwa-pub-public-*.
+    /// Owner-only root for wallet commands; omitted for read-only preflight.
     #[arg(long)]
-    root: String,
+    root: Option<String>,
     #[command(subcommand)]
     cmd: Cmd,
 }
@@ -50,6 +50,8 @@ enum AddressKind {
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// Read-only public endpoint, chain-identity and tip check; creates no root.
+    Preflight,
     /// Create a fresh root bound to one network after a live identity check.
     Init {
         #[arg(long, value_enum)]
@@ -267,8 +269,35 @@ fn print(value: &impl Serialize) -> Result<()> {
 async fn main() -> Result<()> {
     let _ = rustls::crypto::ring::default_provider().install_default();
     let cli = Cli::parse();
-    let kind = root_kind(&cli.root)?;
-    let root = policy::root_path(kind, &cli.root)?;
+
+    if matches!(&cli.cmd, Cmd::Preflight) {
+        if cli.root.is_some() {
+            bail!("preflight must not be given a wallet root");
+        }
+        let profile = Profile::public();
+        let mut client = chain::connect(&profile).await?;
+        let seen = chain::identity(&mut client).await?;
+        policy::check_identity(&profile, &seen)?;
+        let (tip_height, tip_hash) = chain::tip_checked(&mut client).await?;
+        return print(&serde_json::json!({
+            "status": "PUBLIC_NETWORK_IDENTITY_MATCHED",
+            "readOnly": true,
+            "network": profile.network_label(),
+            "endpoint": profile.lwd_url,
+            "identity": seen,
+            "tip": { "height": tip_height, "hash": tip_hash },
+            "sourcePin": policy::ZEBRA_SOURCE,
+            "sourceAttestation": "operator statement; endpoint does not attest its deployed commit",
+            "transactionFormat": "lab validated against pinned node source; no live transaction acceptance test performed"
+        }));
+    }
+
+    let raw_root = cli
+        .root
+        .as_deref()
+        .context("--root is required for this command")?;
+    let kind = root_kind(raw_root)?;
+    let root = policy::root_path(kind, raw_root)?;
 
     if let Cmd::Init { profile, lwd } = &cli.cmd {
         let profile = match (profile, kind) {
@@ -293,6 +322,7 @@ async fn main() -> Result<()> {
 
     policy::open_root(&root)?;
     match cli.cmd {
+        Cmd::Preflight => unreachable!(),
         Cmd::Init { .. } => unreachable!(),
         Cmd::Identity => {
             let (binding, _, seen) = checked(&root).await?;
@@ -487,5 +517,27 @@ async fn main() -> Result<()> {
             }
             print(&public)
         }
+    }
+}
+
+#[cfg(test)]
+mod cli_tests {
+    use super::*;
+
+    #[test]
+    fn read_only_preflight_needs_no_wallet_root() {
+        let cli = Cli::try_parse_from(["zwa-zsa-pub", "preflight"]).unwrap();
+        assert!(cli.root.is_none());
+        assert!(matches!(cli.cmd, Cmd::Preflight));
+        let init = Cli::try_parse_from([
+            "zwa-zsa-pub",
+            "--root",
+            "/private/tmp/zwa-pub-public-test",
+            "init",
+            "--profile",
+            "public",
+        ])
+        .unwrap();
+        assert!(matches!(init.cmd, Cmd::Init { .. }));
     }
 }

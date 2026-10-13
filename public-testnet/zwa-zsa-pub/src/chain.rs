@@ -56,6 +56,23 @@ pub async fn tip(lwd: &mut Lwd) -> Result<(u64, String)> {
     Ok((tip.height, display_hash(&tip.hash)?))
 }
 
+/// Re-read the latest block by height so a stale or inconsistent compact
+/// service cannot supply a tip hash from a different chain view.
+pub async fn tip_checked(lwd: &mut Lwd) -> Result<(u64, String)> {
+    let (height, hash) = tip(lwd).await?;
+    let block = lwd
+        .get_block(BlockId {
+            height,
+            hash: vec![],
+        })
+        .await?
+        .into_inner();
+    if block.height != height || display_hash(&block.hash)? != hash {
+        bail!("lightwalletd latest block differs from block-by-height response");
+    }
+    Ok((height, hash))
+}
+
 /// Public inclusion evidence for one transaction.
 #[derive(Clone, Debug, Serialize)]
 pub struct Inclusion {
