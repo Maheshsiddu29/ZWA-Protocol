@@ -11,7 +11,7 @@ from .registry import assert_distinct_assets, load_catalog, with_issuance
 from checkout.scans import parse
 
 
-def build(folder: Path) -> dict:
+def build(folder: Path, expected_units: int = 100) -> dict:
     catalog = load_catalog()
     instruments = []
     for instrument_id, item in catalog.items():
@@ -23,7 +23,7 @@ def build(folder: Path) -> dict:
                 or len(transaction["hex"]) < 100):
             raise ValueError("issuance not observed in chain RPC")
         balance = parse(folder / f"{instrument_id}-inventory.log", "Seller", issuance["asset_base"])
-        if balance["assetUnits"] != 100 or balance["height"] < transaction["height"]:
+        if balance["assetUnits"] != expected_units or balance["height"] < transaction["height"]:
             raise ValueError("seller inventory is not reconciled with issuance")
         bound = with_issuance(item, issuance, observed_on_chain=True,
                               seller_inventory_units=balance["assetUnits"])
@@ -41,10 +41,11 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("folder", type=Path)
     parser.add_argument("output", type=Path)
+    parser.add_argument("--expected-units", type=int, default=100)
     args = parser.parse_args()
     if args.output.exists():
         raise SystemExit("refusing to overwrite manifest")
-    result = build(args.folder)
+    result = build(args.folder, args.expected_units)
     args.output.write_text(json.dumps(result, indent=2) + "\n")
     print("PHASE4D_DISTINCT_ISSUANCES=" + str(len(result["instruments"])))
 

@@ -92,6 +92,15 @@ class DemoLedger(OrderLedger):
             return None
         return dict(row)
 
+    def session_wallet(self, account_id: str, session_hash: str) -> dict | None:
+        """This session's wallet in any state (for an accurate end-of-session reason)."""
+        if not is_demo_account(account_id) or not isinstance(session_hash, str):
+            return None
+        with self._connection() as db:
+            row = db.execute("SELECT * FROM demo_wallets WHERE account_id=? AND session_hash=?",
+                             (account_id, session_hash)).fetchone()
+        return dict(row) if row else None
+
     def wallet(self, wallet_id: str) -> dict | None:
         _record_id(wallet_id)
         with self._connection() as db:
@@ -155,6 +164,37 @@ class DemoLedger(OrderLedger):
             db.execute("UPDATE demo_wallets SET " + ",".join(f"{key}=?" for key in columns) +
                        " WHERE id=?", (*columns.values(), wallet_id))
             return dict(db.execute("SELECT * FROM demo_wallets WHERE id=?", (wallet_id,)).fetchone())
+
+    def reserve_funding_coinbase(self, coinbase_txid: str) -> None:
+        """Record, before mining, a coinbase a funding will spend. Append-only:
+        after a crash the coinbase stays excluded even if its funding landed."""
+        _hex32(coinbase_txid)
+        with self._transaction() as db:
+            db.execute("INSERT OR IGNORE INTO spent_coinbases VALUES (?,'DEMO_FUNDING',?)",
+                       (coinbase_txid, int(time.time())))
+
+    def resolve_unexecuted(self, order_id: str, evidence: dict) -> dict:
+        """UNCERTAIN -> EXECUTION_FAILED once the chain proves no execution.
+
+        Only the demo operator calls this, after the transaction's expiry
+        height has passed under empty blocks and fresh scans of both wallets
+        equal their before-scans. It releases the reservation.
+        """
+        _record_id(order_id)
+        if type(evidence) is not dict or evidence.get("reason") != "EXPIRED_WITHOUT_EXECUTION":
+            raise OrderError("resolution requires chain evidence of non-execution")
+        payload = json.dumps(evidence, sort_keys=True, separators=(",", ":"))
+        with self._transaction() as db:
+            order = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
+            if not order or order["state"] != "UNCERTAIN":
+                raise OrderError("order is not uncertain")
+            if db.execute("SELECT 1 FROM order_settlements WHERE order_id=?", (order_id,)).fetchone():
+                raise OrderError("a submitted settlement is never released automatically")
+            now = int(time.time())
+            db.execute("UPDATE offers SET reserved=reserved-? WHERE id=?", (order["quantity"], order["offer_id"]))
+            db.execute("UPDATE orders SET state='EXECUTION_FAILED',updated_at=? WHERE id=?", (now, order_id))
+            self._append_event(db, order_id, "UNCERTAIN", "EXECUTION_FAILED", now, json.loads(payload))
+            return dict(db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone())
 
     def mark_ready(self, wallet_id: str) -> dict:
         """FUNDING -> READY, creating the custodial pairing in the same transaction."""

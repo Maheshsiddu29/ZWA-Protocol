@@ -457,7 +457,9 @@ def handle(request: dict) -> dict:
         # are always judge sessions and the only seller is the dealer.
         if role == "buyer" and not (is_demo_account(actor) and
                                     portal.ledger.wallet_for_session(actor, session)):
-            raise PortalError("demo session expired")
+            ended = portal.ledger.session_wallet(actor, session)
+            raise PortalError("demo wallet could not be created; start a new demo"
+                              if ended and ended["failure"] else "demo session expired")
         if role == "seller" and actor != portal.demo.dealer_account_id:
             raise PortalError("role or action unavailable")
     elif is_demo_account(actor):

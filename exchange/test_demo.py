@@ -103,18 +103,24 @@ class DemoTools(FakeTools):
             self.mined.append(("empty", int(args[2])))
             self.coinbases += int(args[2])
         if args[0] == "prepare-sale":
-            # Demo sponsors are any free coinbase; reuse the base fake's two.
-            args = tuple(a if a not in [str(h) for h in range(100, 200)] else "6" for a in args)
+            opts = dict(zip(args[1::2], args[2::2]))
+            terms = make_terms(opts["--asset"], int(opts["--quantity"]), int(opts["--price-zat"]),
+                               opts["--buyer-address"], opts["--seller-address"],
+                               self.coinbase_txid(int(opts["--fee-coinbase-height"])), self.height + 1)
+            Path(opts["--out"]).write_text(json.dumps(terms))
+            quote = from_terms(terms)
+            Path(opts["--session-result"]).write_text(json.dumps({
+                "version": 1, "sessionId": quote["quoteDigest"], "source": "LIVE_LOCAL_CLI",
+                "outcome": "QUOTE_READY", "quote": quote, "receipt": None}))
+            return ["PHASE35F_TERMS_PREPARED terms_hash=" + quote["quoteDigest"]]
         return super().coordinator(*args, timeout=timeout)
 
     def mature_sponsor_coinbases(self, tip):
-        if self.coinbases <= 0:
-            return []
-        return [(6, "6" * 64), (7, "7" * 64)] + [(100 + i, format(100 + i, "064x"))
-                                                 for i in range(max(self.coinbases - 2, 0))]
+        # Like pinned Zebra, the index keeps listing coinbases we already spent.
+        return [(100 + i, self.coinbase_txid(100 + i)) for i in range(max(self.coinbases, 0) + len(self.mined))]
 
     def coinbase_txid(self, height):
-        return {6: "6" * 64, 7: "7" * 64}.get(height, format(height, "064x"))
+        return format(height, "064x")
 
     def rpc(self, method, params=None):
         if method == "getblockhash":
@@ -424,6 +430,69 @@ class ConcurrencyTests(DemoBase):
         with ThreadPoolExecutor(max_workers=12) as pool:
             admitted = sum(pool.map(attempt, range(12)))
         self.assertEqual(admitted, self.policy.max_active_wallets)
+
+
+class RecoveryTests(DemoBase):
+    def setUp(self):
+        super().setUp()
+        self.signed_roles = []
+
+    def test_funding_coinbase_is_never_reused_as_a_sponsor_while_the_index_still_lists_it(self):
+        judge = self.judge()
+        spent = self.ledger.spent_sponsor_txids()
+        self.assertEqual(len(spent), 1)
+        order = self.buy(judge)
+        self.service.tick()
+        terms = json.loads((self.config.order_dir(order["id"]) / "quote/terms.json").read_text())
+        self.assertNotIn(terms["fee_sponsor_txid"], spent)
+        listed = {txid for _, txid in self.tools.mature_sponsor_coinbases(self.tools.height)}
+        self.assertTrue(spent <= listed)  # the stale index still lists it
+
+    def uncertain(self) -> tuple[dict, dict]:
+        judge = self.judge()
+        order = self.executing(judge)
+        self.sign_round()
+        self.service.tick()
+        self.sign_round()
+        self.service.tick()
+        self.assertEqual(self.state(order["id"]), "SELLER_APPROVED")
+        work = self.config.order_dir(order["id"])
+        quote = from_terms(json.loads((work / "quote/terms.json").read_text()))
+        (work / "coordinator.log.raw").write_text("PHASE35F_COORDINATOR_REJECTED reason=Block rejected\n")
+        (work / "quote/session-result.json").write_text(json.dumps({
+            "version": 1, "sessionId": quote["quoteDigest"], "source": "LIVE_LOCAL_CLI",
+            "outcome": "UNCERTAIN", "quote": quote, "receipt": None}))
+        self.alive = False
+        return judge, order
+
+    def test_uncertain_order_is_released_only_after_expiry_with_unchanged_wallets(self):
+        judge, order = self.uncertain()
+        expiry = json.loads((self.config.order_dir(order["id"]) / "quote/terms.json").read_text())["tx_expiry_height"]
+        self.service.tick()  # coordinator stopped after both approvals -> UNCERTAIN
+        self.service.tick()  # demo operator mines past expiry, rescans, releases
+        detail = self.ledger.get_order(order["id"], participant_id="dealer")
+        self.assertEqual(detail["state"], "EXECUTION_FAILED")
+        evidence = json.loads(detail["evidence"][-1]["value_json"])
+        self.assertEqual(evidence["reason"], "EXPIRED_WITHOUT_EXECUTION")
+        self.assertGreater(evidence["checkedHeight"], expiry)
+        self.assertEqual(self.ledger.get_offer(self.offer["id"])["reserved"], 0)
+        self.assertTrue(any(kind == "empty" for kind, _ in self.tools.mined))  # only empty blocks
+
+    def test_uncertain_order_with_changed_wallets_stays_for_the_operator(self):
+        judge, order = self.uncertain()
+        self.service.tick()
+        self.tools.wallets[judge["id"]][1] += 1  # something did change
+        self.service.tick()
+        self.assertEqual(self.state(order["id"]), "UNCERTAIN")
+        self.assertIn({"event": "UNCERTAIN_NEEDS_OPERATOR", "orderId": order["id"]}, self.events)
+
+    def test_uncertain_order_with_an_executed_line_is_never_released(self):
+        judge, order = self.uncertain()
+        self.service.tick()
+        raw = self.config.order_dir(order["id"]) / "coordinator.log.raw"
+        raw.write_text(f"PHASE35G_EXECUTED txid={'f' * 64} height=999 rpc_block_hash=x\n")
+        self.service.tick()
+        self.assertEqual(self.state(order["id"]), "UNCERTAIN")
 
 
 class PolicyTests(DemoBase):

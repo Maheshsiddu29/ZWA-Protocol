@@ -160,6 +160,10 @@ class OrderLedger:
               asset_units INTEGER NOT NULL CHECK(asset_units >= 0), scanned_at INTEGER NOT NULL,
               PRIMARY KEY(wallet_key,asset_base,scan_height)
             );
+            CREATE TABLE spent_coinbases (
+              txid TEXT PRIMARY KEY, purpose TEXT NOT NULL CHECK(purpose IN ('DEMO_FUNDING')),
+              recorded_at INTEGER NOT NULL
+            );
             CREATE TABLE demo_settings (
               key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL
             )
@@ -593,6 +597,23 @@ class OrderLedger:
                 raise OrderError("order does not exist")
             return self._wallets_committed(db, row["seller_id"], row["buyer_id"], order_id)
 
+    def spent_sponsor_txids(self) -> set[str]:
+        """Sponsor coinbases this exchange has committed or already spent.
+
+        Pinned Zebra's getaddressutxos can keep listing a coinbase output that
+        was spent in its non-finalized chain, so the address index alone must
+        never decide that a sponsor input is still free.
+        """
+        states = (*WALLET_COMMITTED_STATES, "RECEIPT_AVAILABLE")
+        marks = ",".join("?" for _ in states)
+        with self._connection() as db:
+            spent = {row[0] for row in db.execute(
+                f"""SELECT q.sponsor_txid FROM order_quotes q JOIN orders o ON o.id=q.order_id
+                    WHERE o.state IN ({marks})""", states)}
+            if self.schema >= 4:
+                spent |= {row[0] for row in db.execute("SELECT txid FROM spent_coinbases")}
+        return spent
+
     def committed_sponsor_txids(self) -> set[str]:
         states = ",".join("?" for _ in WALLET_COMMITTED_STATES)
         with self._connection() as db:
@@ -816,7 +837,7 @@ class OrderLedger:
             return [dict(row) for row in db.execute(
                 f"""SELECT o.*,f.seller_id,f.instrument_id,f.asset_base,f.chain_genesis
                     FROM orders o JOIN offers f ON f.id=o.offer_id
-                    WHERE o.state IN ({marks}) ORDER BY o.created_at,o.id""", states)]
+                    WHERE o.state IN ({marks}) ORDER BY o.created_at,o.rowid""", states)]
 
     def get_order(self, order_id: str, *, participant_id: str) -> dict:
         """Return one private order only to its buyer or seller."""

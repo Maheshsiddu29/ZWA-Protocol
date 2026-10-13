@@ -100,6 +100,8 @@ class Tools:
         rules = ["(version 1)", "(allow default)"]
         rules += [f'(deny file-read* file-write* (subpath "{self.config.root / name}"))'
                   for name in SECRET_HOMES]
+        # realpath(3) reads the parent's own metadata; it never lists it.
+        rules.append(f'(allow file-read-metadata (literal "{parent}"))')
         rules.append(f'(allow file-read* file-write* (subpath "{home}"))')
         text = "\n".join(rules) + "\n"
         if path.exists():

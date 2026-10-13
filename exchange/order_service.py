@@ -237,7 +237,7 @@ class OrderService:
                              evidence={"reason": "BUYER_NATIVE_ZEC_INSUFFICIENT",
                                        "paymentZat": payment, "tipHeight": tip})
             return
-        committed = self.ledger.committed_sponsor_txids()
+        committed = self.ledger.spent_sponsor_txids()
         sponsor = next(((height, txid) for height, txid in self.tools.mature_sponsor_coinbases(tip)
                         if txid not in committed and self.tools.coinbase_txid(height) == txid), None)
         if sponsor is None:
@@ -365,7 +365,8 @@ class OrderService:
             "quoteDigest": quote["quoteDigest"], "assetBase": asset,
             "buyerId": order["buyer_id"], "sellerId": order["seller_id"], "tipHeight": tip,
             "termsSha256": quote_row["terms_sha256"]})
-        self._note(order_id, "Authorized. Waiting for both paired wallet companions.")
+        self._note(order_id, "Authorized. Waiting for both wallet signers." if self.demo
+                   else "Authorized. Waiting for both paired wallet companions.")
 
     def start(self, order: dict) -> None:
         order_id = order["id"]
@@ -405,7 +406,8 @@ class OrderService:
             "--authorization-result", str(work / "authorization-result.json")],
             work / "coordinator.log.raw")
         self.ledger.set_execution_pid(order_id, process.pid)
-        self._note(order_id, "Approval window open. Buyer: review and approve in your wallet companion.")
+        self._note(order_id, "Signing: your demo wallet checks the exact terms against its policy." if self.demo
+                   else "Approval window open. Buyer: review and approve in your wallet companion.")
         self.log({"orderId": order_id, "event": "EXECUTION_STARTED", "pid": process.pid,
                   "approvalMode": self.config.approval_mode})
 
@@ -494,7 +496,8 @@ class OrderService:
                 self._terminate(execution["coordinator_pid"])
                 return
             if self._record_approval(order, role, quote) and role == "buyer":
-                self._note(order_id, "Buyer approved. Seller: review and approve in your wallet companion.")
+                self._note(order_id, "Your wallet signed. The dealer's standing policy is checking the terms."
+                           if self.demo else "Buyer approved. Seller: review and approve in your wallet companion.")
             return
         socket = self.config.socket_path(order_id)
         if socket.is_socket():
@@ -624,7 +627,7 @@ class OrderService:
                     raise ServiceError("existing order receipt differs")
             else:
                 write_new_json(path, record)
-            self._note(order_id, "Settled. Waiting for restart-durability blocks and a fresh wallet rescan.")
+            self._note(order_id, "Settled. Durability blocks and a fresh wallet rescan follow shortly.")
             self.log({"orderId": order_id, "state": "RECEIPT_AVAILABLE", "txid": receipt["txid"]})
 
     # ---------------------------------------------------------- durability

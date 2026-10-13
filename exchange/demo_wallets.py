@@ -14,8 +14,10 @@ while no quote is live, because an exact quote is bound to the next height.
 
 from __future__ import annotations
 
+import json
 import time
 
+from checkout.scans import parse
 from .demo_ledger import DEALER_KEY, LIVE_WALLET_STATES, DemoLedger
 from .order_ledger import FAILURE_STATES, PRE_EXECUTION_STATES, WALLET_COMMITTED_STATES, OrderError
 from .tools import FUNDED_LINE, NATIVE_LINE, ToolError
@@ -70,7 +72,7 @@ class DemoOperator:
         self.ledger.ensure_dealer_pairing(account_id=self.policy.dealer_account_id,
                                           wallet_address=self.dealer_address())
         for step in (self.create_requested, self.expire_due, self.confirm_funding,
-                     self.retire_expired):
+                     self.retire_expired, self.resolve_unexecuted):
             try:
                 step()
             except (DemoError, OrderError, ToolError, OSError, ValueError) as exc:
@@ -103,7 +105,7 @@ class DemoOperator:
             self.log({"event": "DEMO_WALLET_CREATED", "wallet": row["id"]})
 
     def _free_coinbases(self, tip: int) -> list[tuple[int, str]]:
-        committed = self.ledger.committed_sponsor_txids()
+        committed = self.ledger.spent_sponsor_txids()
         return [(height, txid) for height, txid in self.tools.mature_sponsor_coinbases(tip)
                 if txid not in committed]
 
@@ -128,6 +130,8 @@ class DemoOperator:
                              if self.tools.coinbase_txid(h) == txid), None)
             if coinbase is None:
                 raise DemoError("no mature sponsor coinbase is available for funding")
+            # Record the coinbase before mining so a crash can never reuse it.
+            self.ledger.reserve_funding_coinbase(coinbase[1])
             lines = self.tools.coordinator("fund-address", "--address", row["wallet_address"],
                                            "--coinbase-height", str(coinbase[0]))
             funded = [m for line in lines if (m := FUNDED_LINE.fullmatch(line))]
@@ -202,6 +206,52 @@ class DemoOperator:
             self.tools.remove_demo_home(row["id"])
             self.ledger.advance(row["id"], expected=row["state"], state="RETIRED")
             self.log({"event": "DEMO_WALLET_RETIRED", "wallet": row["id"]})
+
+    # ------------------------------------------------------- uncertain orders
+
+    def resolve_unexecuted(self) -> None:
+        """Release an UNCERTAIN order once the chain proves it never executed.
+
+        An UNCERTAIN order keeps the single dealer wallet committed, which
+        would stop the whole demo. It is released only when all hold:
+        no receipt or executed line exists; the transaction's expiry height
+        has passed (this service mines only empty blocks, so it cannot be
+        included); and fresh scans of both wallets equal their before-scans.
+        Anything else stays UNCERTAIN for the operator.
+        """
+        uncertain = self.ledger.orders_in(("UNCERTAIN",))
+        if not uncertain or any(o["state"] != "UNCERTAIN" for o in self.ledger.orders_in(WALLET_COMMITTED_STATES)):
+            return
+        for order in uncertain:
+            work = self.service._work(order["id"])
+            raw = work / "coordinator.log.raw"
+            if (work / "receipt.json").exists() or (raw.exists() and "PHASE35G_EXECUTED" in raw.read_text()):
+                continue
+            quote_row = self.ledger.order_quote(order["id"])
+            if not quote_row or self.ledger.execution(order["id"]) is None:
+                continue
+            terms = json.loads((work / "quote" / "terms.json").read_text())
+            tip = self.tools.chain()["height"]
+            if tip <= terms["tx_expiry_height"]:
+                self.tools.coordinator("mine-empty", "--count", str(terms["tx_expiry_height"] - tip + 1))
+                tip = self.tools.chain()["height"]
+            asset = terms["asset_base"]
+            wallet = self.wallet_for_pairing(quote_row["buyer_pairing_id"])
+            if wallet is None:
+                continue
+            after = self.scan_wallet(wallet, [asset])[asset], self.scan_wallet(DEALER_KEY, [asset])[asset]
+            before = (parse(work / "buyer-before.log", "Buyer", asset),
+                      parse(work / "seller-before.log", "Seller", asset))
+            if any(a["height"] <= terms["tx_expiry_height"] or
+                   (a["assetUnits"], a["nativeZat"]) != (b["assetUnits"], b["nativeZat"])
+                   for a, b in zip(after, before)):
+                self.log({"event": "UNCERTAIN_NEEDS_OPERATOR", "orderId": order["id"]})
+                continue
+            self.ledger.resolve_unexecuted(order["id"], {
+                "reason": "EXPIRED_WITHOUT_EXECUTION", "quoteDigest": order["quote_digest"],
+                "txExpiryHeight": terms["tx_expiry_height"], "checkedHeight": tip,
+                "transactionSubmitted": False})
+            self.log({"event": "UNCERTAIN_RESOLVED_UNEXECUTED", "orderId": order["id"]})
 
     # ----------------------------------------------------------------- scans
 
