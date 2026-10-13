@@ -33,7 +33,7 @@ import urllib.request
 
 TERMINAL = {"CANCELLED", "EXPIRED", "REJECTED", "EXECUTION_FAILED", "UNCERTAIN"}
 RESULTS: list[tuple[str, bool, str]] = []
-TLS: ssl.SSLContext | None = None  # --insecure: trust a local rehearsal CA
+TLS: ssl.SSLContext | None = None
 
 
 def record(name: str, ok: bool, detail: str = "") -> bool:
@@ -198,13 +198,11 @@ def main() -> int:
     parser.add_argument("--stop-node-cmd")
     parser.add_argument("--start-node-cmd")
     parser.add_argument("--skip-expiry", action="store_true")
-    parser.add_argument("--insecure", action="store_true", help="accept a local rehearsal TLS certificate")
+    parser.add_argument("--ca-file", help="trusted local CA certificate for HTTPS hostname validation")
     args = parser.parse_args()
     global TLS
-    if args.insecure:
-        TLS = ssl.create_default_context()
-        TLS.check_hostname = False
-        TLS.verify_mode = ssl.CERT_NONE
+    if args.ca_file:
+        TLS = ssl.create_default_context(cafile=args.ca_file)
     base = args.base
 
     # 1-2. Fresh judges get distinct, ready wallets.
