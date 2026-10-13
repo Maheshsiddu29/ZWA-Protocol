@@ -207,6 +207,9 @@ fn facts_for(kind: PlanKind, bytes: &[u8]) -> Result<inspect::TxFacts> {
         _ => inspect::facts(bytes)?,
     };
     let node = nodecheck::check(bytes)?;
+    if kind == PlanKind::ZsaShieldedTransfer && !node.orchard_zsa_enabled {
+        bail!("node parser reports an Orchard bundle without enableZSA");
+    }
     if node.txid != facts.wallet_library_txid && !facts.orchard_flags_normalized {
         bail!("wallet library and node compute different txids without a known cause");
     }
@@ -237,12 +240,14 @@ fn load_pending(root: &Path, txid: &str) -> Result<(Vec<u8>, Plan)> {
 /// `pending/rejected-<sha256>.tx` for review; it has no plan and can never be
 /// broadcast by this tool.
 fn inspect_new(root: &Path, kind: PlanKind, bytes: &[u8]) -> Result<inspect::TxFacts> {
-    facts_for(kind, bytes).or_else(|e| {
-        use sha2::Digest;
-        let name = format!("rejected-{}.tx", hex::encode(sha2::Sha256::digest(bytes)));
-        let _ = pending_dir(root).and_then(|d| write_private(&d.join(&name), bytes));
-        Err(e.context(format!("candidate quarantined as pending/{name}")))
-    })
+    facts_for(kind, bytes).map_err(|e| quarantine_candidate(root, bytes, e))
+}
+
+fn quarantine_candidate(root: &Path, bytes: &[u8], error: anyhow::Error) -> anyhow::Error {
+    use sha2::Digest;
+    let name = format!("rejected-{}.tx", hex::encode(sha2::Sha256::digest(bytes)));
+    let _ = pending_dir(root).and_then(|d| write_private(&d.join(&name), bytes));
+    error.context(format!("candidate quarantined as pending/{name}"))
 }
 
 fn save_plan(root: &Path, bytes: &[u8], plan: &Plan) -> Result<String> {
@@ -371,7 +376,8 @@ async fn main() -> Result<()> {
             let bytes = issuer.build_payment(address, amount, base.to_vec()).await?;
             let facts = inspect_new(&root, PlanKind::ZsaShieldedTransfer, &bytes)?;
             let fvk = recipient.orchard_fvk().await?;
-            inspect::expect_transfer(&bytes, &facts, &fvk, &base, amount)?;
+            inspect::expect_transfer(&bytes, &facts, &fvk, &base, amount)
+                .map_err(|e| quarantine_candidate(&root, &bytes, e))?;
             let plan = Plan {
                 schema: "zwa-public-zsa-plan/v1".into(),
                 kind: PlanKind::ZsaShieldedTransfer,

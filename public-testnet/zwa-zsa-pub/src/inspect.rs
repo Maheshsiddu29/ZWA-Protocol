@@ -8,11 +8,12 @@ use anyhow::{bail, Context, Result};
 use nonempty_shim::non_empty;
 use orchard::issuance::compute_asset_desc_hash;
 use orchard::keys::{FullViewingKey, PreparedIncomingViewingKey, Scope};
-use orchard::note::{AssetBase, AssetId};
+use orchard::note::{AssetBase, AssetId, ExtractedNoteCommitment, TransmittedNoteCiphertext};
 use orchard::zsa::OrchardZSADomain;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use zcash_note_encryption::try_note_decryption;
+use zcash_note_encryption::note_bytes::NoteBytesData;
 use zcash_primitives::transaction::{Transaction, TxVersion};
 use zcash_protocol::consensus::BranchId;
 
@@ -200,9 +201,15 @@ fn facts_inner(bytes: &[u8], allow_transparent_inputs: bool) -> Result<TxFacts> 
     let (sapling_spends, sapling_outputs) = tx
         .sapling_bundle()
         .map_or((0, 0), |b| (b.shielded_spends().len(), b.shielded_outputs().len()));
+    // This wallet fork's V6 reader stores the original 612-byte ZSA
+    // ciphertexts separately and represents the actions as vanilla Orchard.
+    // The node parser independently validates the original bytes in facts_for.
     let orchard_flavor = match tx.orchard_bundle() {
         None => "none",
         Some(b) if b.as_zsa().is_some() => "orchard-zsa",
+        Some(b) if !tx.zsa_action_enc_ciphertexts.is_empty()
+            && tx.zsa_action_enc_ciphertexts.len() == b.action_count()
+            && tx.zsa_action_enc_ciphertexts.iter().all(|c| c.len() == 612) => "orchard-zsa",
         Some(_) => "orchard-vanilla",
     };
     let issuance = match tx.issue_bundle() {
@@ -257,6 +264,9 @@ fn facts_inner(bytes: &[u8], allow_transparent_inputs: bool) -> Result<TxFacts> 
 
 /// Check a planned issuance against the name, amount and finality ZWA asked for.
 pub fn expect_issuance(facts: &TxFacts, name: &str, amount: u64) -> Result<()> {
+    if facts.transparent_inputs != 0 || facts.transparent_outputs != 0 || facts.sapling_outputs != 0 {
+        bail!("issuance must not create transparent or Sapling outputs");
+    }
     let issuance = facts.issuance.as_ref().context("transaction has no issue bundle")?;
     let desc_hash = compute_asset_desc_hash(&non_empty(name.as_bytes())?);
     if issuance.asset_desc_hash != hex::encode(desc_hash) {
@@ -294,15 +304,30 @@ pub fn expect_transfer(
         bail!("transfer leaks value outside the Orchard pool");
     }
     let tx = parse(bytes)?;
-    let bundle = tx
-        .orchard_bundle()
-        .and_then(|b| b.as_zsa())
-        .context("missing OrchardZSA bundle")?;
+    let bundle = tx.orchard_bundle().context("missing Orchard bundle")?;
+    let vanilla = bundle.as_vanilla().context("wallet reader did not expose ZSA actions")?;
+    if tx.zsa_action_enc_ciphertexts.len() != vanilla.actions().len() {
+        bail!("ZSA ciphertext count differs from Orchard action count");
+    }
     let ivk = PreparedIncomingViewingKey::new(&recipient_fvk.to_ivk(Scope::External));
     let mut matched = 0u64;
-    for action in bundle.actions().iter() {
-        let domain = OrchardZSADomain::for_action(action);
-        if let Some((note, _, _)) = try_note_decryption(&domain, &ivk, action) {
+    for (action, raw) in vanilla.actions().iter().zip(&tx.zsa_action_enc_ciphertexts) {
+        let raw: [u8; 612] = raw.as_slice().try_into().context("ZSA ciphertext length")?;
+        let ciphertext = TransmittedNoteCiphertext::<OrchardZSADomain> {
+            epk_bytes: action.encrypted_note().epk_bytes,
+            enc_ciphertext: NoteBytesData(raw),
+            out_ciphertext: action.encrypted_note().out_ciphertext,
+        };
+        let zsa_action = orchard::Action::from_parts(
+            *action.nullifier(),
+            action.rk().clone(),
+            Option::from(ExtractedNoteCommitment::from_bytes(&action.cmx().to_bytes())).context("commitment")?,
+            ciphertext,
+            action.cv_net().clone(),
+            (),
+        ).context("ZSA action reconstruction")?;
+        let domain = OrchardZSADomain::for_action(&zsa_action);
+        if let Some((note, _, _)) = try_note_decryption(&domain, &ivk, &zsa_action) {
             if note.asset().to_bytes() == *asset_base {
                 matched = matched.checked_add(note.value().inner()).context("overflow")?;
             }

@@ -19,6 +19,7 @@ const DEFAULT_PATH: &str = "/private/tmp/zwa-pub-build/nodecheck-target/release/
 pub struct NodeView {
     pub txid: String,
     pub issuance_asset_bases: Vec<String>,
+    pub orchard_zsa_enabled: bool,
 }
 
 fn binary() -> Result<PathBuf> {
@@ -49,9 +50,10 @@ pub fn check(bytes: &[u8]) -> Result<NodeView> {
     }
     let facts = &report["facts"];
     let txid = facts["txid"].as_str().context("node txid")?.to_string();
+    let orchard_zsa_enabled = facts["orchardZsaEnabled"].as_bool().context("node OrchardZSA flag")?;
     let issuance_asset_bases = facts["issuance"]["actions"]
         .as_array()
         .map(|a| a.iter().filter_map(|x| x["assetBase"].as_str().map(str::to_string)).collect())
         .unwrap_or_default();
-    Ok(NodeView { txid, issuance_asset_bases })
+    Ok(NodeView { txid, issuance_asset_bases, orchard_zsa_enabled })
 }

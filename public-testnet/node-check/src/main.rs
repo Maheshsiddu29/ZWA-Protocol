@@ -49,6 +49,7 @@ fn check(bytes: &[u8]) -> Result<Value, String> {
         "version": tx.version(),
         "expiryHeight": tx.expiry_height().map(|h| h.0),
         "orchardActions": tx.orchard_action_count(),
+        "orchardZsaEnabled": tx.orchard_flags().is_some_and(|flags| flags.contains(zebra_chain::orchard::shielded_data::Flags::ENABLE_ZSA)),
         "issuance": issuance,
         "nodeSource": "zcash-shielded-assets/zebra@6a91831a6a9c18f667f59ab956c9437bf0bb5c5f",
     }))
