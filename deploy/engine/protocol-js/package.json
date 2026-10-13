@@ -1,0 +1,15 @@
+{
+  "name": "zwa-protocol-runtime",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Pinned runtime for checkout/authorization/native_zec_v2.js (Groth16 generate/verify)",
+  "dependencies": {
+    "circomlib": "2.0.5",
+    "circomlibjs": "0.1.7",
+    "snarkjs": "0.7.5"
+  },
+  "overrides": {
+    "underscore": "1.13.8",
+    "ws": "8.21.0"
+  }
+}
