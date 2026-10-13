@@ -59,14 +59,15 @@ else
   pass "lab faucet already shielded (Orchard $(field zecZat.orchard <"$SCRATCH/labfaucet.json") zat)"
 fi
 z balance --role issuer >"$SCRATCH/issuer-before.json"
-if [ "$(field zecZat.orchard <"$SCRATCH/issuer-before.json")" = "0" ]; then
-  FUND=$(z lab-fund --amount $FUND_ZAT | field labFundingTxid)
+ISSUER_START=$(field zecZat.orchard <"$SCRATCH/issuer-before.json")
+if [ "$ISSUER_START" -lt "$FUND_ZAT" ]; then
+  FUND=$(z lab-fund --amount $((FUND_ZAT - ISSUER_START)) | field labFundingTxid)
   wait_mined "$FUND" 1 && pass "lab funding $FUND mined"
 else
-  pass "issuer already funded by an earlier lab-fund"
+  pass "issuer already has its laboratory fee budget"
 fi
 z balance --role issuer >"$SCRATCH/issuer-funded.json"
-[ "$(field zecZat.orchard <"$SCRATCH/issuer-funded.json")" = "$FUND_ZAT" ] && pass "issuer holds exactly one faucet-sized Orchard note"
+[ "$(field zecZat.orchard <"$SCRATCH/issuer-funded.json")" = "$FUND_ZAT" ] && pass "issuer holds a faucet-sized Orchard fee budget"
 
 # --- issuance ---
 z prepare-issue --name "$ASSET" --amount $ISSUE_AMOUNT >"$SCRATCH/issue-plan.json"
@@ -84,12 +85,36 @@ cp "$ROOT/pending/$ISSUE.tx" "$SCRATCH/tampered-body.tx"; flip "$SCRATCH/tampere
 "$NODECHECK" "$SCRATCH/tampered-body.tx" >/dev/null && pass "a mid-body bit flip still parses (node-check is format-only)"
 LAB_RPC="$(dirname "$0")/lab.sh"
 "$LAB_RPC" rpc sendrawtransaction "[\"$(xxd -p "$SCRATCH/tampered-body.tx" | tr -d '\n')\"]" >"$SCRATCH/tampered-submit.json"
-grep -q '"error"' "$SCRATCH/tampered-submit.json" && pass "lab node full validation rejects the tampered body ($(python3 -I -c 'import json,sys;print(json.load(open(sys.argv[1]))["error"]["message"][:90])' "$SCRATCH/tampered-submit.json"))" ||
+python3 -I -c 'import json,sys; r=json.load(open(sys.argv[1])); assert r.get("result") is None and r.get("error",{}).get("code") == -25 and "consensus validation" in r["error"]["message"]' "$SCRATCH/tampered-submit.json" && pass "lab node full validation rejects the tampered body ($(python3 -I -c 'import json,sys;print(json.load(open(sys.argv[1]))["error"]["message"][:90])' "$SCRATCH/tampered-submit.json"))" ||
   { echo "FAIL  lab node accepted tampered bytes"; cat "$SCRATCH/tampered-submit.json"; exit 1; }
 z broadcast --txid "$ISSUE" >/dev/null && pass "issuance submitted through lab lightwalletd"
 expect_fail "second submission of the same txid" z broadcast --txid "$ISSUE"
 wait_mined "$ISSUE" 2 && pass "issuance mined: height $(field inclusion.blockHeight <"$SCRATCH/verify-$ISSUE.json") conf $(field inclusion.confirmations <"$SCRATCH/verify-$ISSUE.json")"
 [ "$(field walletObservation.status <"$SCRATCH/verify-$ISSUE.json")" = "OBSERVED_AS_EXPECTED" ] && pass "issuer wallet observes the issued supply"
+node_inclusion() { # txid verify-json; independent full-node RPC reads
+  python3 -I - "$LAB_RPC" "$1" "$2" "$ROOT" <<'EOF'
+import json, subprocess, sys
+lab, txid, receipt_path, root = sys.argv[1:]
+receipt = json.load(open(receipt_path))
+def rpc(method, params):
+    reply = json.loads(subprocess.check_output([lab, "rpc", method, json.dumps(params)], text=True))
+    assert reply.get("error") is None, (method, reply.get("error"))
+    return reply["result"]
+raw = rpc("getrawtransaction", [txid, 1])
+height = receipt["inclusion"]["blockHeight"]
+block_hash = rpc("getblockhash", [height])
+block = rpc("getblock", [block_hash, 1])
+assert raw["txid"] == txid and raw["blockhash"] == block_hash
+assert raw["height"] == height and raw["in_active_chain"] is True
+assert raw["vin"] == raw["vout"] == []
+assert raw["orchard"]["valueBalanceZat"] == receipt["transaction"]["feeZat"]
+assert block["hash"] == block_hash and block["height"] == height and txid in block["tx"]
+assert receipt["inclusion"]["blockHash"] == block_hash
+assert bytes.fromhex(raw["hex"]) == open(f"{root}/pending/{txid}.tx", "rb").read()
+print(f"PASS  independent node RPC: {txid} in block {block_hash} at height {height}")
+EOF
+}
+node_inclusion "$ISSUE" "$SCRATCH/verify-$ISSUE.json"
 
 # --- shielded transfer to a separate wallet ---
 expect_fail "transfer above issuer holdings" z prepare-transfer --asset-base "$BASE" --amount $((ISSUE_AMOUNT + 1))
@@ -99,8 +124,10 @@ XFER=$(field facts.txid <"$SCRATCH/transfer-plan.json")
   pass "transfer prepared $XFER; recipient viewing key decrypts exactly $TRANSFER_AMOUNT units before broadcast"
 "$NODECHECK" "$ROOT/pending/$XFER.tx" >/dev/null && pass "node zebra-chain@6a91831 parses the transfer"
 z broadcast --txid "$XFER" >/dev/null && pass "transfer submitted"
+expect_fail "second submission of the transfer txid" z broadcast --txid "$XFER"
 wait_mined "$XFER" 2 && pass "transfer mined: height $(field inclusion.blockHeight <"$SCRATCH/verify-$XFER.json") conf $(field inclusion.confirmations <"$SCRATCH/verify-$XFER.json")"
 [ "$(field walletObservation.status <"$SCRATCH/verify-$XFER.json")" = "OBSERVED_AS_EXPECTED" ] && pass "recipient wallet observes the transfer"
+node_inclusion "$XFER" "$SCRATCH/verify-$XFER.json"
 z balance --role recipient >"$SCRATCH/recipient-final.json"
 z balance --role issuer >"$SCRATCH/issuer-final.json"
 python3 -I - "$SCRATCH" "$BASE" $ISSUE_AMOUNT $TRANSFER_AMOUNT <<'EOF'
@@ -110,5 +137,12 @@ bal=lambda f:sum(a["balance"] for a in json.load(open(f"{d}/{f}"))["assets"] if 
 r,i=bal("recipient-final.json"),bal("issuer-final.json")
 assert r==sent and i==issued-sent, (r,i)
 print(f"PASS  wallet reconciliation: recipient {r}, issuer {i}, total {r+i} = issued {issued}")
+zec=lambda f,role:json.load(open(f"{d}/{role}-{f}.json"))["zecZat"]
+funded=zec("funded","issuer"); final=zec("final","issuer"); recipient=zec("final","recipient")
+fees=sum(json.load(open(f"{d}/{kind}-plan.json"))["facts"]["fee_zat"] for kind in ("issue","transfer"))
+assert funded["orchard"]-final["orchard"]==fees, (funded,final,fees)
+assert all(final[p]==0 for p in ("transparent","sapling"))
+assert recipient["transparent"]==recipient["sapling"]==recipient["orchard"]==0
+print(f"PASS  ZEC accounting: issuer {funded['orchard']} - fees {fees} = {final['orchard']} zat; no transparent change")
 EOF
 echo "RESULT lab acceptance passed: asset $BASE issuance $ISSUE transfer $XFER"
