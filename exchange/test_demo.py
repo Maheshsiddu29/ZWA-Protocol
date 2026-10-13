@@ -168,6 +168,12 @@ class DemoBase(unittest.TestCase):
         self.ledger.set_price(seller_id="dealer", offer_id=self.offer["id"], price_zat_per_unit=1000)
         self.sockets = []
         self.addCleanup(lambda: [s.close() for s in self.sockets])
+        checkpoint = patch("exchange.order_service.persistent_chain.checkpoint",
+                           side_effect=lambda *a, **k: {"height": self.tools.height,
+                                                        "anchorHeight": self.tools.height - 100,
+                                                        "anchorHash": "d" * 64})
+        checkpoint.start()
+        self.addCleanup(checkpoint.stop)
 
     # ---------------------------------------------------------------- helpers
 
@@ -373,6 +379,24 @@ class LifecycleTests(DemoBase):
         attestation = json.loads((self.config.order_dir(order["id"]) / "buyer-approval.json").read_text())
         self.assertFalse(attestation["controllingTerminal"])
         self.assertIn("browser-confirmation", attestation["policyChecks"])
+
+    def test_settlement_dropped_by_a_restart_is_never_marked_durable(self):
+        judge = self.judge()
+        order = self.executing(judge)
+        self.sign_round(); self.service.tick(); self.sign_round(); self.service.tick()
+        self.accept(order, judge["id"])
+        original = self.service.stabilize_if_due
+        self.service.stabilize_if_due = lambda: None
+        self.service.tick()
+        self.service.stabilize_if_due = original
+        self.assertEqual(self.state(order["id"]), "RECEIPT_AVAILABLE")
+        height = self.tools.block["height"]
+        self.tools.blocks[height] = {"tx": [], "hash": block_hash(height)}  # restart dropped the block
+        self.service.tick()
+        work = self.config.order_dir(order["id"])
+        self.assertTrue((work / "dropped.json").exists())
+        self.assertFalse((work / "stabilization.json").exists())
+        self.assertFalse(any(kind == "empty" and count == 110 for kind, count in self.tools.mined))
 
     def test_dealer_pause_rejects_after_buyer_and_nothing_is_submitted(self):
         judge = self.judge()

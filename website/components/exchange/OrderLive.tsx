@@ -51,7 +51,7 @@ export function OrderLive({ initial, csrf, custodial }: { initial: PrivateOrder;
   const units = `${order.quantity} unit${order.quantity === 1 ? "" : "s"}`;
   const canCancel = buyer && !order.executionMode && ["BUYER_REQUESTED", "QUOTE_READY", "BUYER_CONFIRMED", "PROOF_VERIFIED", "TRADE_AUTHORIZED"].includes(order.state);
   const badge = failed ? <span className="badge badge-bad">{stateLabel[order.state]}</span>
-    : order.state === "RECEIPT_AVAILABLE" ? <span className="badge badge-ok">Settled</span>
+    : order.state === "RECEIPT_AVAILABLE" ? (order.receipt ? <span className="badge badge-ok">Settled</span> : <span className="badge badge-warn">Not visible on chain</span>)
     : <span className="badge badge-blue">In progress</span>;
 
   return <div className="split">
@@ -97,6 +97,10 @@ export function OrderLive({ initial, csrf, custodial }: { initial: PrivateOrder;
           {order.state === "UNCERTAIN" ? "This order is held until an operator confirms what happened on the chain. Your wallet will not be charged twice."
             : failureText(order.failure.reason)} {order.state !== "UNCERTAIN" && order.failure.transactionSubmitted === false && "Nothing was transferred."}
         </p>}
+        {order.state === "RECEIPT_AVAILABLE" && !order.receipt && <p className="notice notice-warn" style={{ marginTop: 16 }}>
+          {order.settlementDropped
+            ? "The node restarted before this settlement became durable and its block was dropped. The swap is no longer in the chain, so nothing changed hands; the order is held for operator review."
+            : "The settlement transaction is not visible in the current chain view, so its receipt is hidden. It reappears only if the node shows the same block again."}</p>}
         {error && <p className="inline-error" role="alert" style={{ marginTop: 12 }}>{error}</p>}
       </div>
 

@@ -35,6 +35,7 @@ export type PrivateOrder = {
   failure: Record<string, unknown> | null;
   effects: { assetUnits: number; nativeZat: number | null } | null;
   chainActive: boolean; chainHeight: number | null; receipt: PrivateReceipt | null;
+  settlementDropped?: boolean;
 };
 export type MarketOffer = {
   offerId: string; instrumentId: string; name: string; issuerId: string; assetBase: string;
@@ -72,7 +73,22 @@ async function participant(): Promise<Session | null> {
   return session;
 }
 
+/** Container deployment: the engine's private portal API (no shared volumes). */
+async function remotePortal(url: string, request: object): Promise<BridgeResult<unknown> | null> {
+  const token = process.env.ZWA_PORTAL_TOKEN ?? "";
+  if (token.length < 32 || !/^http:\/\/[a-z][a-z0-9-]{0,62}:[0-9]{2,5}$/.test(url)) return null;
+  try {
+    const response = await fetch(`${url}/v1/portal`, { method: "POST", cache: "no-store", signal: AbortSignal.timeout(20000),
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body: JSON.stringify(request) });
+    const text = await response.text();
+    if (!response.ok || text.length > 262144) return null;
+    return JSON.parse(text) as BridgeResult<unknown>;
+  } catch { return null; }
+}
+
 function runPortal(request: object): Promise<BridgeResult<unknown> | null> {
+  const remote = process.env.ZWA_PORTAL_URL;
+  if (remote) return remotePortal(remote, request);
   const project = path.resolve(process.cwd(), "..");
   return new Promise((resolve) => {
     const child = spawn(process.env.ZWA_PYTHON || "python3", ["-m", "exchange.portal"], {
@@ -95,7 +111,7 @@ function runPortal(request: object): Promise<BridgeResult<unknown> | null> {
   });
 }
 
-const rootConfigured = () => rootPattern.test(process.env.ZWA_PRIVATE_EXCHANGE_ROOT ?? "");
+const rootConfigured = () => !!process.env.ZWA_PORTAL_URL || rootPattern.test(process.env.ZWA_PRIVATE_EXCHANGE_ROOT ?? "");
 
 /** Call one fixed exchange action as the authenticated participant. */
 export async function exchangeAction<T>(action: string, payload: Record<string, unknown> = {}): Promise<BridgeResult<T> | null> {

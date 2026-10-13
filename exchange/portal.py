@@ -440,7 +440,12 @@ class Portal:
                 "executionMode": execution["approval_mode"] if execution else None,
                 "awaitingWallet": awaiting, "ownCompanionOnline": own_companion,
                 "failure": failure, "effects": effects,
-                "chainActive": active, "chainHeight": tip, "receipt": receipt}
+                "chainActive": active, "chainHeight": tip, "receipt": receipt,
+                "settlementDropped": state == "RECEIPT_AVAILABLE" and self._dropped(order_id)}
+
+    def _dropped(self, order_id: str) -> bool:
+        path = order_dir(self.config.exchange, order_id) / "dropped.json"
+        return path.is_file() and not path.is_symlink()
 
     def _durability(self, order_id: str) -> str | None:
         path = order_dir(self.config.exchange, order_id) / "stabilization.json"

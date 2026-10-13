@@ -638,13 +638,34 @@ class OrderService:
         due = [order for order in self.ledger.orders_in(("RECEIPT_AVAILABLE",))
                if self.ledger.execution(order["id"]) is not None
                and (order_dir(self.config.exchange, order["id"]) / "order-receipt.json").exists()
-               and not (order_dir(self.config.exchange, order["id"]) / "stabilization.json").exists()]
+               and not (order_dir(self.config.exchange, order["id"]) / "stabilization.json").exists()
+               and not (order_dir(self.config.exchange, order["id"]) / "dropped.json").exists()]
         if not due or self.ledger.orders_in(WALLET_COMMITTED_STATES):
             return
-        if self.demo and len(due) < 3 and all(
-                o["updated_at"] + 90 > time.time() for o in due):
-            # Batch durability mining: every wallet scan replays the chain, so
-            # 110 blocks per purchase would slow every later judge.
+        # Durability is claimed only for a settlement still in its recorded
+        # block. A node restart before this point can drop the block; such an
+        # order is recorded as dropped and never reported durable.
+        kept = []
+        for order in due:
+            receipt = small_json(order_dir(self.config.exchange, order["id"]) / "order-receipt.json", 8192)
+            try:
+                block = self.tools.rpc("getblock", [str(receipt["height"]), 1])
+                present = isinstance(block, dict) and block.get("hash") == receipt["blockHash"] \
+                    and receipt["txid"] in block.get("tx", [])
+            except Exception:
+                present = False
+            if present:
+                kept.append(order)
+                continue
+            write_new_json(order_dir(self.config.exchange, order["id"]) / "dropped.json", {
+                "version": 1, "observation": "SETTLEMENT_BLOCK_NOT_IN_CURRENT_CHAIN",
+                "txid": receipt["txid"], "height": receipt["height"], "blockHash": receipt["blockHash"],
+                "observedTip": self.tools.chain().get("height"), "observedAt": int(time.time())})
+            self._note(order["id"], "The settlement block is no longer in the chain; held for operator review.")
+            self.log({"event": "SETTLEMENT_DROPPED_BEFORE_DURABILITY", "orderId": order["id"],
+                      "txid": receipt["txid"]})
+        due = kept
+        if not due:
             return
         # Pinned Zebra drops its newest ~99 non-finalized blocks on restart.
         # Mining past that window makes the accepted block survive a restart
