@@ -125,10 +125,42 @@ ZWA_ACCEPT_DEALER_PASSWORD=... python3 tests/acceptance/judge_demo_acceptance.py
   --base http://127.0.0.1:3311 --rpc http://127.0.0.1:$PORT
 ```
 
-For the Compose stack, use `--base https://localhost:8443 --insecure` with
-`ZWA_SITE_ADDRESS=localhost` and `ZWA_PUBLIC_ORIGIN=https://localhost:8443`.
+For the Compose stack, set `ZWA_SITE_ADDRESS=localhost`,
+`ZWA_PUBLIC_ORIGIN=https://localhost:8443`, `ZWA_HTTP_PORT=8088`, and
+`ZWA_HTTPS_PORT=8443` in `deploy/.env`. Leave `ZWA_BIND_ADDRESS` unset (the
+default is `127.0.0.1`). Caddy creates a local development CA in its named
+`caddy-data` volume. Export **only its public root certificate**, verify its
+fingerprint with the operator, and trust that certificate in the macOS login
+keychain for a normal browser session:
+
+```sh
+cd deploy
+docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt /private/tmp/zwa-local-caddy-root.crt
+openssl x509 -in /private/tmp/zwa-local-caddy-root.crt -noout -subject -fingerprint -sha256
+security add-trusted-cert -r trustRoot -k "$HOME/Library/Keychains/login.keychain-db" /private/tmp/zwa-local-caddy-root.crt
+curl --fail --show-error https://localhost:8443/ -o /dev/null
+```
+
+The macOS keychain may require the operator to authorize the trust change.
+Never export or trust Caddy's CA **private key**. Never bypass a browser
+certificate warning. Verify that a wrong hostname fails validation before
+relying on this origin. The trust is local to this developer machine; a future
+public deployment needs its own approved domain and public certificate.
+
+Run the HTTP acceptance over validated TLS with
+`--base https://localhost:8443 --ca-file /private/tmp/zwa-local-caddy-root.crt`.
 Pass `--rpc "exec:docker compose exec -T portal python3 -c …"`, because the
 node is not reachable from the host.
+
+The focused two-context browser security test is
+`node tests/acceptance/browser_security.cjs` from the repository root. It
+requires the Playwright package and an installed Chrome browser; set
+`ZWA_PLAYWRIGHT_PACKAGE` to a separate Playwright installation if needed, and
+set `NODE_EXTRA_CA_CERTS=/private/tmp/zwa-local-caddy-root.crt` so Playwright's
+Node API client trusts the same CA as Chrome.
+It launches Chrome with normal certificate validation, provisions two new
+disposable wallets, tests session boundaries, and retires both wallets. It
+does not confirm a purchase.
 
 ## Operations
 
@@ -144,13 +176,50 @@ node is not reachable from the host.
   demo releases it only when the chain proves it never executed.
 - **Pause sales:** sign in at `/sign-in` as the dealer and choose *Pause
   sales*.
-- **Backup:** stop `order-service` and `demo-signer`, then
-  `docker run --rm -v zwa-demo_zwa-root:/v:ro -v "$PWD":/b alpine tar czf /b/zwa-root-$(date +%F).tgz -C /v .`
-  and the same for `zwa-demo_zebra-state`. Restore both volumes together.
-  Chain identity is checked against the restored state on start.
+- **Backup and restore:** stop all writers, including `zebra`, `order-service`,
+  `demo-signer`, `portal`, `web`, and `caddy`. Archive `zwa-root`,
+  `zebra-state`, and `zwa-params` from that stopped point; include `caddy-data`
+  and `caddy-config` if preserving this same local HTTPS identity. Write the
+  archives to an owner-only directory on an encrypted disk. Restore the paired
+  state into **new volumes in an isolated Compose project**, with no ports
+  published, before any restart. Do not restore onto a live stack or combine
+  archives from different points in time. Run
+  `docker compose exec -T portal python3 - < scripts/m10-state-report.py`
+  before the stop and after the isolated restore; compare genesis, order and
+  receipt states, buyer and dealer balances, offers, and ledger integrity.
+  A restored Zebra may discard its latest 99 blocks. Funding is now marked
+  READY only below a durable chain anchor; recovery revokes a wallet whose
+  funding block disappeared and refreshes surviving wallet scans. A pending
+  quote may expire during the drill without creating a settlement. Keep
+  recovery archives private because `zwa-root` contains disposable wallet
+  keys. The M10 drill and observed rollback are in
+  `docs/m10-hosted-https-security-review.md`.
 - **Reset the demo:** `docker compose down`, remove both volumes, then run the
   bootstrap again. This never affects the owner's protected Phase 4E chain,
   which is not part of this deployment.
+
+## Cloud runbook prepared for owner review
+
+Use a **fresh** arm64 host and fresh named volumes. Never transfer the
+protected Phase 4E chain or any existing wallet to that host. Before executing
+the commands above, the owner chooses the provider, encrypted disk, budget,
+domain, DNS records, firewall rules, TLS method, backup destination, and access
+policy. Keep `ZWA_BIND_ADDRESS=127.0.0.1` until those decisions are approved.
+For public service, expose only TCP 80/443 to Caddy, leave Docker's internal
+network private, and deny direct access to 18232, 8790, 3000, and the signer.
+Check `docker compose config`, `./scripts/preflight.sh`, image digests,
+`docker compose ps`, portal `/readyz`, browser TLS, a disposable purchase, its
+chain block and receipt, and a paired-volume restore on the new host.
+
+Schedule encrypted backups only after a tested stopped-service snapshot or a
+validated coordinated snapshot procedure. Keep a separate rollback copy of
+the prior images and paired volumes. On failure, stop Caddy first, stop the
+writers, restore that matched copy in an isolated project, verify the
+`m10-state-report.py` output, and only then resume service. For shutdown,
+pause sales, allow or explicitly cancel pending quotes, stop the web edge,
+then stop the engine and Zebra. The current 8 GiB VM target is a planning
+baseline: Compose memory ceilings total 9.5 GiB, so a loaded 8 GiB VM needs
+a real peak-memory trial or a larger host before public launch.
 
 ## Portal API (internal)
 
