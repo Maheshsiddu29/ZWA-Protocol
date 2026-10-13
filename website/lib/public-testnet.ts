@@ -23,6 +23,8 @@ export const networkPins = {
   walletLibrary: "hhanh00/zkool2@51df4f0 (rlz)",
 } as const;
 
+const labBlock1Hash = "0235e4311200276186238a8441c5bf44d4027055cb374da10b75f86fc0166d21";
+
 export type PublicReceipt = {
   schema: "zwa-public-zsa-receipt/v1";
   evidenceClass: "PUBLIC_CHAIN_INCLUSION" | "LOCAL_LAB_NOT_PUBLIC";
@@ -74,26 +76,30 @@ export type PublicReceipt = {
 };
 
 const FORBIDDEN_KEYS = ["seed", "mnemonic", "spendingkey", "address", "ufvk", "fvk", "witness",
-  "recipientassetbalance", "issuerassetbalance", "issuerorchardzat"];
+  "recipientassetbalance", "issuerassetbalance", "issuerorchardzat", "privatekey", "secretkey",
+  "walletdb", "walletdatabase", "rseed", "seedphrase", "mnemonicphrase"];
 const FORBIDDEN_PREFIXES = ["uregtest1", "utest1", "uviewregtest", "zregtestsapling1"];
 
 /** Throws if a receipt contains anything that must stay private. */
 export function assertPublicSafe(value: unknown, path = "receipt"): void {
   if (Array.isArray(value)) { value.forEach((v, i) => assertPublicSafe(v, `${path}[${i}]`)); return; }
   if (typeof value === "string") {
-    if (FORBIDDEN_PREFIXES.some((p) => value.startsWith(p))) throw new Error(`${path} exposes an address or key`);
+    if (FORBIDDEN_PREFIXES.some((p) => value.includes(p))) throw new Error(`${path} exposes an address or key`);
     return;
   }
   if (value && typeof value === "object") {
     for (const [k, v] of Object.entries(value)) {
-      if (FORBIDDEN_KEYS.includes(k.toLowerCase())) throw new Error(`${path}.${k} is private`);
+      const key = k.toLowerCase().replaceAll(/[^a-z]/g, "");
+      if (FORBIDDEN_KEYS.includes(key) || /(?:seed|mnemonic|spendingkey|privatekey|secretkey|witness|walletdb|walletdatabase|ufvk|fvk)/.test(key))
+        throw new Error(`${path}.${k} is private`);
       assertPublicSafe(v, `${path}.${k}`);
     }
   }
 }
 
 function accept(raw: unknown, expected: PublicReceipt["evidenceClass"]): PublicReceipt[] {
-  const list = (raw as { receipts?: unknown[] })?.receipts ?? [];
+  const list = (raw as { receipts?: unknown })?.receipts;
+  if (!Array.isArray(list)) throw new Error("receipt list is missing or malformed");
   return list.map((r) => {
     assertPublicSafe(r);
     const receipt = r as PublicReceipt;
@@ -104,6 +110,26 @@ function accept(raw: unknown, expected: PublicReceipt["evidenceClass"]): PublicR
          receipt.network.block1Hash !== networkPins.block1Hash ||
          receipt.network.consensusBranchId !== networkPins.consensusBranchId)) {
       throw new Error("public receipt does not match the pinned network");
+    }
+    if (expected === "LOCAL_LAB_NOT_PUBLIC" &&
+        (receipt.network.genesisHash !== networkPins.genesisHash ||
+         receipt.network.block1Hash !== labBlock1Hash ||
+         receipt.network.consensusBranchId !== networkPins.consensusBranchId ||
+         receipt.network.lightwalletd !== "loopback lab endpoint")) {
+      throw new Error("lab receipt does not match an isolated lab network");
+    }
+    const inc = receipt.inclusion;
+    if (!inc?.mined || inc.blockHeight == null || inc.blockHeight > inc.observedTipHeight ||
+        inc.confirmations !== inc.observedTipHeight - inc.blockHeight + 1 ||
+        !/^[a-f0-9]{64}$/.test(inc.blockHash ?? "") ||
+        !/^[a-f0-9]{64}$/.test(receipt.transaction?.txid ?? "") ||
+        !Number.isSafeInteger(inc.observedAtUnix) || inc.observedAtUnix <= 0) {
+      throw new Error("receipt inclusion evidence is missing or inconsistent");
+    }
+    if (receipt.transaction.kind === "ZSA_SHIELDED_TRANSFER" &&
+        (receipt.asset?.transferAmount !== "PRIVATE (shielded; not published)" ||
+         receipt.asset?.issuedAmount != null)) {
+      throw new Error("shielded transfer receipt exposes an amount");
     }
     return receipt;
   });

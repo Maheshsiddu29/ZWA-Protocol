@@ -3,7 +3,7 @@ import { kindLabel, labReceipts, networkPins, publicReceipts, type PublicReceipt
 
 export const metadata: Metadata = {
   title: "ZWA Testnet Verification",
-  description: "Independently verifiable experimental ZSA issuance and shielded transfer on the community ZSA Testnet.",
+  description: "Verification status and isolated laboratory receipts for experimental ZSA issuance and transfer.",
 };
 
 const fmt = (n: number | null | undefined) => (n == null ? "—" : n.toLocaleString("en-US"));
@@ -18,22 +18,25 @@ function ReceiptCard({ r }: { r: PublicReceipt }) {
   const issuance = r.transaction.kind === "ZSA_ISSUANCE";
   return <article className="testnet-receipt">
     <div className="checkout-live-head">
-      <div><p className="eyebrow">{lab ? "Local lab rehearsal · not public" : "Public chain evidence"}</p><h3>{kindLabel[r.transaction.kind]}</h3></div>
-      <span className="read-only-badge">{lab ? "LOCAL LAB" : r.inclusion.mined ? "INCLUDED" : "NOT YET INCLUDED"}</span>
+      <div><p className="eyebrow">{lab ? "ISOLATED LAB · NOT PUBLIC TESTNET" : "Public chain evidence"}</p><h3>{kindLabel[r.transaction.kind]}</h3></div>
+      <span className="read-only-badge">{lab ? "ISOLATED LAB" : r.inclusion.mined ? "INCLUDED" : "NOT YET INCLUDED"}</span>
     </div>
 
     <section className="testnet-panel">
-      <p className="eyebrow">1 / Public chain inclusion</p>
+      <p className="eyebrow">1 / {lab ? "Isolated lab inclusion" : "Public chain inclusion"}</p>
       <p className="demo-muted">{lab
-        ? "Observed on a private loopback node running the community network's consensus code. Nobody else can check it."
+        ? "Observed on a private loopback node running the community network's consensus code. The lab acceptance run also cross-checked Zebra RPC getrawtransaction, getblockhash, and getblock. These blocks are not publicly checkable."
         : "Anyone can repeat this check against the public lightwalletd. The txid is recomputed from the returned bytes, and the transaction is found in the block at the reported height."}</p>
       <div className="checkout-live-grid">
+        <Fact label="Network" value={r.network.label} />
+        <Fact label="Block 1 identity" value={r.network.block1Hash} mono />
         <Fact label="Transaction ID" value={r.transaction.txid} mono />
         <Fact label="Block height" value={fmt(r.inclusion.blockHeight)} />
         <Fact label="Block hash" value={r.inclusion.blockHash ?? "—"} mono />
         <Fact label="Observed confirmations" value={`${fmt(r.inclusion.confirmations)} (tip ${fmt(r.inclusion.observedTipHeight)} at ${when(r.inclusion.observedAtUnix)})`} />
         <Fact label="Network fee" value={`${fmt(r.transaction.feeZat)} zatoshis (node minimum ${fmt(r.transaction.nodeMinimumFeeZat)})`} />
         <Fact label="Format" value={`${r.transaction.version} · branch ${r.network.consensusBranchId} · ${r.transaction.orchardActions} Orchard actions · ${fmt(r.transaction.sizeBytes)} bytes`} />
+        <Fact label="Verification source" value={r.inclusion.method} />
       </div>
     </section>
 
@@ -69,7 +72,9 @@ export default function TestnetVerificationPage() {
     <header className="subpage-hero"><div className="shell">
       <p className="eyebrow">ZWA / Public testnet</p>
       <h1>ZWA Testnet Verification.</h1>
-      <p>An experimental ZSA issued by ZWA and moved between separate disposable wallets on the community ZSA Testnet. You can check every public fact below without trusting ZWA.</p>
+      <p>{publicReceipts.length
+        ? "Owner-reviewed public testnet receipts appear below. Isolated lab receipts are labeled separately."
+        : "Phase 2 evidence comes from an ISOLATED LAB using the community network's consensus rules. No public issuance or transfer has been broadcast."}</p>
     </div></header>
 
     <section className="subpage-section checkout-demo-section"><div className="shell"><div className="checkout-live">
@@ -89,7 +94,7 @@ export default function TestnetVerificationPage() {
 
       {publicReceipts.length === 0 && <div className="checkout-empty testnet-empty"><img src="/illustrations/asset-tokens-onchain.svg" alt="" /><div>
         <h3>No public transaction yet</h3>
-        <p>The issuance and transfer have been built and tested on an isolated lab node. Nothing goes to the public network until the owner approves each exact txid in a terminal. Receipts appear here after inclusion has been independently verified.</p>
+        <p>The issuance and transfer have been tested on an isolated lab node. Public faucet use and each public broadcast require separate owner approval. Public receipts appear only after public inclusion has been independently verified.</p>
       </div></div>}
       {publicReceipts.map((r) => <ReceiptCard key={r.transaction.txid} r={r} />)}
 
@@ -123,7 +128,7 @@ grpcurl -proto service.proto -d '{"height":<blockHeight>}' zsa.methyl.cc:443 \\
         </ul></section>
       </div>
 
-      {labReceipts.length > 0 && <details className="checkout-history"><summary>Local lab rehearsal ({labReceipts.length} transactions, not public evidence)</summary>
+      {labReceipts.length > 0 && <details className="checkout-history" open><summary>ISOLATED LAB ({labReceipts.length} transactions · NOT PUBLIC TESTNET)</summary>
         {labReceipts.map((r) => <ReceiptCard key={r.transaction.txid} r={r} />)}
       </details>}
 

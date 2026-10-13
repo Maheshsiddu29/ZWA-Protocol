@@ -1,4 +1,131 @@
 {
-  "note": "LOCAL LAB rehearsal receipts (private fork of the community ZSA Testnet parameters). Not public evidence.",
-  "receipts": []
+  "note": "ISOLATED LAB receipts from actual included transactions. This is not PUBLIC TESTNET evidence. Verification combines loopback lightwalletd, node-native parsing and independent Zebra RPC reads; private wallet amounts remain in the owner-only lab root.",
+  "receipts": [
+    {
+      "asset": {
+        "assetBase": "f6f9859b66e5ba8b31c94734a26e184376e3bb26ff2838d2acbdae5e92af998b",
+        "assetDescHash": "608496452e10e0ea81f0fac37ca0b98af7237e9e864034b02e40465a0efb46d3",
+        "finalized": true,
+        "issuedAmount": 1000000,
+        "issuedAmountNote": "Public by protocol: ZIP-227 issuance notes are plaintext.",
+        "issuerValidatingKey": "00997589fe4ab6a003e992dab4a6a17b4b5675172b9455718b3e20dbec8358c35b",
+        "label": "ZWA-TESTNET-LAB-20261012233906",
+        "labelNote": "Off-chain ZWA label; only the description hash is on chain."
+      },
+      "evidenceClass": "LOCAL_LAB_NOT_PUBLIC",
+      "excludedClaims": [
+        "Not an atomic swap or ZIP-228 settlement; the community network accepts only one Action Group per transaction.",
+        "Not gated by ZWA's Groth16 eligibility authorization.",
+        "Not Zcash mainnet; experimental ZSA consensus.",
+        "A public explorer cannot see shielded transfer amounts or recipients."
+      ],
+      "inclusion": {
+        "blockHash": "00fa72179cd013e049a86f0d89093c0322473766bfd8800c54d9e0804cb9a7a0",
+        "blockHeight": 666,
+        "blockTime": 1700610200,
+        "confirmations": 10,
+        "method": "ISOLATED LAB loopback lightwalletd GetTransaction by node txid; returned bytes match the prepared bytes (SHA-256); compact-block membership at the reported height.",
+        "mined": true,
+        "observedAtUnix": 1791848475,
+        "observedTipHash": "033647cb50aaff0c09376ec8730db74efe63003d78e2016963f67226dc356ede",
+        "observedTipHeight": 675
+      },
+      "network": {
+        "block1Hash": "0235e4311200276186238a8441c5bf44d4027055cb374da10b75f86fc0166d21",
+        "consensusBranchId": "77190ad8",
+        "genesisHash": "03536e258babad397d59ce2995d9015d0791ac5272b8348e8f07f94143a72bb7",
+        "label": "LOCAL LAB fork of community ZSA Testnet parameters (not public)",
+        "lightwalletd": "loopback lab endpoint",
+        "nodeSubversion": "/Zebra:5.0.0/",
+        "walletLibrary": "hhanh00/zkool2@51df4f0b356a886d5d2308811f215366ab648d65 (rlz)",
+        "zebraSource": "zcash-shielded-assets/zebra@6a91831a6a9c18f667f59ab956c9437bf0bb5c5f"
+      },
+      "schema": "zwa-public-zsa-receipt/v1",
+      "transaction": {
+        "expiryHeight": 702,
+        "feeZat": 20000,
+        "kind": "ZSA_ISSUANCE",
+        "nodeMinimumFeeZat": 20000,
+        "orchardActions": 2,
+        "sha256": "48594c58a216bf22751d07b6943f8353ec5cb2608bc552d8b240383570be7f1b",
+        "sizeBytes": 9744,
+        "txid": "d87192ff02bb0c380b0c8ad2d6f898c50dce75f406d6d8ce48d48f1226e22ff9",
+        "txidSource": "community node parser (zebra-chain@6a91831)",
+        "version": "V6"
+      },
+      "trustAssumptions": [
+        "Inclusion is reported by an owner-operated loopback lightwalletd and Zebra node using the community ZSA Testnet parameters.",
+        "The isolated lab has no public peers. Its blocks, confirmations and receipts are not public testnet evidence.",
+        "The node parser is built from zcash-shielded-assets/zebra@6a91831; the observed node version alone does not attest to the source commit."
+      ],
+      "walletObservation": {
+        "source": "ZWA disposable wallet scan (private; not publicly verifiable)",
+        "status": "NOT_OBSERVED"
+      },
+      "zwaAuthorization": {
+        "groth16": "NOT_APPLIED",
+        "note": "ZWA's Groth16-gated, human-approved atomic purchase is separate private-regtest evidence and is not represented by this transaction."
+      }
+    },
+    {
+      "asset": {
+        "assetBase": "f6f9859b66e5ba8b31c94734a26e184376e3bb26ff2838d2acbdae5e92af998b",
+        "transferAmount": "PRIVATE (shielded; not published)"
+      },
+      "evidenceClass": "LOCAL_LAB_NOT_PUBLIC",
+      "excludedClaims": [
+        "Not an atomic swap or ZIP-228 settlement; the community network accepts only one Action Group per transaction.",
+        "Not gated by ZWA's Groth16 eligibility authorization.",
+        "Not Zcash mainnet; experimental ZSA consensus.",
+        "A public explorer cannot see shielded transfer amounts or recipients."
+      ],
+      "inclusion": {
+        "blockHash": "04cce41dfac91e5d0f764489dfdd320be53df9b7aa6f376801f2f5ef7b98f9b1",
+        "blockHeight": 671,
+        "blockTime": 1700615600,
+        "confirmations": 5,
+        "method": "ISOLATED LAB loopback lightwalletd GetTransaction by node txid; returned bytes match the prepared bytes (SHA-256); compact-block membership at the reported height.",
+        "mined": true,
+        "observedAtUnix": 1791848476,
+        "observedTipHash": "033647cb50aaff0c09376ec8730db74efe63003d78e2016963f67226dc356ede",
+        "observedTipHeight": 675
+      },
+      "network": {
+        "block1Hash": "0235e4311200276186238a8441c5bf44d4027055cb374da10b75f86fc0166d21",
+        "consensusBranchId": "77190ad8",
+        "genesisHash": "03536e258babad397d59ce2995d9015d0791ac5272b8348e8f07f94143a72bb7",
+        "label": "LOCAL LAB fork of community ZSA Testnet parameters (not public)",
+        "lightwalletd": "loopback lab endpoint",
+        "nodeSubversion": "/Zebra:5.0.0/",
+        "walletLibrary": "hhanh00/zkool2@51df4f0b356a886d5d2308811f215366ab648d65 (rlz)",
+        "zebraSource": "zcash-shielded-assets/zebra@6a91831a6a9c18f667f59ab956c9437bf0bb5c5f"
+      },
+      "schema": "zwa-public-zsa-receipt/v1",
+      "transaction": {
+        "expiryHeight": 708,
+        "feeZat": 15000,
+        "kind": "ZSA_SHIELDED_TRANSFER",
+        "nodeMinimumFeeZat": 15000,
+        "orchardActions": 3,
+        "sha256": "312619b9b2afc26ae9fd5109a0138caed1da93e6d70da8a826f4175ae71ff4bd",
+        "sizeBytes": 12569,
+        "txid": "752bf9dce3f67e350f2e7b2eebc4c23435652eb0e6ebf77e30ce0002c9f347ff",
+        "txidSource": "community node parser (zebra-chain@6a91831)",
+        "version": "V6"
+      },
+      "trustAssumptions": [
+        "Inclusion is reported by an owner-operated loopback lightwalletd and Zebra node using the community ZSA Testnet parameters.",
+        "The isolated lab has no public peers. Its blocks, confirmations and receipts are not public testnet evidence.",
+        "The node parser is built from zcash-shielded-assets/zebra@6a91831; the observed node version alone does not attest to the source commit."
+      ],
+      "walletObservation": {
+        "source": "ZWA disposable wallet scan (private; not publicly verifiable)",
+        "status": "OBSERVED_AS_EXPECTED"
+      },
+      "zwaAuthorization": {
+        "groth16": "NOT_APPLIED",
+        "note": "ZWA's Groth16-gated, human-approved atomic purchase is separate private-regtest evidence and is not represented by this transaction."
+      }
+    }
+  ]
 }

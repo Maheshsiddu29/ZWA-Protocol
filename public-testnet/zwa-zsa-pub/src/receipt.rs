@@ -25,6 +25,12 @@ pub const TRUST_ASSUMPTIONS: &[&str] = &[
     "Confirmations are counted from the tip observed at verification time and are not finality.",
 ];
 
+pub const LAB_TRUST_ASSUMPTIONS: &[&str] = &[
+    "Inclusion is reported by an owner-operated loopback lightwalletd and Zebra node using the community ZSA Testnet parameters.",
+    "The isolated lab has no public peers. Its blocks, confirmations and receipts are not public testnet evidence.",
+    "The node parser is built from zcash-shielded-assets/zebra@6a91831; the observed node version alone does not attest to the source commit.",
+];
+
 pub const EXCLUDED_CLAIMS: &[&str] = &[
     "Not an atomic swap or ZIP-228 settlement; the community network accepts only one Action Group per transaction.",
     "Not gated by ZWA's Groth16 eligibility authorization.",
@@ -140,7 +146,11 @@ pub fn public_receipt(
             "observedTipHash": inclusion.observed_tip_hash,
             "confirmations": inclusion.confirmations,
             "observedAtUnix": now_unix(),
-            "method": "lightwalletd GetTransaction by canonical txid; returned bytes identical to the prepared bytes (SHA-256); membership shown by the compact block at the reported height.",
+            "method": if lab {
+                "ISOLATED LAB loopback lightwalletd GetTransaction by node txid; returned bytes match the prepared bytes (SHA-256); compact-block membership at the reported height."
+            } else {
+                "Public lightwalletd GetTransaction by node txid; returned bytes match the prepared bytes (SHA-256); compact-block membership at the reported height."
+            },
         },
         "asset": asset,
         "walletObservation": {
@@ -151,7 +161,7 @@ pub fn public_receipt(
             "groth16": "NOT_APPLIED",
             "note": "ZWA's Groth16-gated, human-approved atomic purchase is separate private-regtest evidence and is not represented by this transaction.",
         },
-        "trustAssumptions": TRUST_ASSUMPTIONS,
+        "trustAssumptions": if lab { LAB_TRUST_ASSUMPTIONS } else { TRUST_ASSUMPTIONS },
         "excludedClaims": EXCLUDED_CLAIMS,
     }))
 }
@@ -159,7 +169,7 @@ pub fn public_receipt(
 /// Keys that must never appear in a public receipt.
 const FORBIDDEN: &[&str] = &[
     "seed", "mnemonic", "spendingKey", "address", "ufvk", "fvk", "witness", "recipientAssetBalance",
-    "issuerAssetBalance", "issuerOrchardZat",
+    "issuerAssetBalance", "issuerOrchardZat", "privateKey", "secretKey", "walletDb", "rseed",
 ];
 
 pub fn assert_public_safe(receipt: &Value) -> Result<()> {
@@ -167,7 +177,11 @@ pub fn assert_public_safe(receipt: &Value) -> Result<()> {
         match v {
             Value::Object(map) => {
                 for (k, v) in map {
-                    if FORBIDDEN.iter().any(|f| k.eq_ignore_ascii_case(f)) {
+                    let key: String = k.chars().filter(|c| c.is_ascii_alphabetic()).flat_map(char::to_lowercase).collect();
+                    if FORBIDDEN.iter().any(|f| {
+                        let forbidden: String = f.chars().filter(|c| c.is_ascii_alphabetic()).flat_map(char::to_lowercase).collect();
+                        key.contains(&forbidden)
+                    }) {
                         anyhow::bail!("public receipt would expose {k}");
                     }
                     walk(v)?;
@@ -175,7 +189,7 @@ pub fn assert_public_safe(receipt: &Value) -> Result<()> {
             }
             Value::Array(items) => items.iter().try_for_each(walk)?,
             Value::String(s) => {
-                if s.starts_with("uregtest1") || s.starts_with("utest1") || s.starts_with("uviewregtest") {
+                if s.contains("uregtest1") || s.contains("utest1") || s.contains("uviewregtest") || s.contains("zregtestsapling1") {
                     anyhow::bail!("public receipt would expose an address or key");
                 }
             }
@@ -209,6 +223,8 @@ mod tests {
         assert!(assert_public_safe(&json!({ "a": { "Seed": "x" } })).is_err());
         assert!(assert_public_safe(&json!({ "a": ["uregtest1qqq"] })).is_err());
         assert!(assert_public_safe(&json!({ "recipientAssetBalance": 5 })).is_err());
+        assert!(assert_public_safe(&json!({ "private_key": "x" })).is_err());
+        assert!(assert_public_safe(&json!({ "note_witnesses": [] })).is_err());
     }
 
     #[test]
