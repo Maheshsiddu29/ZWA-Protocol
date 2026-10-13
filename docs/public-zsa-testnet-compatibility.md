@@ -188,9 +188,11 @@ These were identified in the source, and none was changed:
 4. **Wait** for a public network that adopts multi-Action-Group swap consensus.
    Keep public verification claims limited to local regtest evidence until then.
 
-Phases 2–5 are **not started**. No public transaction will be built, signed or
-broadcast without the owner's choice among these options and a separate
-explicit approval.
+This paragraph records the **Phase 1 state when observed**. Phase 2 isolated
+laboratory validation was subsequently completed; see
+`docs/public-zsa-testnet-phase2-report.md`. No public transaction has been
+broadcast. Public faucet use and each public broadcast require separate
+explicit owner approval.
 
 ## Third-party attribution
 
