@@ -67,10 +67,16 @@ def _docker(*args: str) -> str:
     return result.stdout.strip()
 
 
-def _rpc(port: int, method: str, params: list | None = None) -> object:
+RPC_HOST = re.compile(r"127\.0\.0\.1|[a-z][a-z0-9-]{0,62}\Z")
+
+
+def _rpc(port: int, method: str, params: list | None = None, host: str = "127.0.0.1") -> object:
+    # Loopback on the developer machine, or a private Compose service name.
+    if not RPC_HOST.fullmatch(host):
+        raise ChainError("RPC host must be loopback or a private service name")
     body = json.dumps({"jsonrpc": "1.0", "id": "zwa4e", "method": method,
                        "params": params or []}).encode()
-    request = Request(f"http://127.0.0.1:{port}", body,
+    request = Request(f"http://{host}:{port}", body,
                       {"content-type": "application/json"})
     with urlopen(request, timeout=5) as response:
         data = json.load(response)
@@ -128,9 +134,9 @@ def _validate_container(info: dict, root: Path, port: int) -> None:
 
 
 def _paths(root: Path) -> tuple[Path, Path]:
-    if (root.parent != Path("/private/tmp")
+    if (root.parent not in (Path("/private/tmp"), Path("/var/lib/zwa"))
             or not re.fullmatch(r"zwa4e-[A-Za-z0-9-]+", root.name)):
-        raise ChainError("root must be an absolute /private/tmp/zwa4e-* directory")
+        raise ChainError("root must be an absolute /private/tmp/zwa4e-* or /var/lib/zwa/zwa4e-* directory")
     if root.is_symlink():
         raise ChainError("root cannot be a symlink")
     chain = root / "chain"
@@ -206,41 +212,49 @@ def start(root: Path, container: str, port: int) -> dict:
             "anchorHeight": meta["anchorHeight"], "anchorHash": meta["anchorHash"]}
 
 
-def checkpoint(root: Path, port: int) -> dict:
+def checkpoint(root: Path, port: int, host: str = "127.0.0.1") -> dict:
     _paths(root)
     meta = _meta(root)
     if not meta:
         raise ChainError("chain has not been initialized")
-    height = _rpc(port, "getblockcount")
-    verify_anchor(meta, lambda h: _rpc(port, "getblockhash", [h]), height)
+    height = _rpc(port, "getblockcount", host=host)
+    verify_anchor(meta, lambda h: _rpc(port, "getblockhash", [h], host=host), height)
     # This pinned Zebra drops its last 99 non-finalized blocks on restart.
     # Never checkpoint the volatile tip as though it were durable.
     safe_height = max(meta["anchorHeight"], height - 100)
     meta["anchorHeight"] = safe_height
-    meta["anchorHash"] = _rpc(port, "getblockhash", [safe_height])
+    meta["anchorHash"] = _rpc(port, "getblockhash", [safe_height], host=host)
     meta["lastObservedHeight"] = height
     _atomic_json(root / "chain-identity.json", meta)
     return {"state": "CHAIN_ACTIVE", "height": height, "anchorHeight": safe_height,
             "anchorHash": meta["anchorHash"]}
 
 
-def status(root: Path, container: str, port: int) -> dict:
+def status(root: Path, container: str, port: int, *, host: str = "127.0.0.1",
+           managed: str = "docker-local") -> dict:
+    """Live chain state. "external": a separately managed node (Compose);
+    this process cannot inspect the container, so identity rests on the
+    recorded genesis and anchor hashes alone."""
     _paths(root)
     meta = _meta(root) if root.exists() else None
     if not meta:
         return {"state": "CHAIN_STOPPED", "reason": "UNINITIALIZED"}
     if meta.get("detectedReset"):
         return {"state": "CHAIN_RESET", "reason": meta["detectedReset"]}
-    if not _state_exists(root / "chain"):
-        return {"state": "CHAIN_RESET", "reason": "STATE_DATABASE_MISSING"}
-    info = _inspect(container)
-    if not info or not info["State"]["Running"]:
-        return {"state": "CHAIN_STOPPED", "anchorHeight": meta["anchorHeight"]}
-    _validate_container(info, root, port)
+    if managed == "docker-local":
+        if not _state_exists(root / "chain"):
+            return {"state": "CHAIN_RESET", "reason": "STATE_DATABASE_MISSING"}
+        info = _inspect(container)
+        if not info or not info["State"]["Running"]:
+            return {"state": "CHAIN_STOPPED", "anchorHeight": meta["anchorHeight"]}
+        _validate_container(info, root, port)
+    elif managed != "external":
+        raise ChainError("unsupported chain management")
     try:
-        height = _rpc(port, "getblockcount")
-        genesis = _rpc(port, "getblockhash", [0])
-        anchor = _rpc(port, "getblockhash", [meta["anchorHeight"]]) if height >= meta["anchorHeight"] else None
+        height = _rpc(port, "getblockcount", host=host)
+        genesis = _rpc(port, "getblockhash", [0], host=host)
+        anchor = (_rpc(port, "getblockhash", [meta["anchorHeight"]], host=host)
+                  if height >= meta["anchorHeight"] else None)
     except Exception as exc:
         return {"state": "CHAIN_STOPPED", "reason": "RPC_UNAVAILABLE", "detail": str(exc)}
     try:

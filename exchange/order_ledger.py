@@ -44,7 +44,16 @@ PRE_EXECUTION_STATES = ("BUYER_REQUESTED", "QUOTE_READY", "BUYER_CONFIRMED",
                         "PROOF_VERIFIED", "TRADE_AUTHORIZED")
 PRICE_CLASSIFICATION = "SELLER_FIXED_EXPERIMENTAL"
 ROLES = ("buyer", "seller")
-SCHEMA_VERSION = 3
+APPROVAL_MODES = ("HUMAN_APPROVED", "SCRIPTED_TEST_MODE", "CUSTODIAL_DEMO_POLICY")
+# OPERATOR_CONFIRMED_LOCAL_COMPANION: a human-run companion confirmed PAIR.
+# CUSTODIAL_DEMO_WALLET: a disposable server-held judge wallet (schema 4).
+# DEMO_DEALER_STANDING_POLICY: the demo dealer's bounded standing policy.
+PAIRING_METHODS = ("OPERATOR_CONFIRMED_LOCAL_COMPANION", "CUSTODIAL_DEMO_WALLET",
+                   "DEMO_DEALER_STANDING_POLICY")
+SCHEMA_VERSION = 4
+# Ledgers holding owner-reviewed evidence are never migrated implicitly.
+# Kept in sync with exchange.config.PROTECTED_ROOTS.
+PROTECTED_LEDGERS = frozenset({"/private/tmp/zwa4e-phase4e-b/exchange/exchange.sqlite"})
 
 
 class OrderError(ValueError):
@@ -102,13 +111,81 @@ class OrderLedger:
         self.database = database
         with self._connection() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, SCHEMA_VERSION):
+            if version not in (0, 1, 2, 3, SCHEMA_VERSION):
                 raise OrderError("unsupported order database schema")
-            if version < SCHEMA_VERSION:
+            if version < 3:
                 self._migrate(db, version)
+                version = 3
+            if version == 3 and str(database) not in PROTECTED_LEDGERS:
+                self._migrate_v4(db)
+                version = SCHEMA_VERSION
+        # A protected v3 ledger stays v3: it supports the human companion flow
+        # only. Demo tables exist from schema 4.
+        self.schema = version
+
+    def _migrate_v4(self, db: sqlite3.Connection) -> None:
+        """Add custodial demo wallets, wallet scans and settings (v3 -> v4).
+
+        Every existing row is copied unchanged; wallet_pairings only gains two
+        method values. Nothing is inferred about existing pairings.
+        """
+        methods = ",".join("'" + method + "'" for method in PAIRING_METHODS)
+        script = f"""
+            CREATE TABLE wallet_pairings_v4 (
+              id TEXT PRIMARY KEY, account_id TEXT NOT NULL,
+              role TEXT NOT NULL CHECK(role IN ('buyer','seller')),
+              wallet_address TEXT NOT NULL, session_hash TEXT NOT NULL,
+              method TEXT NOT NULL CHECK(method IN ({methods})),
+              created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, revoked_at INTEGER
+            );
+            INSERT INTO wallet_pairings_v4 SELECT id,account_id,role,wallet_address,session_hash,
+              method,created_at,expires_at,revoked_at FROM wallet_pairings;
+            DROP TABLE wallet_pairings;
+            ALTER TABLE wallet_pairings_v4 RENAME TO wallet_pairings;
+            CREATE TABLE demo_wallets (
+              id TEXT PRIMARY KEY, account_id TEXT NOT NULL UNIQUE,
+              session_hash TEXT NOT NULL UNIQUE, client_hash TEXT NOT NULL,
+              state TEXT NOT NULL CHECK(state IN ('REQUESTED','CREATED','FUNDING','READY',
+                                                  'EXPIRED','RETIRED','FAILED')),
+              wallet_address TEXT UNIQUE, pairing_id TEXT UNIQUE REFERENCES wallet_pairings(id),
+              funding_txid TEXT UNIQUE, funding_height INTEGER, failure TEXT,
+              created_at INTEGER NOT NULL, ready_at INTEGER, expires_at INTEGER NOT NULL,
+              retired_at INTEGER
+            );
+            CREATE INDEX demo_wallets_created ON demo_wallets(created_at);
+            CREATE TABLE wallet_scans (
+              wallet_key TEXT NOT NULL, asset_base TEXT NOT NULL,
+              scan_height INTEGER NOT NULL CHECK(scan_height > 0), block_hash TEXT NOT NULL,
+              native_zat INTEGER NOT NULL CHECK(native_zat >= 0),
+              asset_units INTEGER NOT NULL CHECK(asset_units >= 0), scanned_at INTEGER NOT NULL,
+              PRIMARY KEY(wallet_key,asset_base,scan_height)
+            );
+            CREATE TABLE demo_settings (
+              key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL
+            )
+        """
+        db.execute("PRAGMA foreign_keys=OFF")
+        try:
+            db.execute("BEGIN IMMEDIATE")
+            if db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION:
+                db.execute("COMMIT")
+                return
+            for statement in script.split(";"):
+                if statement.strip():
+                    db.execute(statement)
+            if db.execute("PRAGMA foreign_key_check").fetchall():
+                raise OrderError("ledger migration would break references")
+            db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+            db.execute("COMMIT")
+        except Exception:
+            if db.in_transaction:
+                db.execute("ROLLBACK")
+            raise
+        finally:
+            db.execute("PRAGMA foreign_keys=ON")
 
     def _migrate(self, db: sqlite3.Connection, version: int) -> None:
-        """Bring any earlier schema to v3 in one transaction.
+        """Bring any schema before v3 to v3 in one transaction.
 
         Existing offers, order IDs, reservations, event sequences, evidence
         and settlements are copied unchanged; only the orders state constraint
@@ -119,7 +196,7 @@ class OrderLedger:
         try:
             db.execute("BEGIN IMMEDIATE")
             # Another process may have migrated while this one waited for the lock.
-            if db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION:
+            if db.execute("PRAGMA user_version").fetchone()[0] >= 3:
                 db.execute("COMMIT")
                 return
             script = ("""
@@ -228,7 +305,7 @@ class OrderLedger:
                     db.execute(statement)
             if db.execute("PRAGMA foreign_key_check").fetchall():
                 raise OrderError("ledger migration would break references")
-            db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+            db.execute("PRAGMA user_version=3")
             db.execute("COMMIT")
         except Exception:
             if db.in_transaction:
@@ -448,7 +525,7 @@ class OrderLedger:
 
     def heartbeat(self, pairing_id: str, *, pid: int, mode: str) -> None:
         _record_id(pairing_id); _positive(pid)
-        if mode not in ("HUMAN_APPROVED", "SCRIPTED_TEST_MODE"):
+        if mode not in APPROVAL_MODES:
             raise OrderError("invalid companion mode")
         with self._transaction() as db:
             db.execute("""INSERT INTO companion_presence VALUES (?,?,?,?)
@@ -698,7 +775,7 @@ class OrderLedger:
     def start_execution(self, order_id: str, *, approval_mode: str) -> tuple[dict, bool]:
         """Insert the single-execution guard. Returns (row, created)."""
         _record_id(order_id)
-        if approval_mode not in ("HUMAN_APPROVED", "SCRIPTED_TEST_MODE"):
+        if approval_mode not in APPROVAL_MODES:
             raise OrderError("invalid approval mode")
         with self._transaction() as db:
             prior = db.execute("SELECT * FROM order_executions WHERE order_id=?", (order_id,)).fetchone()
@@ -796,8 +873,7 @@ class OrderLedger:
             raise OrderError("transition lacks required observation")
         if state in ("BUYER_APPROVED", "SELLER_APPROVED"):
             role = "buyer" if state == "BUYER_APPROVED" else "seller"
-            if evidence["role"] != role or evidence["approvalMode"] not in (
-                    "SCRIPTED_TEST_MODE", "HUMAN_APPROVED"):
+            if evidence["role"] != role or evidence["approvalMode"] not in APPROVAL_MODES:
                 raise OrderError("signer identity or approval mode mismatch")
         if state == "RECONCILED":
             numeric = ("buyerUnitsBefore", "buyerUnitsAfter", "sellerUnitsBefore",

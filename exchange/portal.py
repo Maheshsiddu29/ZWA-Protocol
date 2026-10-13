@@ -17,6 +17,8 @@ import time
 
 from checkout.quote import from_terms
 from .config import ConfigError, ExchangeConfig, load as load_config
+from .demo_ledger import DEALER_KEY, DemoLedger, is_demo_account
+from .demo_wallets import status_view
 from .order_ledger import OrderError, OrderLedger, PRICE_CLASSIFICATION, create_live_offer
 from .order_paths import order_dir, quote_dir
 from .persistent_chain import _rpc
@@ -38,7 +40,15 @@ class PortalError(ValueError):
 class Portal:
     def __init__(self, config: ExchangeConfig):
         self.config = config
-        self.ledger = OrderLedger(config.ledger_path)
+        self.ledger = DemoLedger(config.ledger_path) if config.demo_mode else OrderLedger(config.ledger_path)
+
+    @property
+    def demo(self):
+        """The hosted judge sandbox policy, or None for a human/scripted root."""
+        return self.config.demo if self.config.demo_mode else None
+
+    def _rpc(self, method: str, params: list | None = None) -> object:
+        return _rpc(self.config.rpc_port, method, params or [], host=self.config.rpc_host)
 
     # ------------------------------------------------------------ chain/scans
 
@@ -49,11 +59,10 @@ class Portal:
         identity = self._identity()
         if identity.get("detectedReset"):
             return False, None
-        port = self.config.rpc_port
         try:
-            height = _rpc(port, "getblockcount")
-            if (_rpc(port, "getblockhash", [0]) != identity["genesisHash"] or
-                    _rpc(port, "getblockhash", [identity["anchorHeight"]]) != identity["anchorHash"]):
+            height = self._rpc("getblockcount")
+            if (self._rpc("getblockhash", [0]) != identity["genesisHash"] or
+                    self._rpc("getblockhash", [identity["anchorHeight"]]) != identity["anchorHash"]):
                 return False, None
             return True, height
         except Exception:
@@ -76,6 +85,8 @@ class Portal:
     # --------------------------------------------------------------- wallets
 
     def wallet(self, actor: str, role: str, session: str) -> dict:
+        if self.demo:
+            return self.demo_wallet(actor, role, session)
         pairing = self.ledger.active_pairing(account_id=actor, role=role, session_hash=session)
         if not pairing:
             return {"paired": False, "role": role, "approvalMode": self.config.approval_mode}
@@ -86,7 +97,92 @@ class Portal:
                 "pairedAt": pairing["created_at"], "expiresAt": pairing["expires_at"],
                 "companionOnline": online is not None, "approvalMode": self.config.approval_mode}
 
+    # ------------------------------------------------------------ demo mode
+
+    def _block_hash(self, height: int) -> str:
+        return self._rpc("getblockhash", [height])
+
+    def demo_start(self, session: str, payload: dict) -> dict:
+        if not self.demo:
+            raise PortalError("the hosted demo is not enabled on this exchange")
+        if set(payload) != {"clientHash"} or not HEX32.fullmatch(str(payload["clientHash"])):
+            raise PortalError("demo request schema")
+        row = self.ledger.request_wallet(session_hash=session, client_hash=payload["clientHash"],
+                                         policy=self.demo)
+        return {"accountId": row["account_id"], "expiresAt": row["expires_at"]}
+
+    def demo_wallet(self, actor: str, role: str, session: str) -> dict:
+        if role == "seller":
+            return self.dealer_desk(actor)
+        row = self.ledger.wallet_for_session(actor, session)
+        if not row:
+            raise PortalError("demo session expired")
+        active, tip = self.live()
+        view = status_view(self.ledger, row, self.assets(), tip if active else None, self._block_hash)
+        limits = self.demo
+        view.update({"role": "buyer", "approvalMode": self.config.approval_mode, "paired": row["state"] == "READY",
+                     "chainActive": active, "chainHeight": tip,
+                     "limits": {"maxOrders": limits.max_orders_per_wallet,
+                                "maxUnitsPerOrder": limits.max_units_per_order,
+                                "maxPaymentZatPerOrder": limits.max_payment_zat_per_order}})
+        return view
+
+    def assets(self) -> dict[str, str]:
+        return {key: item["asset_base"] for key, item in self._registry().items()}
+
+    def _dealer_units(self, tip: int | None) -> dict[str, dict]:
+        """Newest dealer scans whose block is still in the live chain."""
+        result = {}
+        if tip is None:
+            return result
+        for asset, scan in self.ledger.latest_scans(DEALER_KEY).items():
+            try:
+                if scan["scan_height"] <= tip and self._block_hash(scan["scan_height"]) == scan["block_hash"]:
+                    result[asset] = scan
+            except Exception:
+                continue
+        return result
+
+    def dealer_desk(self, actor: str) -> dict:
+        if actor != self.demo.dealer_account_id:
+            raise PortalError("seller desk is only available to the demo dealer")
+        active, tip = self.live()
+        scans = self._dealer_units(tip if active else None)
+        pairing = self.ledger.active_pairing(account_id=actor, role="seller")
+        online = pairing and self.ledger.companion_online(
+            pairing["id"], stale_seconds=self.config.companion_stale_seconds)
+        holdings = [{"instrumentId": key, "assetBase": asset,
+                     "units": scans[asset]["asset_units"], "scanHeight": scans[asset]["scan_height"]}
+                    for key, asset in self.assets().items() if asset in scans]
+        newest = max(scans.values(), key=lambda scan: scan["scan_height"], default=None)
+        address = pairing["wallet_address"] if pairing else None
+        return {"mode": "DEMO_DEALER_STANDING_POLICY", "role": "seller", "paired": bool(pairing),
+                "approvalMode": self.config.approval_mode, "chainActive": active, "chainHeight": tip,
+                "walletAddress": f"{address[:10]}…{address[-6:]}" if address else None,
+                "signerOnline": bool(online), "policy": self.ledger.setting("dealerPolicy"),
+                "nativeZat": newest["native_zat"] if newest else None,
+                "scanHeight": newest["scan_height"] if newest else None, "holdings": holdings,
+                "limits": {"maxUnitsPerOrder": self.demo.max_units_per_order,
+                           "maxPaymentZatPerOrder": self.demo.max_payment_zat_per_order,
+                           "maxSponsoredOrdersPerHour": self.demo.max_sponsored_orders_per_hour},
+                "sponsoredLastHour": self.ledger.sponsored_last_hour()}
+
+    def set_dealer_policy(self, actor: str, payload: dict) -> dict:
+        if not self.demo or actor != self.demo.dealer_account_id:
+            raise PortalError("only the demo dealer controls its standing policy")
+        if set(payload) != {"policy"} or payload["policy"] not in ("ACTIVE", "PAUSED"):
+            raise PortalError("policy request schema")
+        self.ledger.set_setting("dealerPolicy", payload["policy"])
+        return self.dealer_desk(actor)
+
+    def demo_end(self, actor: str, session: str) -> dict:
+        if not self.demo or not self.ledger.end_session(actor, session):
+            raise PortalError("demo session expired")
+        return {"ended": True}
+
     def pair(self, actor: str, role: str, session: str, payload: dict) -> dict:
+        if self.demo:
+            raise PortalError("the hosted demo uses server-held demo wallets; pairing is not available")
         if set(payload) != {"code"} or not isinstance(payload["code"], str):
             raise PortalError("pairing request schema")
         code = payload["code"].replace("-", "").replace(" ", "").upper()
@@ -101,8 +197,13 @@ class Portal:
         registry = self._registry()
         if not active:
             return {"chainActive": False, "instruments": []}
-        portfolio = self._portfolio_at_tip(tip)
-        units = {h["assetBase"]: h["sellerUnits"] for h in portfolio["holdings"]} if portfolio else {}
+        if self.demo:
+            scans = self._dealer_units(tip)
+            portfolio = scans or None
+            units = {asset: scan["asset_units"] for asset, scan in scans.items()}
+        else:
+            portfolio = self._portfolio_at_tip(tip)
+            units = {h["assetBase"]: h["sellerUnits"] for h in portfolio["holdings"]} if portfolio else {}
         with self.ledger._connection() as db:
             rows = db.execute("""SELECT f.*,p.price_zat_per_unit,p.classification,p.version
                                  FROM offers f LEFT JOIN offer_prices p ON p.offer_id=f.id
@@ -114,17 +215,27 @@ class Portal:
                 continue
             available = min(row["capacity"] - row["reserved"] - row["sold"],
                             units.get(row["asset_base"], 0) - row["reserved"]) if portfolio else 0
+            if self.demo:
+                available = min(available, self.demo.max_units_per_order * 1000)
             result.append({"offerId": row["id"], "instrumentId": row["instrument_id"],
                            "name": item["name"], "issuerId": item["issuer_id"],
                            "assetBase": row["asset_base"], "issuanceTxid": item["issuance_txid"],
                            "issuanceHeight": item["issuance_height"],
                            "availableUnits": max(available, 0),
-                           "inventoryVerifiedAtTip": portfolio is not None,
+                           "inventoryVerifiedAtTip": portfolio is not None and (
+                               not self.demo or row["asset_base"] in units),
+                           "inventoryScanHeight": (scans[row["asset_base"]]["scan_height"]
+                                                   if self.demo and row["asset_base"] in units else tip),
                            "priceZatPerUnit": row["price_zat_per_unit"],
                            "priceClassification": row["classification"],
                            "priceVersion": row["version"],
                            "sellerId": row["seller_id"] if row["seller_id"] == actor else None})
-        return {"chainActive": True, "chainHeight": tip, "instruments": result}
+        market = {"chainActive": True, "chainHeight": tip, "instruments": result}
+        if self.demo:
+            market["demo"] = {"dealerPolicy": self.ledger.setting("dealerPolicy"),
+                              "maxUnitsPerOrder": self.demo.max_units_per_order,
+                              "maxPaymentZatPerOrder": self.demo.max_payment_zat_per_order}
+        return market
 
     def set_price(self, actor: str, payload: dict) -> dict:
         if set(payload) != {"offerId", "priceZatPerUnit"} or not HEX16.fullmatch(str(payload["offerId"])):
@@ -137,6 +248,8 @@ class Portal:
     def create_offer(self, actor: str, payload: dict) -> dict:
         if set(payload) != {"instrumentId", "capacity", "idempotencyKey"}:
             raise PortalError("offer request schema")
+        if self.demo:
+            raise PortalError("demo dealer offers are created by the operator setup")
         offer = create_live_offer(self.config.root, self.config.container, self.config.rpc_port,
                                   seller_id=actor, instrument_id=payload["instrumentId"],
                                   capacity=payload["capacity"], idempotency_key=payload["idempotencyKey"])
@@ -151,7 +264,8 @@ class Portal:
                 or type(payload["quantity"]) is not int or not 1 <= payload["quantity"] <= 1000):
             raise PortalError("purchase request schema")
         if not self.ledger.active_pairing(account_id=actor, role="buyer", session_hash=session):
-            raise PortalError("pair your wallet before requesting a purchase")
+            raise PortalError("your demo wallet is not ready yet" if self.demo
+                              else "pair your wallet before requesting a purchase")
         active, tip = self.live()
         if not active:
             raise PortalError("experimental chain is unavailable")
@@ -159,17 +273,46 @@ class Portal:
         price = self.ledger.offer_price(payload["offerId"]) if offer else None
         if not offer or not price:
             raise PortalError("offer has no seller price")
-        portfolio = self._portfolio_at_tip(tip)
-        if portfolio is None:
-            raise PortalError("seller inventory scan is stale")
-        holding = next((h for h in portfolio["holdings"] if h["assetBase"] == offer["asset_base"]), None)
-        if not holding or holding["sellerUnits"] < offer["reserved"] + payload["quantity"]:
-            raise PortalError("seller spendable inventory is unavailable")
+        if self.demo:
+            # A retried submission returns its existing order (the ledger checks
+            # that the key is not reused for a different purchase).
+            if not any(o["idempotency_key"] == payload["idempotencyKey"]
+                       for o in self.ledger.orders_for_buyer(actor)):
+                self._demo_purchase_allowed(actor, offer, price, payload["quantity"], tip)
+        else:
+            portfolio = self._portfolio_at_tip(tip)
+            if portfolio is None:
+                raise PortalError("seller inventory scan is stale")
+            holding = next((h for h in portfolio["holdings"] if h["assetBase"] == offer["asset_base"]), None)
+            if not holding or holding["sellerUnits"] < offer["reserved"] + payload["quantity"]:
+                raise PortalError("seller spendable inventory is unavailable")
         order = self.ledger.request_purchase(offer_id=offer["id"], buyer_id=actor,
                                              quantity=payload["quantity"],
                                              idempotency_key=payload["idempotencyKey"],
                                              chain_genesis=self._identity()["genesisHash"])
         return self.order(order["id"], actor, "buyer")
+
+    def _demo_purchase_allowed(self, actor: str, offer: dict, price: dict, quantity: int, tip: int) -> None:
+        """Server-side limits for one judge purchase; the signer re-checks them."""
+        limits = self.demo
+        if offer["seller_id"] != limits.dealer_account_id or offer["state"] != "OFFER_CREATED":
+            raise PortalError("offer is not a demo dealer listing")
+        if self.ledger.setting("dealerPolicy") != "ACTIVE":
+            raise PortalError("the dealer has paused new sales")
+        if quantity > limits.max_units_per_order:
+            raise PortalError(f"demo purchases are limited to {limits.max_units_per_order} units per order")
+        if quantity * price["price_zat_per_unit"] > limits.max_payment_zat_per_order:
+            raise PortalError("this purchase exceeds the demo payment limit")
+        existing = self.ledger.open_order(actor)
+        if existing:
+            raise PortalError("finish or cancel your current order first")
+        if self.ledger.counted_orders(actor) >= limits.max_orders_per_wallet:
+            raise PortalError("this demo wallet reached its purchase limit")
+        if self.ledger.sponsored_last_hour() >= limits.max_sponsored_orders_per_hour:
+            raise PortalError("the demo's hourly settlement budget is used up; try again later")
+        scan = self._dealer_units(tip).get(offer["asset_base"])
+        if not scan or scan["asset_units"] < offer["reserved"] + quantity:
+            raise PortalError("dealer inventory is unavailable")
 
     def confirm(self, actor: str, session: str, payload: dict) -> dict:
         if (set(payload) != {"orderId", "quoteDigest"} or not HEX16.fullmatch(str(payload["orderId"]))
@@ -245,7 +388,7 @@ class Portal:
                         saved.get("blockHash") == included.get("blockHash") and
                         saved.get("quoteDigest") == detail["quote_digest"]):
                     try:
-                        block = _rpc(self.config.rpc_port, "getblock", [str(saved["height"]), 1])
+                        block = self._rpc("getblock", [str(saved["height"]), 1])
                         if block["hash"] == saved["blockHash"] and saved["txid"] in block["tx"]:
                             receipt = {**saved, "confirmations": tip - saved["height"] + 1,
                                        "durability": self._durability(order_id)}
@@ -298,19 +441,42 @@ def handle(request: dict) -> dict:
         raise PortalError("bridge request schema")
     action, actor, role, session, payload = (request[k] for k in
                                              ("action", "actor", "role", "sessionHash", "payload"))
-    if (not isinstance(actor, str) or not IDENT.fullmatch(actor) or role not in ("buyer", "seller")
-            or not isinstance(session, str) or not HEX32.fullmatch(session) or type(payload) is not dict):
+    if not isinstance(session, str) or not HEX32.fullmatch(session) or type(payload) is not dict:
+        raise PortalError("invalid participant")
+    if action == "demo-start":
+        # The only anonymous action: admit a new judge session under the caps.
+        if actor != "anonymous" or role != "anonymous":
+            raise PortalError("invalid participant")
+        return Portal(load_config()).demo_start(session, payload)
+    if not isinstance(actor, str) or not IDENT.fullmatch(actor) or role not in ("buyer", "seller"):
         raise PortalError("invalid participant")
     portal = Portal(load_config())
-    buyer_only = {"buy", "confirm", "cancel"}
-    seller_only = {"set-price", "create-offer"}
+    if portal.demo:
+        # Every judge request is re-bound to its live wallet session here; a
+        # signed browser cookie alone is not enough. Buyers in the hosted demo
+        # are always judge sessions and the only seller is the dealer.
+        if role == "buyer" and not (is_demo_account(actor) and
+                                    portal.ledger.wallet_for_session(actor, session)):
+            raise PortalError("demo session expired")
+        if role == "seller" and actor != portal.demo.dealer_account_id:
+            raise PortalError("role or action unavailable")
+    elif is_demo_account(actor):
+        raise PortalError("invalid participant")
+    buyer_only = {"buy", "confirm", "cancel", "demo-end"}
+    seller_only = {"set-price", "create-offer", "dealer-policy"}
     if (action in buyer_only and role != "buyer") or (action in seller_only and role != "seller"):
         raise PortalError("role or action unavailable")
+    if action == "demo-end":
+        return portal.demo_end(actor, session)
+    if action == "dealer-policy":
+        return portal.set_dealer_policy(actor, payload)
     if action == "wallet":
         return portal.wallet(actor, role, session)
     if action == "pair":
         return portal.pair(actor, role, session, payload)
     if action == "unpair":
+        if portal.demo:
+            raise PortalError("the hosted demo uses server-held demo wallets; pairing is not available")
         portal.ledger.revoke_pairing(account_id=actor, role=role, session_hash=session)
         return portal.wallet(actor, role, session)
     if action == "market":

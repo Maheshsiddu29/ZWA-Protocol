@@ -94,6 +94,8 @@ class Companion:
         self.pid = os.getpid()
         self.pairing: dict | None = None
         self._stop = threading.Event()
+        if self.mode == "CUSTODIAL_DEMO_POLICY":
+            raise SystemExit("custodial demo roots are served by exchange.demo_signer, not a companion")
         if self.mode == "HUMAN_APPROVED" and not (sys.stdin.isatty() and sys.stdout.isatty()):
             raise SystemExit("the human wallet companion must run in an interactive terminal")
         if self.mode == "SCRIPTED_TEST_MODE" and config.protected:

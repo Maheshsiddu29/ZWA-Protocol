@@ -19,7 +19,7 @@ class ChainIdentityTests(unittest.TestCase):
                         "genesisHash":"0"*64,"anchorHeight":113,
                         "anchorHash":"a"*64,"lastStartState":"CHAIN_RESTARTED"}
             (root/"chain-identity.json").write_text(json.dumps(identity))
-            def fake_rpc(_port,method,params=None):
+            def fake_rpc(_port,method,params=None,host="127.0.0.1"):
                 if method == "getblockcount": return 2215
                 if method == "getblockhash":
                     return "a"*64 if params == [113] else "b"*64

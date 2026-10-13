@@ -32,9 +32,11 @@ import time
 
 from checkout.api import SessionError, read_authorization, read_scans, read_session
 from checkout.quote import from_terms
-from checkout.scans import parse, write as write_public_scans
+from checkout.scans import LINE as SCAN_LINE, parse, write as write_public_scans
 from . import persistent_chain
 from .config import ExchangeConfig, load as load_config
+from .demo_ledger import DemoLedger
+from .demo_wallets import DemoError, DemoOperator
 from .order_ledger import OrderError, OrderLedger, WALLET_COMMITTED_STATES
 from .order_paths import order_dir
 from .portfolio_scans import build as build_portfolio
@@ -76,11 +78,14 @@ class OrderService:
     def __init__(self, config: ExchangeConfig, *, ledger: OrderLedger | None = None,
                  tools: Tools | None = None, log=None):
         self.config = config
-        self.ledger = ledger or OrderLedger(config.ledger_path)
+        self.ledger = ledger or (DemoLedger(config.ledger_path) if config.demo_mode
+                                 else OrderLedger(config.ledger_path))
         self.tools = tools or Tools(config)
         self.log = log or (lambda event: print(json.dumps(event, sort_keys=True), flush=True))
         self.registry = small_json(config.exchange / "instrument-registry.json")
         self.assets = {item["id"]: item["asset_base"] for item in self.registry["instruments"]}
+        # Custodial judge sandbox only; never present for a human-approved root.
+        self.demo = DemoOperator(self) if config.demo_mode else None
 
     # ---------------------------------------------------------------- helpers
 
@@ -98,11 +103,23 @@ class OrderService:
             raise ServiceError("order instrument is not an issued registry asset")
         return instrument
 
-    def _scan(self, role: str, asset: str, path: Path) -> dict:
-        lines = [line for line in self.tools.signer(role, "balances", "--asset", asset)
+    def _scan(self, role: str, asset: str, path: Path, wallet: str | None = None) -> dict:
+        lines = [line for line in self.tools.signer(role, "balances", "--asset", asset, wallet=wallet)
                  if line.startswith("PHASE35F_BALANCES ")]
         write_lines(path, lines)
         return parse(path, role.title(), asset)
+
+    @staticmethod
+    def parse_scan(lines: list[str], role: str, asset: str) -> dict:
+        matches = [m for line in lines if (m := SCAN_LINE.fullmatch(line))]
+        if len(matches) != 1 or matches[0].group(1) != role.title() or matches[0].group(4) != asset:
+            raise ServiceError("scanner output does not match role and asset")
+        return {"height": int(matches[0].group(2)), "nativeZat": int(matches[0].group(3)),
+                "assetUnits": int(matches[0].group(5))}
+
+    def _wallet(self, pairing_id: str) -> str | None:
+        """Demo wallet behind a buyer pairing; None means the role's own wallet."""
+        return self.demo.wallet_for_pairing(pairing_id) if self.demo else None
 
     def _quote(self, order_id: str) -> tuple[dict, dict, dict, Path]:
         quote_row = self.ledger.order_quote(order_id)
@@ -135,13 +152,19 @@ class OrderService:
             for order in self.ledger.orders_in(ACTIVE_STATES):
                 self._note(order["id"], "Paused: the experimental chain is unavailable.")
             return
+        if self.demo:
+            # Provisioning may mine blocks, but only while no quote is live.
+            self.demo.tick(chain["height"])
+            chain = self.tools.chain()
+            if chain.get("state") not in ("CHAIN_ACTIVE", "CHAIN_RESTARTED"):
+                return
         for order in self.ledger.orders_in(ACTIVE_STATES):
             # Advance one order through every step its current evidence allows.
             for _ in range(len(ACTIVE_STATES)):
                 try:
                     self.step(order, chain["height"])
-                except (OrderError, ServiceError, ToolError, SessionError, subprocess.TimeoutExpired,
-                        OSError, ValueError) as exc:
+                except (OrderError, ServiceError, ToolError, SessionError, DemoError,
+                        subprocess.TimeoutExpired, OSError, ValueError) as exc:
                     self.log({"orderId": order["id"], "state": order["state"], "error": str(exc)[:300]})
                     try:
                         self._note(order["id"], "Waiting: " + str(exc)[:200])
@@ -180,6 +203,10 @@ class OrderService:
         if self.ledger.wallets_committed(order_id):
             self._note(order_id, "Queued: another live quote is using these wallets.")
             return
+        if self.demo and self.demo.funding_pending():
+            # Funding mines a block; it must not land between quote and execution.
+            self._note(order_id, "Queued: a new demo wallet is being funded. Your quote follows.")
+            return
         price = self.ledger.offer_price(order["offer_id"])
         if not price:
             self._note(order_id, "Waiting for the seller to set a fixed experimental price.")
@@ -193,7 +220,7 @@ class OrderService:
             self._note(order_id, "Waiting for the seller's wallet pairing.")
             return
         work = self._work(order_id)
-        buyer_scan = self._scan("buyer", asset, work / "buyer-before.log")
+        buyer_scan = self._scan("buyer", asset, work / "buyer-before.log", self._wallet(buyer["id"]))
         seller_scan = self._scan("seller", asset, work / "seller-before.log")
         if buyer_scan["height"] != tip or seller_scan["height"] != tip:
             raise ServiceError("wallet scans are not at the current chain tip")
@@ -325,8 +352,10 @@ class OrderService:
             raise ServiceError("proof or exact trade terms changed")
         try:
             for role in ("buyer", "seller"):
+                wallet = self._wallet(quote_row["buyer_pairing_id"]) if role == "buyer" else None
                 write_lines(work / f"{role}-review.log",
-                            self.tools.signer(role, "review", "--terms", str(qdir / "terms.json")))
+                            self.tools.signer(role, "review", "--terms", str(qdir / "terms.json"),
+                                              wallet=wallet))
         except ToolError as exc:
             self.ledger.fail(order_id, expected="PROOF_VERIFIED", state="REJECTED", release=True,
                              evidence={"reason": "WALLET_REVIEW_REJECTED_TERMS",
@@ -541,8 +570,10 @@ class OrderService:
             state = "INCLUDED"
         if state == "INCLUDED":
             asset = quote["assetId"]
+            buyer_wallet = self._wallet(quote_row["buyer_pairing_id"])
             for role in ("buyer", "seller"):
-                after = self._scan(role, asset, work / f"{role}-after.log")
+                after = self._scan(role, asset, work / f"{role}-after.log",
+                                   buyer_wallet if role == "buyer" else None)
                 if after["height"] < receipt["height"]:
                     raise ServiceError("wallet scan predates the accepted block")
             b0, b1, s0, s1 = (parse(work / f"{name}.log", name.split("-")[0].title(), asset)
@@ -562,6 +593,8 @@ class OrderService:
                                    work / "buyer-before.log", work / "buyer-after.log",
                                    work / "seller-before.log", work / "seller-after.log")
             read_scans(work / "public-scans.json", session)
+            if self.demo and buyer_wallet:
+                self.demo.record_settlement_scans(buyer_wallet, asset, b1, s1)
             self.ledger.transition(order_id, expected="INCLUDED", state="RECONCILED", evidence={
                 "txid": receipt["txid"], "buyerUnitsBefore": b0["assetUnits"],
                 "buyerUnitsAfter": b1["assetUnits"], "sellerUnitsBefore": s0["assetUnits"],
@@ -605,26 +638,35 @@ class OrderService:
                and not (order_dir(self.config.exchange, order["id"]) / "stabilization.json").exists()]
         if not due or self.ledger.orders_in(WALLET_COMMITTED_STATES):
             return
+        if self.demo and len(due) < 3 and all(
+                o["updated_at"] + 90 > time.time() for o in due):
+            # Batch durability mining: every wallet scan replays the chain, so
+            # 110 blocks per purchase would slow every later judge.
+            return
         # Pinned Zebra drops its newest ~99 non-finalized blocks on restart.
         # Mining past that window makes the accepted block survive a restart
         # under this node's policy. It is not consensus finality.
         self.tools.coordinator("mine-empty", "--count", str(self.config.stabilization_blocks))
-        anchor = persistent_chain.checkpoint(self.config.root, self.config.rpc_port)
+        anchor = persistent_chain.checkpoint(self.config.root, self.config.rpc_port,
+                                             host=self.config.rpc_host)
         if anchor["anchorHeight"] < max(small_json(order_dir(self.config.exchange, o["id"]) /
                                                    "order-receipt.json")["height"] for o in due):
             raise ServiceError("checkpoint anchor does not cover the accepted purchase")
-        rescan = self.rescan()
+        rescan = (self.demo.rescan_after_stabilization(due) if self.demo
+                  else self.rescan().parent.name)
         for order in due:
             write_new_json(order_dir(self.config.exchange, order["id"]) / "stabilization.json", {
                 "version": 1, "policy": DURABILITY_POLICY,
                 "minedEmptyBlocks": self.config.stabilization_blocks,
                 "tipHeight": anchor["height"], "anchorHeight": anchor["anchorHeight"],
-                "anchorHash": anchor["anchorHash"], "rescan": rescan.parent.name})
+                "anchorHash": anchor["anchorHash"], "rescan": rescan})
             self._note(order["id"], "Settled and visible in a fresh wallet rescan.")
-        self.log({"event": "STABILIZED", "anchorHeight": anchor["anchorHeight"], "rescan": str(rescan)})
+        self.log({"event": "STABILIZED", "anchorHeight": anchor["anchorHeight"], "rescan": rescan})
 
     def rescan(self) -> Path:
         """Fresh independent buyer and seller scans for every issued asset."""
+        if self.demo:
+            raise ServiceError("the custodial demo records wallet scans in the ledger")
         scans = self.config.exchange / "rescans"
         scans.mkdir(mode=0o700, exist_ok=True)
         # Same shape as the operator rescan's mktemp scan.XXXXXX, which the
@@ -648,6 +690,7 @@ class OrderService:
 
 def serve(config: ExchangeConfig, interval: float) -> None:
     config.check_tool_revision()
+    Tools(config).check_isolation()
     lock_path = config.exchange / "order-service.lock"
     descriptor = os.open(lock_path, os.O_WRONLY | os.O_CREAT, 0o600)
     try:

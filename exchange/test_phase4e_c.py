@@ -60,7 +60,7 @@ class FakeTools:
     def chain(self):
         return {"state": self.state, "height": self.height, "anchorHeight": 100, "anchorHash": "d" * 64}
 
-    def signer(self, role, *args, timeout=0):
+    def signer(self, role, *args, wallet=None, timeout=0):
         if args[0] == "balances":
             native, units = self.wallets[role]
             return [f"PHASE35F_BALANCES role={role.title()} scanned_height={self.height} "
@@ -583,10 +583,10 @@ class MigrationTests(unittest.TestCase):
             ledgers = list(pool.map(lambda _: OrderLedger(path), range(6)))
         self.assertEqual(len(ledgers), 6)
         db = sqlite3.connect(path)
-        self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 3)
+        self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 4)
         self.assertEqual(db.execute("PRAGMA integrity_check").fetchone()[0], "ok")
 
-    def test_v2_ledger_rows_and_history_survive_v3_migration(self):
+    def test_v2_ledger_rows_and_history_survive_v3_and_v4_migration(self):
         root = Path("/private/tmp/zwa4e-test-" + secrets.token_hex(6))
         root.mkdir(mode=0o700)
         self.addCleanup(shutil.rmtree, root, True)
@@ -620,7 +620,7 @@ class MigrationTests(unittest.TestCase):
         db.close()
         OrderLedger(path)
         db = sqlite3.connect(path)
-        self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 3)
+        self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 4)
         self.assertEqual(db.execute("SELECT state,quote_digest FROM orders").fetchall(), [("RECEIPT_AVAILABLE", "q")])
         self.assertEqual(db.execute("SELECT count(*) FROM order_events").fetchone()[0], 1)
         self.assertEqual(db.execute("SELECT txid FROM order_settlements").fetchone()[0], "t")
