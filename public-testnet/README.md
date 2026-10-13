@@ -76,3 +76,12 @@ and `lightwalletd` built from `zcash-shielded-assets/lightwalletd`. `lab/lab.sh`
 reads them from `/private/tmp/zwa-pub-build/`.
 
 The owner-operated public commands are in `docs/public-zsa-testnet-phase2-report.md`.
+Before creating or using a public root, run the rootless read-only check:
+
+```sh
+/private/tmp/zwa-pub-build/tool-target/release/zwa-zsa-pub preflight
+```
+
+It checks the live public chain identity and a consistent tip without creating
+wallet state. Phase 3 observations, the fresh unfunded owner root and the
+implementation plan are in `docs/final-integration-preflight-and-plan.md`.
