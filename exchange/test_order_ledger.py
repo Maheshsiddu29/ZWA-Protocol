@@ -129,6 +129,24 @@ class OfferLedgerTests(unittest.TestCase):
                                   pairing_id=buyer["id"])
         return order, quote
 
+    def test_parallel_duplicate_confirmation_records_one_authorization(self):
+        order, quote = self._confirmed("parallel-confirm")
+        pairing_id = self.ledger.order_quote(order["id"])["buyer_pairing_id"]
+
+        def confirm(_):
+            return self.ledger.confirm_quote(order["id"], buyer_id="buyer",
+                                             quote_digest=quote["quoteDigest"],
+                                             pairing_id=pairing_id)["state"]
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            self.assertEqual(list(pool.map(confirm, (1, 2))),
+                             ["BUYER_CONFIRMED", "BUYER_CONFIRMED"])
+        detail = self.ledger.get_order(order["id"], participant_id="buyer")
+        self.assertEqual([event["to_state"] for event in detail["events"]].count("BUYER_CONFIRMED"), 1)
+        with self.ledger._connection() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM order_executions WHERE order_id=?",
+                                        (order["id"],)).fetchone()[0], 0)
+
     def test_exact_order_lifecycle_replay_and_observed_wallet_effects(self):
         order, quote = self._confirmed("lifecycle")
         digest = quote["quoteDigest"]

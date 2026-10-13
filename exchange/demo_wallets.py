@@ -18,8 +18,10 @@ import json
 import time
 
 from checkout.scans import parse
+from . import persistent_chain
 from .demo_ledger import DEALER_KEY, LIVE_WALLET_STATES, DemoLedger
 from .order_ledger import FAILURE_STATES, PRE_EXECUTION_STATES, WALLET_COMMITTED_STATES, OrderError
+from .persistent_chain import ChainError
 from .tools import FUNDED_LINE, NATIVE_LINE, ToolError
 
 RETIRE_GRACE_SECONDS = 600
@@ -41,6 +43,7 @@ class DemoOperator:
         self.ledger: DemoLedger = service.ledger
         self.log = service.log
         self._dealer_address: str | None = None
+        self._checked_funding_tip: tuple[int, str] | None = None
 
     # ------------------------------------------------------------ inspection
 
@@ -49,7 +52,7 @@ class DemoOperator:
         return not self.ledger.orders_in(WALLET_COMMITTED_STATES)
 
     def funding_pending(self) -> bool:
-        return bool(self.ledger.wallets_in(("CREATED",)))
+        return bool(self.ledger.wallets_in(("CREATED", "FUNDING")))
 
     def dealer_address(self) -> str:
         if self._dealer_address is None:
@@ -71,11 +74,12 @@ class DemoOperator:
     def tick(self, tip: int) -> None:
         self.ledger.ensure_dealer_pairing(account_id=self.policy.dealer_account_id,
                                           wallet_address=self.dealer_address())
-        for step in (self.create_requested, self.expire_due, self.confirm_funding,
+        for step in (self.create_requested, self.expire_due, self.validate_ready_funding,
+                     self.confirm_funding,
                      self.retire_expired, self.resolve_unexecuted, self.ledger.forget_client_hashes):
             try:
                 step()
-            except (DemoError, OrderError, ToolError, OSError, ValueError) as exc:
+            except (DemoError, OrderError, ToolError, ChainError, OSError, ValueError) as exc:
                 self.log({"event": "DEMO_STEP_FAILED", "step": step.__name__, "error": str(exc)[:300]})
         if self.idle():
             try:
@@ -83,7 +87,7 @@ class DemoOperator:
                 self.fund_created()
                 self.confirm_funding()
                 self.refresh_dealer()
-            except (DemoError, OrderError, ToolError, OSError, ValueError) as exc:
+            except (DemoError, OrderError, ToolError, ChainError, OSError, ValueError) as exc:
                 self.log({"event": "DEMO_STEP_FAILED", "step": "idle", "error": str(exc)[:300]})
 
     # --------------------------------------------------------- provisioning
@@ -159,16 +163,61 @@ class DemoOperator:
         return results
 
     def confirm_funding(self) -> None:
+        pending = []
         for row in self.ledger.wallets_in(("FUNDING",)):
-            block = self.tools.rpc("getblock", [str(row["funding_height"]), 1])
+            tip = self.tools.chain()["height"]
+            block = (self.tools.rpc("getblock", [str(row["funding_height"]), 1])
+                     if row["funding_height"] <= tip else None)
             if not isinstance(block, dict) or row["funding_txid"] not in block.get("tx", []):
-                raise DemoError("funding transaction is not in its reported block")
+                self.ledger.advance(row["id"], expected="FUNDING", state="FAILED",
+                                    failure="funding block is absent from the recovered chain")
+                self.log({"event": "DEMO_FUNDING_DROPPED", "wallet": row["id"]})
+            else:
+                pending.append(row)
+        if not pending or not self.idle():
+            return
+        # Pinned Zebra can discard its latest 99 blocks on restart. A wallet
+        # is not READY until its funding block lies below the durable anchor.
+        tip = self.tools.chain()["height"]
+        required = max(row["funding_height"] for row in pending) + self.config.stabilization_blocks
+        if tip < required:
+            self.tools.coordinator("mine-empty", "--count", str(required - tip))
+        anchor = persistent_chain.checkpoint(self.config.root, self.config.rpc_port,
+                                             host=self.config.rpc_host)
+        for row in pending:
+            if anchor["anchorHeight"] < row["funding_height"]:
+                raise DemoError("funding is not below the durable chain anchor")
             scans = self.scan_wallet(row["id"], list(self.service.assets.values()))
             if any(scan["height"] < row["funding_height"] or scan["nativeZat"] <= 0
                    for scan in scans.values()):
                 raise DemoError("wallet scan does not show the funding yet")
             self.ledger.mark_ready(row["id"])
             self.log({"event": "DEMO_WALLET_READY", "wallet": row["id"]})
+
+    def validate_ready_funding(self) -> None:
+        """Revoke lost funding and refresh scans invalidated by a node restart."""
+        tip = self.tools.chain()["height"]
+        identity = (tip, self.tools.rpc("getblockhash", [tip]))
+        if identity == self._checked_funding_tip:
+            return
+        anchor_height = json.loads(self.config.chain_identity.read_text())["anchorHeight"]
+        for row in self.ledger.wallets_in(("READY",)):
+            block = (self.tools.rpc("getblock", [str(row["funding_height"]), 1])
+                     if row["funding_height"] <= tip else None)
+            if not (row["funding_height"] <= anchor_height and isinstance(block, dict)
+                    and row["funding_txid"] in block.get("tx", [])):
+                self.ledger.advance(row["id"], expected="READY", state="FAILED",
+                                    failure="funding did not survive chain recovery")
+                self.log({"event": "DEMO_READY_FUNDING_DROPPED", "wallet": row["id"]})
+                continue
+            assets = list(self.service.assets.values())
+            scans = self.ledger.latest_scans(row["id"], tip)
+            if any(asset not in scans or
+                   self.tools.rpc("getblockhash", [scans[asset]["scan_height"]]) != scans[asset]["block_hash"]
+                   for asset in assets):
+                self.scan_wallet(row["id"], assets)
+                self.log({"event": "DEMO_WALLET_RESCANNED_AFTER_RECOVERY", "wallet": row["id"]})
+        self._checked_funding_tip = identity
 
     # --------------------------------------------------------------- expiry
 
@@ -319,4 +368,3 @@ def status_view(ledger: DemoLedger, row: dict, assets: dict[str, str], tip: int 
             "ordersUsed": ledger.counted_orders(row["account_id"]),
             "openOrderId": (ledger.open_order(row["account_id"]) or {}).get("id"),
             "orderCount": len(orders)}
-

@@ -102,6 +102,7 @@ class DemoTools(FakeTools):
         if args[0] == "mine-empty":
             self.mined.append(("empty", int(args[2])))
             self.coinbases += int(args[2])
+            self.height += int(args[2])
         if args[0] == "prepare-sale":
             opts = dict(zip(args[1::2], args[2::2]))
             terms = make_terms(opts["--asset"], int(opts["--quantity"]), int(opts["--price-zat"]),
@@ -168,10 +169,17 @@ class DemoBase(unittest.TestCase):
         self.ledger.set_price(seller_id="dealer", offer_id=self.offer["id"], price_zat_per_unit=1000)
         self.sockets = []
         self.addCleanup(lambda: [s.close() for s in self.sockets])
+        def fake_checkpoint(*_args, **_kwargs):
+            anchor = self.tools.height - 100
+            identity = self.root / "chain-identity.json"
+            data = json.loads(identity.read_text())
+            data.update({"anchorHeight": anchor, "anchorHash": block_hash(anchor)})
+            identity.write_text(json.dumps(data))
+            return {"height": self.tools.height, "anchorHeight": anchor,
+                    "anchorHash": block_hash(anchor)}
+
         checkpoint = patch("exchange.order_service.persistent_chain.checkpoint",
-                           side_effect=lambda *a, **k: {"height": self.tools.height,
-                                                        "anchorHeight": self.tools.height - 100,
-                                                        "anchorHash": "d" * 64})
+                           side_effect=fake_checkpoint)
         checkpoint.start()
         self.addCleanup(checkpoint.stop)
 
@@ -315,6 +323,60 @@ class ProvisioningTests(DemoBase):
         self.assertEqual(set(scans), set(ASSETS.values()))
         self.assertTrue(all(scan["native_zat"] == FUNDED_ZAT for scan in scans.values()))
         self.assertIn(("fund", row["id"]), self.tools.mined)
+        identity = json.loads((self.root / "chain-identity.json").read_text())
+        self.assertGreaterEqual(identity["anchorHeight"], wallet["funding_height"])
+        self.assertTrue(any(kind == "empty" and count >= self.config.stabilization_blocks
+                            for kind, count in self.tools.mined))
+
+    def test_rolled_back_ready_funding_revokes_the_browser_wallet(self):
+        wallet = self.judge()
+        self.tools.blocks[wallet["funding_height"]] = {
+            "tx": [], "hash": block_hash(wallet["funding_height"])}
+        self.service.demo._checked_funding_tip = None  # simulate service restart
+        self.service.tick()
+        self.assertEqual(self.ledger.wallet(wallet["id"])["state"], "RETIRED")
+        self.assertFalse(self.ledger.pairing_usable(wallet["pairing_id"]))
+        self.assertIsNone(self.ledger.wallet_for_session(wallet["account_id"], SESSION_A))
+
+    def test_temporary_funding_rpc_error_does_not_revoke_a_ready_wallet(self):
+        wallet = self.judge()
+        self.service.demo._checked_funding_tip = None
+        original_rpc = self.tools.rpc
+
+        def intermittent_rpc(method, params=None):
+            if method == "getblock":
+                raise ToolError("temporary RPC failure")
+            return original_rpc(method, params)
+
+        with patch.object(self.tools, "rpc", side_effect=intermittent_rpc):
+            with self.assertRaises(ToolError):
+                self.service.demo.validate_ready_funding()
+        self.assertEqual(self.ledger.wallet(wallet["id"])["state"], "READY")
+        self.assertTrue(self.ledger.pairing_usable(wallet["pairing_id"]))
+
+    def test_recovered_funding_rescans_a_wallet_whose_latest_scan_was_lost(self):
+        wallet = self.judge()
+        self.tools.height = wallet["funding_height"] + 1
+        self.service.demo._checked_funding_tip = None  # restored node has a shorter tip
+        self.service.tick()
+        view = self.portal().wallet(wallet["account_id"], "buyer", SESSION_A)
+        self.assertEqual(view["state"], "READY")
+        self.assertEqual(view["nativeZat"], FUNDED_ZAT)
+        self.assertEqual(view["scanHeight"], self.tools.height)
+        self.assertIn({"event": "DEMO_WALLET_RESCANNED_AFTER_RECOVERY", "wallet": wallet["id"]},
+                      self.events)
+
+    def test_rolled_back_funding_never_becomes_ready(self):
+        row = self.ledger.request_wallet(session_hash=SESSION_A, client_hash=CLIENT, policy=self.policy)
+        self.service.demo.create_requested()
+        self.service.demo.fund_created()
+        funding = self.ledger.wallet(row["id"])
+        self.assertEqual(funding["state"], "FUNDING")
+        self.tools.blocks[funding["funding_height"]] = {
+            "tx": [], "hash": block_hash(funding["funding_height"])}
+        self.service.demo.confirm_funding()
+        self.assertEqual(self.ledger.wallet(row["id"])["state"], "FAILED")
+        self.assertIsNone(self.ledger.wallet(row["id"])["pairing_id"])
 
     def test_two_judges_get_distinct_wallets_and_addresses(self):
         first, second = self.judge(SESSION_A), self.judge(SESSION_B)
@@ -428,11 +490,12 @@ class LifecycleTests(DemoBase):
         self.assertEqual(self.state(order["id"]), "RECEIPT_AVAILABLE")
         height = self.tools.block["height"]
         self.tools.blocks[height] = {"tx": [], "hash": block_hash(height)}  # restart dropped the block
+        mined_before = len(self.tools.mined)
         self.service.tick()
         work = self.config.order_dir(order["id"])
         self.assertTrue((work / "dropped.json").exists())
         self.assertFalse((work / "stabilization.json").exists())
-        self.assertFalse(any(kind == "empty" and count == 110 for kind, count in self.tools.mined))
+        self.assertFalse(any(kind == "empty" and count == 110 for kind, count in self.tools.mined[mined_before:]))
 
     def test_dealer_pause_rejects_after_buyer_and_nothing_is_submitted(self):
         judge = self.judge()

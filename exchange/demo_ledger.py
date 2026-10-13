@@ -26,7 +26,7 @@ TRANSITIONS = {
     "REQUESTED": ("CREATED", "FAILED"),
     "CREATED": ("FUNDING", "EXPIRED", "FAILED"),
     "FUNDING": ("READY", "EXPIRED", "FAILED"),
-    "READY": ("EXPIRED",),
+    "READY": ("EXPIRED", "FAILED"),
     "EXPIRED": ("RETIRED",),
     "FAILED": ("RETIRED",),
 }
@@ -162,7 +162,7 @@ class DemoLedger(OrderLedger):
                 return dict(row)
             if row["state"] != expected:
                 raise OrderError("demo wallet state changed")
-            if state == "EXPIRED" and row["pairing_id"]:
+            if state in ("EXPIRED", "FAILED") and row["pairing_id"]:
                 db.execute("UPDATE wallet_pairings SET revoked_at=? WHERE id=? AND revoked_at IS NULL",
                            (now, row["pairing_id"]))
             extra = {"RETIRED": {"retired_at": now}}.get(state, {})
