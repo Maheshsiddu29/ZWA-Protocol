@@ -25,11 +25,15 @@ verification_key.json
 *.pem
 *.key
 
-# Wallet and database state
+# Wallet and database state (wallet homes live outside the repository; these
+# anchored patterns must not match source directories such as app/exchange/wallet)
 *.db
 *.sqlite
 *.sqlite3
-wallet*/
+/wallet*/
+**/wallet-data*/
+**/seed.hex
+**/sponsor-seed.hex
 
 # Logs and temporary proof output
 *.log
