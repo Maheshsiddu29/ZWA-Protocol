@@ -14,6 +14,8 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   // The repo root has its own package-lock.json (circuit tooling); pin tracing to this app.
   outputFileTracingRoot: path.join(__dirname),
+  // Container image: a self-contained server without the full node_modules.
+  ...(process.env.ZWA_STANDALONE === "1" ? { output: "standalone" as const } : {}),
   async headers() {
     return [{ source: "/:path*", headers: [
       { key: "Content-Security-Policy", value: csp },

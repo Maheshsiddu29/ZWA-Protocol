@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { postJson } from "@/components/exchange/client-api";
-import { TryDemoButton } from "@/components/exchange/TryDemoButton";
 import { assetName, shortHash, zec } from "@/lib/exchange";
 import type { WalletStatus } from "@/lib/private-orders";
 
@@ -14,8 +13,10 @@ const order = ["REQUESTED", "CREATED", "FUNDING", "READY"];
 export function DemoWallet({ initial, csrf }: { initial: WalletStatus | null; csrf: string }) {
   const router = useRouter();
   const [status, setStatus] = useState<WalletStatus | null>(initial);
-  const [ended, setEnded] = useState<string | null>(initial ? null : "Your demo session has ended.");
+  const [ended, setEnded] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [retired, setRetired] = useState(false);
+  const [error, setError] = useState("");
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -32,13 +33,37 @@ export function DemoWallet({ initial, csrf }: { initial: WalletStatus | null; cs
   }, [ended, status?.state]);
 
   async function end() {
-    setBusy(true);
+    setBusy(true); setError("");
     const result = await postJson("/api/demo/end", csrf);
-    if (result.ok) { router.push("/"); router.refresh(); } else setBusy(false);
+    if (result.ok) { router.push("/"); router.refresh(); }
+    else { setError(result.data?.error ?? "The session could not be ended."); setBusy(false); }
   }
 
-  if (ended || !status) return <div className="empty"><h2>{ended ?? "Wallet unavailable"}</h2>
-    <p>Start a new session to get a fresh wallet.</p><TryDemoButton label="Start a new demo" /></div>;
+  async function restart() {
+    setBusy(true); setError("");
+    if (!retired) {
+      const result = await postJson("/api/demo/end", csrf);
+      if (!result.ok) { setError(result.data?.error ?? "The old session could not be ended."); setBusy(false); return; }
+      setRetired(true);
+    }
+    try {
+      const response = await fetch("/api/demo/session", { method: "POST", credentials: "same-origin",
+        headers: { "content-type": "application/json" }, body: "{}" });
+      const body = await response.json().catch(() => ({}));
+      if (response.ok && body.next === "/wallet") { router.push("/wallet"); router.refresh(); return; }
+      setError(body.error ?? "A new demo could not be started.");
+    } catch { setError("The demo service is unreachable."); }
+    setBusy(false);
+  }
+
+  if (ended) return <div className="empty"><h2>{ended}</h2>
+    <p>Start a new session to get a fresh wallet.</p>
+    <button className="button button-blue" type="button" onClick={restart} disabled={busy}>
+      {busy ? "Starting…" : "Start a new demo"}</button>
+    {error && <p className="inline-error" role="alert">{error}</p>}</div>;
+  if (!status) return <div className="empty"><h2>Wallet service unavailable</h2>
+    <p>Your session is preserved while the service recovers.</p>
+    <button className="button button-outline" type="button" onClick={() => router.refresh()}>Retry</button></div>;
   const position = order.indexOf(status.state ?? "REQUESTED");
   const ready = status.state === "READY";
   const remaining = status.expiresAt ? Math.max(0, status.expiresAt - Math.floor(now / 1000)) : null;
@@ -83,6 +108,7 @@ export function DemoWallet({ initial, csrf }: { initial: WalletStatus | null; cs
         </dl>
         <p className="small muted">Custodial demo: this server holds the key. It signs only purchases you confirm, within the limits above, on the test network.</p>
         <button className="link-button quiet" type="button" disabled={busy} onClick={end}>End session and delete wallet</button>
+        {error && <p className="inline-error" role="alert">{error}</p>}
       </div>
     </aside>
   </div>;
