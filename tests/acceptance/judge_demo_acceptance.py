@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import ssl
 import http.cookiejar
 import json
 import os
@@ -32,6 +33,7 @@ import urllib.request
 
 TERMINAL = {"CANCELLED", "EXPIRED", "REJECTED", "EXECUTION_FAILED", "UNCERTAIN"}
 RESULTS: list[tuple[str, bool, str]] = []
+TLS: ssl.SSLContext | None = None  # --insecure: trust a local rehearsal CA
 
 
 def record(name: str, ok: bool, detail: str = "") -> bool:
@@ -47,7 +49,7 @@ class Client:
         self.base = base.rstrip("/")
         self.jar = http.cookiejar.CookieJar()
         self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.jar),
-                                                  NoRedirect())
+                                                  NoRedirect(), urllib.request.HTTPSHandler(context=TLS))
         self.address = address or f"198.51.100.{secrets.randbelow(250) + 1}"
         self.csrf = ""
 
@@ -99,6 +101,10 @@ def _json(text: str):
 
 def rpc(url: str, method: str, params: list):
     body = json.dumps({"jsonrpc": "1.0", "id": "accept", "method": method, "params": params}).encode()
+    if url.startswith("exec:"):
+        # The node is unreachable from the host by design; ask from inside the private network.
+        out = subprocess.run(url[5:], shell=True, input=body, capture_output=True, check=True).stdout
+        return json.loads(out).get("result")
     with urllib.request.urlopen(urllib.request.Request(url, body, {"content-type": "application/json"}),
                                 timeout=10) as response:
         return json.load(response).get("result")
@@ -192,7 +198,13 @@ def main() -> int:
     parser.add_argument("--stop-node-cmd")
     parser.add_argument("--start-node-cmd")
     parser.add_argument("--skip-expiry", action="store_true")
+    parser.add_argument("--insecure", action="store_true", help="accept a local rehearsal TLS certificate")
     args = parser.parse_args()
+    global TLS
+    if args.insecure:
+        TLS = ssl.create_default_context()
+        TLS.check_hostname = False
+        TLS.verify_mode = ssl.CERT_NONE
     base = args.base
 
     # 1-2. Fresh judges get distinct, ready wallets.
@@ -323,6 +335,8 @@ def main() -> int:
         survived = wait_state(b, placed["id"], {"RECEIPT_AVAILABLE"})
         record("order completes after service crash and restart", survived and survived["state"] == "RECEIPT_AVAILABLE",
                f"state={(survived or {}).get('state')}")
+        record("restarted order becomes restart-durable", bool(wait_for(lambda: (lambda o: o if (o.get("receipt") or {})
+               .get("durability") else None)(order(b, placed["id"])), 400, 3)))
 
     # Unavailable node, then restart: no purchase while down, durable receipts survive.
     if args.stop_node_cmd and args.start_node_cmd and done_a:

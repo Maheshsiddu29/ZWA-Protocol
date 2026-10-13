@@ -49,3 +49,6 @@ tmp/
 
 # Source brand package stays outside commits; selected production copies are in website/public/.
 design-assets/
+deploy/build/
+deploy/env/
+deploy/.env

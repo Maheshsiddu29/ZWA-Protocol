@@ -1,0 +1,20 @@
+# HTTPS front for the hosted demo. Certificates are obtained automatically for
+# ZWA_SITE_ADDRESS (a public domain whose DNS points at this host). For a
+# local rehearsal use "localhost", which Caddy serves from its own local CA.
+{
+	admin off
+}
+
+{$ZWA_SITE_ADDRESS} {
+	encode zstd gzip
+	request_body {
+		max_size 64KB
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+	# Caddy replaces any client-supplied X-Forwarded-For with the address it
+	# saw, so the website's right-most entry is the real client.
+	reverse_proxy web:3000
+}
