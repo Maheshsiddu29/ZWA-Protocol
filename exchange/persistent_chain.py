@@ -212,6 +212,26 @@ def start(root: Path, container: str, port: int) -> dict:
             "anchorHeight": meta["anchorHeight"], "anchorHash": meta["anchorHash"]}
 
 
+def adopt_external(root: Path, port: int, host: str) -> dict:
+    """Record the identity of a fresh, separately managed chain (Compose).
+
+    Only a chain at height 0 with no prior identity is adopted; from then on
+    every status read checks its genesis and anchor hashes.
+    """
+    _paths(root)
+    if _meta(root) is not None:
+        raise ChainError("chain identity already exists; refusing to adopt again")
+    height = _rpc(port, "getblockcount", host=host)
+    if height != 0:
+        raise ChainError("only a fresh chain at height 0 can be adopted")
+    genesis = _rpc(port, "getblockhash", [0], host=host)
+    meta = {"version": 1, "image": IMAGE, "configSha256": CONFIG_SHA256, "genesisHash": genesis,
+            "anchorHeight": 0, "anchorHash": genesis, "lastStartState": "CHAIN_ACTIVE",
+            "lastObservedHeight": 0, "management": "external"}
+    _atomic_json(root / "chain-identity.json", meta)
+    return {"state": "CHAIN_ACTIVE", "height": 0, "genesisHash": genesis}
+
+
 def checkpoint(root: Path, port: int, host: str = "127.0.0.1") -> dict:
     _paths(root)
     meta = _meta(root)

@@ -263,6 +263,42 @@ class DemoBase(unittest.TestCase):
 
 
 class ProvisioningTests(DemoBase):
+    def test_restart_uses_current_tip_scans_below_orphaned_future_scans(self):
+        judge = self.judge()
+        tip = self.tools.height
+        asset = ASSETS["zwa-gold-reference"]
+        for key, units in ((DEALER_KEY, 998), (judge["id"], 2)):
+            self.ledger.record_scan(key, asset_base=asset, height=tip,
+                                    block_hash=block_hash(tip), native_zat=FUNDED_ZAT,
+                                    asset_units=units)
+            self.ledger.record_scan(key, asset_base=asset, height=tip + 98,
+                                    block_hash=block_hash(tip + 98), native_zat=0,
+                                    asset_units=999)
+
+        market = self.portal().market("anonymous")
+        gold = next(item for item in market["instruments"]
+                    if item["instrumentId"] == "zwa-gold-reference")
+        self.assertTrue(gold["inventoryVerifiedAtTip"])
+        self.assertEqual(gold["availableUnits"], 998)
+        self.assertEqual(gold["inventoryScanHeight"], tip)
+        wallet = self.portal().wallet(judge["account_id"], "buyer", SESSION_A)
+        held = next(item for item in wallet["holdings"]
+                    if item["instrumentId"] == "zwa-gold-reference")
+        self.assertEqual((held["units"], held["scanHeight"]), (2, tip))
+        with patch.object(self.service.demo, "scan_wallet") as scan:
+            self.service.demo.refresh_dealer()
+            scan.assert_not_called()
+
+    def test_dealer_rescans_when_tip_block_hash_changes(self):
+        self.judge()
+        tip = self.tools.height
+        for asset in ASSETS.values():
+            self.ledger.record_scan(DEALER_KEY, asset_base=asset, height=tip,
+                                    block_hash="f" * 64, native_zat=0, asset_units=999)
+        with patch.object(self.service.demo, "scan_wallet") as scan:
+            self.service.demo.refresh_dealer()
+            scan.assert_called_once_with(DEALER_KEY, list(self.service.assets.values()))
+
     def test_judge_wallet_is_created_funded_scanned_and_paired(self):
         row = self.ledger.request_wallet(session_hash=SESSION_A, client_hash=CLIENT, policy=self.policy)
         self.assertEqual(row["state"], "REQUESTED")

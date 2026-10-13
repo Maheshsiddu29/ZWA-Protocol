@@ -298,14 +298,18 @@ class DemoLedger(OrderLedger):
                        (wallet_key, asset_base, height, block_hash, native_zat, asset_units,
                         int(time.time())))
 
-    def latest_scans(self, wallet_key: str) -> dict[str, dict]:
-        """Newest scan per asset for one wallet (asset 'native' for native-only scans)."""
+    def latest_scans(self, wallet_key: str, max_height: int | None = None) -> dict[str, dict]:
+        """Newest scan per asset at or below the live tip, when one is supplied."""
+        if max_height is not None and (type(max_height) is not int or max_height < 0):
+            raise OrderError("invalid scan height")
         with self._connection() as db:
             rows = db.execute("""SELECT s.* FROM wallet_scans s JOIN (
                                    SELECT asset_base, MAX(scan_height) AS h FROM wallet_scans
-                                   WHERE wallet_key=? GROUP BY asset_base) m
+                                   WHERE wallet_key=? AND (? IS NULL OR scan_height<=?)
+                                   GROUP BY asset_base) m
                                  ON m.asset_base=s.asset_base AND m.h=s.scan_height
-                                 WHERE s.wallet_key=?""", (wallet_key, wallet_key)).fetchall()
+                                 WHERE s.wallet_key=?""",
+                              (wallet_key, max_height, max_height, wallet_key)).fetchall()
         return {row["asset_base"]: dict(row) for row in rows}
 
     # ----------------------------------------------------------------- limits

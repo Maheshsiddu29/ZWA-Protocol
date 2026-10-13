@@ -94,6 +94,7 @@ class Tools:
             with sqlite3.connect(database) as db:
                 db.executescript(schema)
         if self.config.isolation == "linux-landlock":
+            self.link_params(home)
             return home
         profiles = self.config.root / "profiles"
         path = profiles / f"{profile}.sb"
@@ -113,6 +114,17 @@ class Tools:
                 out.write(text)
         return home
 
+    def link_params(self, home: Path) -> None:
+        """Linux: the proving library reads $HOME/.zcash-params (macOS uses
+        XDG_DATA_HOME). Point it at the read-only, checksummed parameters."""
+        link = home / ".zcash-params"
+        target = self.config.params_data_home / "ZcashParams"
+        if link.is_symlink() and os.readlink(link) == str(target):
+            return
+        if link.exists() or link.is_symlink():
+            raise ToolError("unexpected proving parameter path in wallet home")
+        os.symlink(target, link)
+
     def remove_demo_home(self, wallet: str) -> None:
         """Delete a retired disposable wallet's seed, database and profile."""
         home, profile = self.wallet_home("buyer", wallet)
@@ -126,7 +138,10 @@ class Tools:
 
     def check_isolation(self) -> None:
         """Refuse to run if a fixed profile could read demo wallet seeds."""
-        if self.config.isolation != "macos-sandbox":
+        if self.config.isolation == "linux-landlock":
+            from .landlock_exec import abi_version
+            if abi_version() < 1:
+                raise ToolError("Linux Landlock is unavailable; wallet isolation cannot be enforced")
             return
         demo = str(self.config.root / DEMO_WALLETS)
         for profile in ("seller", "coordinator"):

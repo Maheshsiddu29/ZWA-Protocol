@@ -119,9 +119,18 @@ class ExchangeConfig:
         return path
 
     def check_tool_revision(self) -> None:
-        head = subprocess.run(["git", "-C", str(self.tx_tool_dir), "rev-parse", "HEAD"],
-                              capture_output=True, text=True, timeout=10)
-        if head.returncode or head.stdout.strip() != TX_TOOL_REVISION:
+        stamp = self.tx_tool_dir / ".zwa-tx-tool-revision"
+        if (self.tx_tool_dir / ".git").exists():
+            head = subprocess.run(["git", "-C", str(self.tx_tool_dir), "rev-parse", "HEAD"],
+                                  capture_output=True, text=True, timeout=10)
+            revision = head.stdout.strip() if head.returncode == 0 else ""
+        elif stamp.is_file() and not stamp.is_symlink():
+            # Container image: built from `git archive` of the pinned commit;
+            # the build writes this stamp only after checking the archive.
+            revision = stamp.read_text().strip()
+        else:
+            revision = ""
+        if revision != TX_TOOL_REVISION:
             raise ConfigError("pinned transaction tool revision mismatch")
         if not os.access(self.tx_tool_bin, os.X_OK):
             raise ConfigError("pinned transaction tool binary is missing")

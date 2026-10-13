@@ -135,7 +135,7 @@ class Portal:
         result = {}
         if tip is None:
             return result
-        for asset, scan in self.ledger.latest_scans(DEALER_KEY).items():
+        for asset, scan in self.ledger.latest_scans(DEALER_KEY, tip).items():
             try:
                 if scan["scan_height"] <= tip and self._block_hash(scan["scan_height"]) == scan["block_hash"]:
                     result[asset] = scan

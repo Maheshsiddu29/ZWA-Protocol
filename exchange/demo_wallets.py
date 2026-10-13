@@ -258,9 +258,11 @@ class DemoOperator:
     def refresh_dealer(self) -> None:
         """Rescan dealer inventory at the tip so offers show verified units."""
         tip = self.tools.chain()["height"]
-        latest = self.ledger.latest_scans(DEALER_KEY)
+        latest = self.ledger.latest_scans(DEALER_KEY, tip)
         assets = list(self.service.assets.values())
-        if all(latest.get(asset, {}).get("scan_height") == tip for asset in assets):
+        tip_hash = self.tools.rpc("getblockhash", [tip])
+        if all(latest.get(asset, {}).get("scan_height") == tip and
+               latest[asset]["block_hash"] == tip_hash for asset in assets):
             return
         self.scan_wallet(DEALER_KEY, assets)
 
@@ -289,7 +291,7 @@ class DemoOperator:
 def status_view(ledger: DemoLedger, row: dict, assets: dict[str, str], tip: int | None,
                 block_hash_at) -> dict:
     """Public wallet status for its own judge session. No key material."""
-    scans = ledger.latest_scans(row["id"])
+    scans = ledger.latest_scans(row["id"], tip)
     holdings, native, height = [], None, None
     for instrument, asset in assets.items():
         scan = scans.get(asset)
@@ -317,5 +319,4 @@ def status_view(ledger: DemoLedger, row: dict, assets: dict[str, str], tip: int 
             "ordersUsed": ledger.counted_orders(row["account_id"]),
             "openOrderId": (ledger.open_order(row["account_id"]) or {}).get("id"),
             "orderCount": len(orders)}
-
 
