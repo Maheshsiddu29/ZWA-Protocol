@@ -8,6 +8,12 @@ node_modules/
 # Python checkout API
 __pycache__/
 *.pyc
+.venv/
+.pytest_cache/
+
+# Next.js build output (website/.gitignore covers the app directory itself)
+.next/
+*.tsbuildinfo
 
 # Circom and snarkjs generated artifacts
 *.r1cs
@@ -24,6 +30,12 @@ verification_key.json
 !.env.example
 *.pem
 *.key
+*.p12
+*.pfx
+*.age
+id_rsa*
+id_ed25519*
+.vercel/
 
 # Wallet and database state (wallet homes live outside the repository; these
 # anchored patterns must not match source directories such as app/exchange/wallet)
