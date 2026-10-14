@@ -88,6 +88,23 @@ docker build -f deploy/web/Dockerfile -t zwa-web:local .
 docker save zwa-engine:local zwa-web:local qedit/zebra-zsa-swap-pinned:latest | gzip > zwa-images.tar.gz
 ```
 
+Build only from a checkout made under `umask 022`. `COPY` keeps each source
+file's mode and makes it `root:root`, and the engine runs as user 10001 with
+all capabilities dropped, so a mode-600 source becomes code the engine cannot
+read. Check before building; this only reads:
+
+```sh
+find checkout exchange circuits/shared deploy/zebra \
+  \( \( -type f ! -perm -0444 \) -o \( -type d ! -perm -0555 \) \) -print   # must print nothing
+```
+
+If it prints anything, re-create the checkout under `umask 022` or have the
+owner correct those files deliberately. No script here changes file modes.
+Zebra likewise runs as its image's user without capabilities, so
+`deploy/zebra/regtest-config.toml` must stay world-readable (mode 644). The
+staging driver checks both through the real containers; see
+[`docs/zebra-provenance-migration.md`](../docs/zebra-provenance-migration.md).
+
 On the VM (Docker Engine 25+ with Compose v2, Linux kernel with Landlock):
 
 ```sh

@@ -276,12 +276,21 @@ edit. Retire that edit only after the owner compares it with the new file.
 
 ### 2. Separate checkout of the reviewed commit
 
+Prepare the staging checkout under **`umask 022`**. Git writes checked-out
+files with the shell's umask and does not track read permission, so a checkout
+made under `umask 077` is clean to `git status` but leaves
+`deploy/zebra/regtest-config.toml` at mode 600. The first AWS staging attempt
+failed that way: zebra runs as its image's user with every capability dropped,
+so not even root inside the container can read a mode-600 file owned by
+`ubuntu`. The block below sets `umask 022` for this step only and then restores the previous umask.
+
 The reviewed commit may already be available: in the live checkout's object
 store, or on its `origin` after an owner push. Otherwise the owner supplies a
 bundle (`git bundle create zwa-provenance.bundle cf7f133..<branch>`) and sets
 `BUNDLE`. A bundle is verified and fetched only when one is used.
 
 ```sh
+OLD_UMASK=$(umask); umask 022    # this step only: the containers' users must be able to read these files
 git clone --no-checkout --no-hardlinks "$LIVE" "$STAGE_CHECKOUT" 2> /dev/null \
   || sudo git clone --no-checkout --no-hardlinks "$LIVE" "$STAGE_CHECKOUT"
 [[ -O "$STAGE_CHECKOUT" ]] || sudo chown -R "$(id -u):$(id -g)" "$STAGE_CHECKOUT"   # the new copy only
@@ -302,8 +311,21 @@ test "$(git -C "$STAGE_CHECKOUT" rev-parse HEAD)" = "$REVIEWED"
 install -m 644 "$INPUTS/compose.amd64.yaml" "$STAGE_CHECKOUT/deploy/compose.amd64.yaml"
 install -d -m 700 "$STAGE_CHECKOUT/deploy/env"
 install -m 600 "$INPUTS/web.env" "$STAGE_CHECKOUT/deploy/env/web.env"
+umask "$OLD_UMASK"
 cat "$STAGE_CHECKOUT/deploy/compose.amd64.yaml"   # review: zebra image and entrypoint for AMD64
+# Read-only check: what zebra binds and the image build copies must be world-readable (directories also
+# searchable). deploy/env/web.env stays mode 600; Compose reads it on the host, not through a bind.
+BAD=$(find "$STAGE_CHECKOUT/deploy/zebra" "$STAGE_CHECKOUT/exchange" \
+        \( \( -type f ! -perm -0444 \) -o \( -type d ! -perm -0555 \) \) -print)
+[[ -z "$BAD" ]] || { printf 'not world-readable:\n%s\n' "$BAD" >&2; exit 1; }
+stat -c '%a %U:%G %n' "$STAGE_CHECKOUT/deploy/zebra/regtest-config.toml"   # expect 644
 ```
+
+If that check lists files, do **not** chmod anything in `/opt/zwa/repo`, and
+never chmod live files to make staging pass. Remove the new staging checkout
+(it is a fresh copy, never under `/opt/zwa`) and repeat this step under
+`umask 022`. `plan` makes the same check through the real mount and refuses;
+the driver itself never changes a file mode.
 
 A failed origin fetch is reported and then caught by the explicit
 `has_reviewed` check, which stops the script. If git reports "dubious
@@ -315,6 +337,14 @@ driver reads the snapshot
 `docker compose --project-directory <checkout>/deploy --env-file $EVIDENCE/stage.env -p zwa-prov-stage -f compose.yaml -f compose.amd64.yaml …`.
 
 ### 3. Engine image with the reviewed code
+
+Every engine service runs as **user 10001:10001** with all capabilities
+dropped. `COPY` without `--chmod` keeps the source file's mode and makes the
+file `root:root`, so a source at mode 600 becomes code that user 10001 cannot
+read. An earlier AWS overlay image failed that way. Build only from the
+staging checkout prepared under `umask 022` in step 2, and give the overlay's
+`COPY` an explicit `--chmod=0644` (BuildKit, the default builder since Docker
+23; the legacy builder rejects the flag instead of ignoring it).
 
 Preferred: a full rebuild per `deploy/README.md`. A staging alternative is an
 overlay on the deployed engine image of the only two engine files changed
@@ -328,14 +358,16 @@ LIVE_ENGINE=$("${D[@]}" inspect --format '{{.Config.Image}}' "$LIVE_PORTAL")    
 STAGE_TAG="provenance-${REVIEWED:0:12}"
 test "$(git -C "$STAGE_CHECKOUT" diff --name-only cf7f133 -- exchange ':!exchange/test_*' | tr '\n' ' ')" \
   = "exchange/persistent_chain.py exchange/zebra_provenance.py "
-printf 'FROM %s\nCOPY exchange/persistent_chain.py exchange/zebra_provenance.py /app/ZWA-Brand-Integration/exchange/\n' \
+printf 'FROM %s\nCOPY --chmod=0644 exchange/persistent_chain.py exchange/zebra_provenance.py /app/ZWA-Brand-Integration/exchange/\n' \
   "$LIVE_ENGINE" > "$INPUTS/Dockerfile.$STAGE_TAG"
 "${D[@]}" build -f "$INPUTS/Dockerfile.$STAGE_TAG" -t "zwa-engine:$STAGE_TAG" "$STAGE_CHECKOUT"
 ```
 
 `plan` refuses any engine image whose `exchange/*.py` differ from the reviewed
-checkout. If the deployed image was not built from `cf7f133`, the overlay
-fails that check; then rebuild fully.
+checkout, or that has any file user 10001 cannot read (see step 4). If the
+deployed image was not built from `cf7f133`, the overlay fails that check;
+then rebuild fully. Never fix an image by chmodding files in a running
+container or a live volume: rebuild it.
 
 ### 4. Plan (read only)
 
@@ -371,7 +403,16 @@ out, removed again with `rm -v`. It checks:
   - **`params` / `bootstrap`** (setup profile): the reviewed commands, the staging engine image, user 10001, internal network only, exact mounts. `params` alone may bind the validated `ZWA_PARAMS_DIR` (pinned with `--expect-params-dir`) read-only at `/src`.
   - **Every service:** no privileged mode, host namespaces, `cap_add` or devices; no undeclared networks or volumes; no external, driver or `driver_opts` volumes; otherwise only read-only binds inside the reviewed `deploy/`; ports only on caddy 80/443; no Docker socket; no `zwa-demo_*` names.
 - **Zebra executable:** the entrypoint inside the pinned image is an executable **x86-64 ELF** (sha256 recorded).
-- **Engine code:** matches the checkout.
+- **Zebra configuration access** (`zebraConfig` in `plan.json`). Zebra has no Compose `user`, so it runs as its image's `USER` with `cap_drop: ALL`, where even uid 0 cannot override permission bits:
+  - its uid, gid and supplementary groups are resolved from that `USER` and the image's own `/etc/passwd` and `/etc/group`, copied out of the same throwaway container (a named user missing from them is refused);
+  - on the host, `deploy/zebra/regtest-config.toml` must be a regular file reached without symlinks, hold the pinned bytes, and be readable by that identity under the owner/group/other classes;
+  - a one-shot probe container (from the staging engine image, which has Python; the zebra image needs no shell) then runs with that identity, `cap_drop: ALL`, `no-new-privileges`, no network, a read-only root and the **same read-only bind** at `/config/regtest-config.toml`. It must really open the file, read the pinned sha256, and see the host's mode.
+  - The rendered zebra service must also keep exactly that bind, read-only, and `-c /config/regtest-config.toml`.
+- **Engine files** (`engine` in `plan.json`), from a probe container of the staging engine image run exactly as the engine services run: `--user 10001:10001`, no extra groups, `cap_drop: ALL`, `no-new-privileges`, no network, read-only root:
+  - every directory under `/app` and `/opt/zwa/tx-tool` must be listable and searchable by 10001, and every regular file must open and hash (judged by the real open and by the permission bits);
+  - the tx tool and `/usr/local/bin/node` must be executable regular files; devices, FIFOs and sockets are refused;
+  - the `exchange/*.py` hashes it read must equal the checkout's non-test files exactly (none missing, extra, changed or symlinked).
+- None of these checks changes a file mode, in the checkout, the image, a volume or the backup. A missing, symlinked, unreadable or mismatched file refuses with exit 2.
 - **Isolation:** no staging volume or container exists yet.
 
 Review `$EVIDENCE/plan.json` and `$EVIDENCE/rendered-config.json` (mode 600;
@@ -394,7 +435,7 @@ these steps:
 1. Creates `zwa-prov-stage_{zwa-root,zebra-state,zwa-params}`.
 2. Restores each from the read-only backup mount with `tar --numeric-owner --same-owner --same-permissions -xzf` inside `--network none` one-shots. It verifies every restored path's type, owner, group, mode and size, and the **SHA-256 of every regular file**, against the archive.
 3. Re-verifies the backup checksums.
-4. Starts **only** `zebra`. On the host, it checks that the running container uses the pinned AMD64 ID and the reviewed (non-ARM64) entrypoint.
+4. Repeats the zebra configuration access check, then starts **only** `zebra`. On the host, it checks that the running container uses the pinned AMD64 ID and the reviewed (non-ARM64) entrypoint.
 5. Checks that the settled transaction is in block 325 and that the tip has reached the 335 anchor.
 6. Snapshots `show`, the M10 state report, and every file except the identity (owner, mode, sha256).
 7. Runs seven negative drills, each asserted. Each must exit **1** with its specific `PROVENANCE_REFUSED` reason, and the identity sha256 must be identical before and after. An unexpected success, a different reason, or an identity change halts staging at once.
@@ -432,6 +473,11 @@ the developer's arm64 Mac, only these real-Docker pieces were run:
 - the Compose rendering and its allowlist;
 - the executable copy-out and ELF check, against the arm64 image, which was correctly refused;
 - the host attestation tool.
+
+The configuration-access and engine-file probes ran only against the fake
+host. On the real host, the pinned AMD64 image's actual `USER`, its account
+files, the `--mount` bind seen through Docker, and a full walk of the real
+engine image are still to be exercised by `plan`.
 
 **Never run anywhere** until the owner runs them on the EC2 host:
 
