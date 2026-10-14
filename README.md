@@ -64,6 +64,7 @@ More detail: [architecture](docs/architecture.md),
 | Buyer/seller wallets | Operator-provisioned accounts, one-time wallet pairing codes, wallet companions that approve in their own terminal | [runbook](docs/phase4e-c-runbook.md) |
 | Hosted judge sandbox | Docker Compose stack: Caddy, web, portal, order service, restricted demo signer, pinned Zebra; per-wallet Landlock isolation; M9/M10 security review and recovery drill | [`deploy/`](deploy/README.md), [M9](docs/m9-hosted-demo-review.md), [M10](docs/m10-hosted-https-security-review.md) |
 | Public ZSA tooling | Build-only issuance and transfer client, node-side byte check, private lab node, privacy-safe receipts | [`public-testnet/`](public-testnet/README.md) |
+| Workload benchmark (not yet run on AWS) | Fail-closed harness for real regtest settlements in an isolated `zwa-bench-*` Compose project: 1 Hz host, cgroup and process sampling, automatic stop conditions, explicit levels 0–3 | [architecture](docs/benchmark-architecture.md), [runbook](docs/benchmark-runbook.md) |
 | Website | Next.js public site and exchange UI | [`website/`](website/README.md) |
 
 ## Supported experimental networks
@@ -157,6 +158,10 @@ python3 -m unittest checkout.test_checkout exchange.test_demo exchange.test_depl
   exchange.test_exchange exchange.test_order_ledger exchange.test_persistent_chain \
   exchange.test_phase4e_c exchange.test_wallet_companion_tty exchange.test_zebra_provenance \
   exchange.test_provenance_stage
+
+# Benchmark harness (no Docker or chain; one disposable /private/tmp/zwa4e-test-* root)
+python3 -m unittest benchmark.test_safety benchmark.test_metrics benchmark.test_workload \
+  benchmark.test_cli benchmark.test_integration
 
 # Lineage verifier (needs a prepared offline cargo cache)
 lineage/scripts/check.sh
