@@ -30,13 +30,16 @@ PROBE_MARKER = "zwa-bench-probe"
 
 RELAY = r'''
 import json, os, sys, urllib.error, urllib.request
+# argv: zwa-bench-relay [port]. The harness never passes a port (the portal's fixed 8790 in its container);
+# the integration test passes the ephemeral port of a real portal_server it started.
+PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 8790
 TOKEN = os.environ.get("ZWA_PORTAL_TOKEN", "")
 if len(TOKEN) < 32:
     sys.stdout.write(json.dumps({"id": None, "status": 0, "body": {"error": "portal token unavailable"}}) + "\n")
     sys.exit(2)
 def call(method, path, body=None):
     data = None if body is None else json.dumps(body).encode()
-    request = urllib.request.Request("http://127.0.0.1:8790" + path, data=data, method=method,
+    request = urllib.request.Request("http://127.0.0.1:%d%s" % (PORT, path), data=data, method=method,
                                      headers={"Authorization": "Bearer " + TOKEN,
                                               "Content-Type": "application/json"})
     try:
@@ -64,6 +67,7 @@ for line in sys.stdin:
 PROBE = r'''
 import json, os, sqlite3, sys
 from pathlib import Path
+from exchange.demo_ledger import SETTINGS
 from exchange.persistent_chain import _rpc
 ROOT = Path(os.environ["ZWA_PRIVATE_EXCHANGE_ROOT"])
 EXCHANGE = ROOT / "exchange"
@@ -105,7 +109,9 @@ except Exception as exc:
     out["chain"] = {"live": False, "error": type(exc).__name__}
 out["offers"] = q("SELECT id,instrument_id,asset_base,capacity,reserved,sold,state FROM offers ORDER BY id")
 out["prices"] = q("SELECT offer_id,price_zat_per_unit,version FROM offer_prices ORDER BY offer_id")
-out["dealerPolicy"] = (q("SELECT value FROM demo_settings WHERE key='dealerPolicy'") or [{"value": None}])[0]["value"]
+# An absent row means the exchange's default (exchange.demo_ledger.SETTINGS), exactly as DemoLedger.setting reads it.
+out["dealerPolicy"] = (q("SELECT value FROM demo_settings WHERE key='dealerPolicy'")
+                       or [{"value": SETTINGS["dealerPolicy"][0]}])[0]["value"]
 out["dealerScans"] = q("""SELECT s.asset_base,s.scan_height,s.asset_units,s.native_zat,s.scanned_at FROM wallet_scans s
                           JOIN (SELECT asset_base,MAX(scan_height) h FROM wallet_scans WHERE wallet_key='dealer'
                           GROUP BY asset_base) m ON m.asset_base=s.asset_base AND m.h=s.scan_height
