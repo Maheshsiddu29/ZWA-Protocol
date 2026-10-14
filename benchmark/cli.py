@@ -259,6 +259,13 @@ class Bench:
             raise Refused(f"{values['ZWA_ZEBRA_IMAGE']} is {zebra['id']}, not the pinned {facts['platform']} image")
         self.attest("check-image", values["ZWA_ZEBRA_IMAGE"])
         engine_image = self.image(f"zwa-engine:{values['ZWA_ENGINE_TAG']}")
+        expected = self.args.expect_engine_image_id
+        if expected is not None:
+            if not re.fullmatch(r"sha256:[0-9a-f]{64}", expected):
+                raise Refused("--expect-engine-image-id must be sha256:<64 hex>")
+            if engine_image["id"] != expected:
+                raise Refused(f"zwa-engine:{values['ZWA_ENGINE_TAG']} is {engine_image['id']}, not the verified "
+                              f"engine image {expected}")
         rendered = json.loads(self.compose.ok("config", "--format", "json", setup_profile=True,
                                               what="docker compose config"))
         summary = safety.check_rendered(rendered, self.project, deploy_dir=self.deploy_dir,
@@ -269,7 +276,8 @@ class Bench:
         safety.project_resources_absent(existing, self.project)
         host = self.host_checks(thresholds)
         return {"plan": 1, "project": self.project, "createdAt": now_iso(), "docker": facts,
-                "images": {"engine": engine_image, "zebra": zebra, "zebraPinned": pinned},
+                "images": {"engine": engine_image, "zebra": zebra, "zebraPinned": pinned,
+                           "engineExpected": expected},
                 "rendered": summary, "renderedSha256": canonical_sha256(rendered),
                 "source": self.source(), "thresholds": thresholds.as_dict(),
                 "hostProblems": host, "readyForPrepare": not host,
@@ -395,7 +403,6 @@ class Bench:
             raise Refused("running images differ from the prepared manifest")
         attestation = self.attest("verify", images["zebra"]["ref"])
         run_id, run_dir = self.workdir.new_run(level)
-        self.workdir.reserve_budget(run_id, level, wanted)
         log(f"run {run_id}: level {level}, {wanted} purchase(s)")
         controller = StopController(on_stop=lambda reason: log(f"STOP {reason['code']}: {reason['detail']}"))
         events = ev.JsonLines(run_dir / "events.jsonl", self.redactor)
@@ -411,27 +418,38 @@ class Bench:
         config = {"runId": run_id, "project": self.project, "level": level, "concurrency": wanted,
                   "plan": plan.__dict__, "thresholds": thresholds.as_dict(), "sampleInterval": self.args.sample_interval,
                   "startedAt": now_iso(), "budget": {"max": manifest["maxTransactions"],
-                                                     "usedBefore": self.workdir.budget_used() - wanted},
+                                                     "usedBefore": self.workdir.budget_used()},
                   "zebraAttestation": attestation, "containers": states}
         ev.write_new(run_dir / "run.json", json.dumps(self.redactor(config), indent=2, sort_keys=True) + "\n")
         relay = engine.PortalRelay(self.compose)
         previous = signal.signal(signal.SIGINT, lambda *_: controller.trigger(
             "OPERATOR_INTERRUPT", "operator interrupt: no new work; confirmed orders are being observed"))
+        # The budget is reserved only once the level's preconditions pass, immediately before any submission.
+        run = LevelRun(plan, thresholds=thresholds, relay=relay, probe=lambda ids: engine.probe(self.compose, ids),
+                       monitor=monitor, controller=controller, events=events, redactor=self.redactor,
+                       before_submit=lambda: self.workdir.reserve_budget(run_id, level, wanted))
+        error = None
         try:
             engine.wait_ready(relay, controller, 120)
-            run = LevelRun(plan, thresholds=thresholds, relay=relay,
-                           probe=lambda ids: engine.probe(self.compose, ids), monitor=monitor,
-                           controller=controller, events=events, redactor=self.redactor)
-            probe_before = None
-            try:
-                summary = run.execute()
-            finally:
-                probe_before = run.before
+            summary = run.execute()
+        except Exception as exc:  # noqa: BLE001 - recorded below; never hides a submitted purchase
+            error = exc
         finally:
             signal.signal(signal.SIGINT, previous)
             relay.close()
             events.close()
             samples.close()
+        probe_before = run.before
+        if error is not None:
+            submitted = any(p.timeline.get("walletRequested") for p in run.purchases)
+            ev.write_new(run_dir / "run-error.json", json.dumps(self.redactor({
+                "error": f"{type(error).__name__}: {error}"[:500], "submitted": submitted, "phases": run.phases,
+                "stopReasons": controller.reasons,
+                "transactions": [p.public() for p in run.purchases]}), indent=2, sort_keys=True) + "\n")
+            if not submitted:
+                raise Refused(f"level not started (nothing submitted): {error}")
+            return {"runId": run_id, "result": "HARNESS_ERROR", "error": str(error)[:300],
+                    "next": "inspect run-error.json, then run reconcile"}, EXIT_STOPPED
         prov = manifest["plan"]
         summary.update({
             "schema": "zwa-bench-summary/1", "fixture": False,
@@ -498,11 +516,7 @@ class Bench:
     def reconcile(self) -> dict:
         run_dir = self.workdir.run_dir(self.args.run)
         self.read_env()
-        summary_path = run_dir / "summary.json"
-        if not summary_path.is_file():
-            raise Refused("the run has no summary.json")
-        summary = json.loads(summary_path.read_text())
-        ids = [t["orderId"] for t in summary.get("transactions", []) if t.get("orderId")]
+        ids = run_order_ids(run_dir)
         snapshot = engine.probe(self.compose, ids)
         index = {o["id"]: o["state"] for o in snapshot.get("orderIndex", [])}
         result = {"reconcile": 1, "runId": self.args.run, "at": now_iso(),
@@ -579,6 +593,25 @@ class Bench:
         return result
 
 
+def run_order_ids(run_dir: Path) -> list[str]:
+    """A run's order IDs from summary.json, else run-error.json, else events.jsonl (a harness that was killed)."""
+    for name in ("summary.json", "run-error.json"):
+        path = run_dir / name
+        if path.is_file() and not path.is_symlink():
+            return [t["orderId"] for t in json.loads(path.read_text()).get("transactions", []) if t.get("orderId")]
+    ids: list[str] = []
+    events = run_dir / "events.jsonl"
+    if events.is_file() and not events.is_symlink():
+        for line in events.read_text().splitlines():
+            try:
+                order_id = json.loads(line).get("orderId")
+            except ValueError:
+                continue  # a line cut short when the harness was killed
+            if isinstance(order_id, str) and re.fullmatch(r"[0-9a-f]{32}", order_id) and order_id not in ids:
+                ids.append(order_id)
+    return ids
+
+
 def mount_point_for(path: str, mountinfo: str) -> str:
     """Longest mount point containing `path` (so statvfs needs no access to the path itself)."""
     best = "/"
@@ -632,6 +665,7 @@ def parser() -> argparse.ArgumentParser:
         p.add_argument("--zebra-image", default="qedit/zebra-zsa-swap-pinned:latest")
         p.add_argument("--params-dir", required=True, help="host directory holding the checksummed ZcashParams")
         p.add_argument("--allow-dirty", action="store_true", help="benchmark an uncommitted checkout (recorded)")
+        p.add_argument("--expect-engine-image-id", help="refuse unless the engine tag resolves to this verified image ID")
 
     for name in ("plan", "prepare"):
         p = sub.add_parser(name)

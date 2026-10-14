@@ -453,8 +453,10 @@ class LevelPlan:
 
 class LevelRun:
     def __init__(self, plan: LevelPlan, *, thresholds: Thresholds, relay, probe, monitor: ResourceMonitor,
-                 controller: StopController, events: JsonLines, redactor: Redactor, timing: Timing | None = None):
+                 controller: StopController, events: JsonLines, redactor: Redactor, timing: Timing | None = None,
+                 before_submit=None):
         self.plan = plan
+        self.before_submit = before_submit  # e.g. reserve the transaction budget once preconditions pass
         self.t = thresholds
         self.relay = relay
         self.probe = probe
@@ -492,6 +494,8 @@ class LevelRun:
     def execute(self) -> dict:
         self.phase("start")
         self.before = self.preconditions()
+        if self.before_submit is not None:
+            self.before_submit()
         self.monitor.start()
         try:
             self.phase("idleBefore")

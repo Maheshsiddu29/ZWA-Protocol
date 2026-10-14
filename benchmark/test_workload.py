@@ -409,6 +409,33 @@ class Levels(unittest.TestCase):
         self.assertEqual(summary["result"], "STOPPED")
         self.assertEqual(summary["consistencyProblems"], [])
 
+    def test_stop_arriving_with_the_quote_is_caught_by_the_confirmation_gate(self):
+        h = self.harness(1)
+        original = h.exchange._portal
+
+        def portal(action, actor, role, session, payload):
+            view = original(action, actor, role, session, payload)
+            if action == "order" and view.get("state") == "QUOTE_READY" and not h.controller.stopped:
+                h.controller.trigger("SWAP_GROWTH", "injected as the quote arrives")
+            return view
+        h.exchange._portal = portal
+        summary = h.execute()
+        self.assertNotIn("confirm", h.exchange.calls)
+        self.assertEqual(summary["transactions"][0]["outcome"], "CANCELLED_BEFORE_SIGNING")
+        self.assertEqual(sum(o["reserved"] for o in h.exchange.offers.values()), 0)
+
+    def test_a_confirmed_order_is_never_cancelled(self):
+        from benchmark.workload import Purchase, Worker
+        h = self.harness(1)
+        worker = Worker(Purchase("P1", INSTRUMENTS[0], 1), relay=h.exchange, controller=h.controller,
+                        thresholds=Thresholds(), events=h.events, redactor=h.redactor, queue_position=0,
+                        wait_durability=False, timing=Timing(h.clock.now, h.clock.sleep, interruptible=False))
+        worker.p.order_id = "a" * 32
+        worker.p.timeline["confirmed"] = 1.0
+        worker.cancel_unconfirmed("operator stop")
+        self.assertEqual(h.exchange.calls, [])
+        h.events.close()
+
     def test_stop_before_any_wallet_submits_nothing(self):
         h = self.harness(2)
         h.controller.trigger("DISK_FREE_LOW", "already low")
@@ -442,6 +469,19 @@ class Levels(unittest.TestCase):
         with self.assertRaisesRegex(EngineError, "reconcile"):
             h.execute()
         self.assertEqual(h.exchange.calls, [])
+
+    def test_budget_is_reserved_after_preconditions_and_before_any_submission(self):
+        calls_at_reservation = []
+        h = self.harness(1)
+        h.run.before_submit = lambda: calls_at_reservation.append(list(h.exchange.calls))
+        h.execute()
+        self.assertEqual(calls_at_reservation, [[]], "reserved once, before the first portal call")
+        refused = Harness(1, Path(tempfile.mkdtemp(dir=self.path)), over_reserve=True)
+        reserved = []
+        refused.run.before_submit = lambda: reserved.append(True)
+        with self.assertRaises(EngineError):
+            refused.execute()
+        self.assertEqual(reserved, [], "a level refused by its preconditions reserves nothing")
 
     def test_secrets_never_reach_events(self):
         h = self.harness(2)

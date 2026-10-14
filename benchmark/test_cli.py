@@ -171,6 +171,17 @@ class Plan(CliCase):
         self.assertEqual(code, cli.EXIT_REFUSED)
         self.assertIn("not the pinned", err)
 
+    def test_plan_pins_the_verified_engine_image(self):
+        host = FakeDockerHost(str(self.params))
+        code, out, err = run_cli(self.plan_args() + ["--expect-engine-image-id", ENGINE_ID], self.docker(host))
+        self.assertEqual(code, 0, err)
+        self.assertEqual(out["images"]["engineExpected"], ENGINE_ID)
+        for wrong in ("sha256:" + "0" * 64, "latest"):
+            code, _, err = run_cli(self.plan_args() + ["--expect-engine-image-id", wrong],
+                                   self.docker(FakeDockerHost(str(self.params))))
+            self.assertEqual(code, cli.EXIT_REFUSED)
+            self.assertRegex(err, "engine image|expect-engine-image-id")
+
     def test_plan_refuses_bad_parameters(self):
         (self.params / "sapling-spend.params").write_bytes(b"tampered")
         code, _, err = run_cli(self.plan_args(), self.docker(FakeDockerHost(str(self.params))))
@@ -346,6 +357,21 @@ class Prepared(CliCase):
             self.assertNotIn(token, flat)
         after = sorted(p.name for p in self.work.evidence.iterdir())
         self.assertTrue(set(before) <= set(after), "evidence is never deleted")
+
+
+class RunOrderIds(unittest.TestCase):
+    def test_order_ids_survive_a_killed_harness(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp)
+            a, b = "a" * 32, "b" * 32
+            (run / "events.jsonl").write_text(
+                json.dumps({"event": "STATE", "orderId": a}) + "\n" + json.dumps({"event": "STATE", "orderId": a})
+                + "\n" + json.dumps({"event": "STATE", "orderId": b}) + "\n" + '{"event": "STATE", "ord')
+            self.assertEqual(cli.run_order_ids(run), [a, b])
+            (run / "run-error.json").write_text(json.dumps({"transactions": [{"orderId": b}, {"orderId": None}]}))
+            self.assertEqual(cli.run_order_ids(run), [b])
+            (run / "summary.json").write_text(json.dumps({"transactions": [{"orderId": a}]}))
+            self.assertEqual(cli.run_order_ids(run), [a])
 
 
 class Evidence(unittest.TestCase):
