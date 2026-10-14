@@ -46,6 +46,58 @@ def load_stage():
 stage_module = load_stage()
 
 
+def elf(machine: int = 0x3E) -> bytes:
+    header = bytearray(b"\x7fELF\x02\x01\x01" + bytes(9))
+    header += (2).to_bytes(2, "little") + machine.to_bytes(2, "little") + bytes(44)
+    return bytes(header) + b"zebrad"
+
+
+def rendering(deploy: Path, zebra_tag: str) -> dict:
+    """The shape `docker compose config --format json` printed for compose.yaml plus an AMD64 override."""
+    hardened = {"cap_drop": ["ALL"], "security_opt": ["no-new-privileges:true"], "restart": "unless-stopped",
+                "logging": {"driver": "json-file", "options": {"max-file": "5", "max-size": "10m"}}}
+    engine_mounts = [{"type": "volume", "source": "zwa-root", "target": "/var/lib/zwa", "volume": {}},
+                     {"type": "volume", "source": "zwa-params", "target": "/opt/zwa/params/ZcashParams",
+                      "read_only": True, "volume": {}}]
+    engine = dict(hardened, image="zwa-engine:provenance-test", user="10001:10001", read_only=True,
+                  tmpfs=["/tmp:size=64m,mode=1777"], networks={"internal": None}, entrypoint=None,
+                  environment={"ZWA_PRIVATE_EXCHANGE_ROOT": "/var/lib/zwa/zwa4e-demo"},
+                  depends_on={"zebra": {"condition": "service_started", "required": True}},
+                  volumes=engine_mounts, mem_limit="3221225472", cpus=2)
+    return {
+        "name": "zwa-prov-stage",
+        "services": {
+            "zebra": dict(hardened, image=zebra_tag, entrypoint=AMD64_ENTRYPOINT, command=None, cpus=2,
+                          mem_limit="4294967296", networks={"internal": None},
+                          volumes=[{"type": "volume", "source": "zebra-state", "target": "/data", "volume": {}},
+                                   {"type": "bind", "source": str(deploy / "zebra/regtest-config.toml"),
+                                    "target": "/config/regtest-config.toml", "read_only": True, "bind": {}}]),
+            "portal": dict(engine, command=["python3", "-m", "exchange.portal_server"], mem_limit="536870912",
+                           environment={"ZWA_PORTAL_TOKEN": "t" * 40,
+                                        "ZWA_PRIVATE_EXCHANGE_ROOT": "/var/lib/zwa/zwa4e-demo"},
+                           healthcheck={"test": ["CMD", "python3", "-c", "pass"], "interval": "15s"}),
+            "order-service": dict(engine, command=["python3", "-m", "exchange.order_service", "serve"]),
+            "demo-signer": dict(engine, command=["python3", "-m", "exchange.demo_signer", "serve"]),
+            "web": dict(hardened, image="zwa-web:local", user="10001:10001", read_only=True,
+                        networks={"internal": None, "edge": None}, environment={"ZWA_DEMO_MODE": "1"}),
+            "caddy": dict(hardened, image="caddy:2.8.4-alpine", networks={"edge": None},
+                          ports=[{"mode": "ingress", "host_ip": "127.0.0.1", "target": 80, "published": "80",
+                                  "protocol": "tcp"},
+                                 {"mode": "ingress", "host_ip": "127.0.0.1", "target": 443, "published": "443",
+                                  "protocol": "tcp"}],
+                          volumes=[{"type": "bind", "source": str(deploy / "Caddyfile"),
+                                    "target": "/etc/caddy/Caddyfile", "read_only": True, "bind": {}},
+                                   {"type": "volume", "source": "caddy-data", "target": "/data", "volume": {}},
+                                   {"type": "volume", "source": "caddy-config", "target": "/config", "volume": {}}]),
+        },
+        "networks": {"edge": {"name": "zwa-prov-stage_edge", "ipam": {}},
+                     "internal": {"name": "zwa-prov-stage_internal", "ipam": {}, "internal": True}},
+        "volumes": {v: {"name": f"zwa-prov-stage_{v}"}
+                    for v in ("zwa-root", "zwa-params", "zebra-state", "caddy-data", "caddy-config")},
+        "x-engine": {"image": "zwa-engine:provenance-test"},
+    }
+
+
 def identity() -> dict:
     return {"version": 1, "image": ARM64, "configSha256": chain.CONFIG_SHA256, "genesisHash": GENESIS,
             "anchorHeight": 335, "anchorHash": ANCHOR, "lastStartState": "CHAIN_ACTIVE",
@@ -81,12 +133,17 @@ class FakeHost:
         self.container_entrypoint = AMD64_ENTRYPOINT
         self.listing_hook = None
         self.record_hook = None
+        self.executable: bytes | None = elf()
+        self.executable_mode = 0o755
+        self.check_containers: list[str] = []
+        self.removed: list[str] = []
 
     def __call__(self, argv, input=None, capture_output=True, env=None, timeout=None):
         self.calls.append(list(argv))
         prefix = 3 if argv[:3] == ["sudo", "-n", "docker"] else 1
         code, out, err = self.handle(argv[prefix:], input)
-        return subprocess.CompletedProcess(argv, code, out.encode(), err.encode())
+        return subprocess.CompletedProcess(argv, code, out if isinstance(out, bytes) else out.encode(),
+                                           err.encode())
 
     def handle(self, args, stdin):
         t = self.t
@@ -97,7 +154,7 @@ class FakeHost:
         if args[:2] == ["image", "inspect"]:
             ref = args[-1]
             if ref == t.zebra_tag:
-                return 0, json.dumps([self.zebra_image]), ""
+                return 0, json.dumps([dict(self.zebra_image, Config={"WorkingDir": "/opt/zebra"})]), ""
             if ref == "zwa-engine:provenance-test":
                 return 0, json.dumps([{"Id": "sha256:" + "a" * 64, "Os": "linux", "Architecture": "amd64"}]), ""
             return 1, "", f"Error: No such image: {ref}"
@@ -119,6 +176,20 @@ class FakeHost:
                                                          "com.docker.compose.service": "zebra"}}}]), ""
         if args[0] == "run":
             return self.run(args)
+        if args[0] == "create":
+            assert args[args.index("--network") + 1] == "none" and "--entrypoint" in args, args
+            self.check_containers.append(f"{len(self.check_containers) + 1:064x}")
+            return 0, self.check_containers[-1] + "\n", ""
+        if args[0] == "cp":
+            if self.executable is None:
+                return 1, "", "Error: Could not find the file /usr/local/bin/zebrad in container"
+            buffer = io.BytesIO()
+            with tarfile.open(fileobj=buffer, mode="w") as tar:
+                add(tar, "zebrad", data=self.executable, uid=0, mode=self.executable_mode)
+            return 0, buffer.getvalue(), ""
+        if args[:2] == ["rm", "-v"]:
+            self.removed.append(args[2])
+            return 0, args[2], ""
         raise AssertionError(args)
 
     def run(self, args):
@@ -217,14 +288,7 @@ class StageFixture(unittest.TestCase):
         self.backup.mkdir(parents=True)
         self.params = {"sapling-spend.params": b"spend", "sapling-output.params": b"output"}
         self.build_archives()
-        self.rendered = {
-            "name": "zwa-prov-stage",
-            "services": {
-                "zebra": {"image": self.zebra_tag, "entrypoint": AMD64_ENTRYPOINT,
-                          "volumes": [{"type": "volume", "source": "zebra-state", "target": "/data"}]},
-                "portal": {"image": "zwa-engine:provenance-test",
-                           "volumes": [{"type": "volume", "source": "zwa-root", "target": "/var/lib/zwa"}]}},
-            "volumes": {v: {"name": f"zwa-prov-stage_{v}"} for v in stage_module.VOLUMES}}
+        self.rendered = rendering(self.deploy, self.zebra_tag)
         self.cfg = self.config()
         self.host = FakeHost(self)
         self.tip = 436
@@ -549,9 +613,9 @@ class PlanRefusalTests(StageFixture):
                 {"type": "bind", "source": "/var/run/docker.sock", "target": "/var/run/docker.sock"})),
             ("references zwa-demo volumes", lambda r: r["volumes"]["zwa-root"].update(name="zwa-demo_zwa-root")),
             ("is not the new", lambda r: r["volumes"]["zebra-state"].update(external=True)),
-            ("publishes ports", lambda r: r["services"]["zebra"].update(ports=[{"target": 18232}])),
+            ("publishes or exposes ports", lambda r: r["services"]["zebra"].update(ports=[{"target": 18232}])),
             ("portal image", lambda r: r["services"]["portal"].update(image="zwa-engine:live")),
-            ("zebra-state volume at /data", lambda r: r["services"]["zebra"].update(volumes=[])),
+            ("zebra mounts are not exactly", lambda r: r["services"]["zebra"].update(volumes=[])),
         ]
         for message, change in cases:
             with self.subTest(message):
@@ -598,6 +662,135 @@ class PlanRefusalTests(StageFixture):
             return code, out, err
         self.host.run = stale_engine
         self.assert_plan_refused("does not contain the reviewed exchange code")
+
+
+class ComposeAllowlistTests(StageFixture):
+    """An otherwise valid rendering with exactly one unsafe addition must be refused by plan."""
+
+    PRODUCTION = "/var/lib/docker/volumes/zwa-demo_zebra-state/_data"
+
+    def refused(self, message: str, change) -> None:
+        original = json.loads(json.dumps(self.rendered))
+        change(self.rendered)
+        try:
+            code, _, err = self.main("plan")
+            self.assertEqual(code, 2, f"{message}: plan was not refused")
+            self.assertIn(message, err)
+            self.assertEqual(self.mutating_calls(), [])
+            self.assertEqual(self.host.check_containers, self.host.removed)
+        finally:
+            self.rendered = original
+            shutil.rmtree(self.work / "evidence", ignore_errors=True)
+            self.host.calls.clear()
+
+    def test_the_real_shape_is_accepted(self):
+        code, planned, err = self.main("plan")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(planned["zebra"]["elfMachine"], "x86-64")
+        self.assertEqual(planned["zebra"]["zebraExecutable"], "/usr/local/bin/zebrad")
+        self.assertEqual(self.host.check_containers, self.host.removed)  # throwaway container removed
+
+    def test_extra_mounts_are_refused(self):
+        zebra = lambda r: r["services"]["zebra"]["volumes"]  # noqa: E731
+        portal = lambda r: r["services"]["portal"]["volumes"]  # noqa: E731
+        cases = [
+            ("unapproved mount", lambda r: zebra(r).append(
+                {"type": "bind", "source": self.PRODUCTION.replace("zwa-demo", "live"), "target": "/data2"})),
+            ("unapproved mount", lambda r: zebra(r).append(
+                {"type": "bind", "source": "/etc", "target": "/host-etc", "read_only": True, "bind": {}})),
+            ("unapproved mount", lambda r: portal(r).append(
+                {"type": "bind", "source": str(self.deploy / "env"), "target": "/x"})),  # writable bind
+            ("zebra mounts are not exactly", lambda r: zebra(r).append(
+                {"type": "volume", "source": "caddy-data", "target": "/extra", "volume": {}})),
+            ("portal mounts are not exactly", lambda r: portal(r).append(
+                {"type": "bind", "source": str(self.deploy / "Caddyfile"), "target": "/c", "read_only": True})),
+            ("portal mounts are not exactly", lambda r: portal(r)[1].update(read_only=False)),
+            ("unapproved mount", lambda r: r["services"]["web"].update(volumes=[
+                {"type": "volume", "source": "live-wallets", "target": "/w", "volume": {}}])),
+            ("unsupported mount", lambda r: portal(r)[0].update(volume={"subpath": "zwa4e-demo"})),
+            ("unsupported mount", lambda r: zebra(r).append({"type": "tmpfs", "target": "/run"})),
+            ("repeats a mount", lambda r: portal(r).append(dict(portal(r)[0]))),
+        ]
+        for message, change in cases:
+            with self.subTest(message):
+                self.refused(message, change)
+
+    def test_unapproved_volumes_and_networks_are_refused(self):
+        cases = [
+            ("is not the new", lambda r: r["volumes"]["zwa-root"].update(  # a host path behind a "volume"
+                driver="local", driver_opts={"type": "none", "o": "bind", "device": "/opt/zwa/live-root"})),
+            ("references zwa-demo volumes", lambda r: r["volumes"]["zwa-root"].update(
+                driver="local", driver_opts={"type": "none", "o": "bind", "device": self.PRODUCTION})),
+            ("is not the new", lambda r: r["volumes"]["zwa-params"].update(external=True)),
+            ("top-level volumes are not the reviewed set", lambda r: r["volumes"].update(
+                {"shared": {"name": "shared", "external": True}})),
+            ("internal/edge pair", lambda r: r["networks"].update({"shared": {"name": "shared", "external": True}})),
+            ("not a new isolated", lambda r: r["networks"]["internal"].update(external=True)),
+            ("not a new isolated", lambda r: r["networks"]["internal"].update(name="zwa-live_internal")),
+            ("not a new isolated", lambda r: r["networks"]["edge"].update(driver="macvlan")),
+            ("not internal", lambda r: r["networks"]["internal"].pop("internal")),
+            ("must join only the internal network", lambda r: r["services"]["zebra"]["networks"].update(edge=None)),
+            ("must join only the internal network", lambda r: r["services"]["portal"]["networks"].update(edge=None)),
+            ("undeclared network", lambda r: r["services"]["web"]["networks"].update(host=None)),
+        ]
+        for message, change in cases:
+            with self.subTest(message):
+                self.refused(message, change)
+
+    def test_host_namespaces_privileges_and_exposure_are_refused(self):
+        cases = [
+            ("network_mode", lambda r: r["services"]["zebra"].update(network_mode="host")),
+            ("pid", lambda r: r["services"]["zebra"].update(pid="host")),
+            ("ipc", lambda r: r["services"]["portal"].update(ipc="host")),
+            ("privileged", lambda r: r["services"]["portal"].update(privileged=True)),
+            ("privileged", lambda r: r["services"]["web"].update(privileged=True)),
+            ("cap_add", lambda r: r["services"]["zebra"].update(cap_add=["NET_ADMIN"])),
+            ("devices", lambda r: r["services"]["order-service"].update(devices=["/dev/sda:/dev/sda"])),
+            ("userns_mode", lambda r: r["services"]["caddy"].update(userns_mode="host")),
+            ("publishes or exposes ports", lambda r: r["services"]["zebra"].update(
+                ports=[{"target": 18232, "published": "18232", "host_ip": "0.0.0.0"}])),
+            ("publishes or exposes ports", lambda r: r["services"]["zebra"].update(expose=["18232"])),
+            ("publishes or exposes ports", lambda r: r["services"]["web"].update(ports=[{"target": 3000}])),
+            ("caddy may publish only 80 and 443", lambda r: r["services"]["caddy"]["ports"].append(
+                {"target": 18232, "published": "18232"})),
+            ("drop all capabilities", lambda r: r["services"]["zebra"].update(security_opt=[])),
+            ("drop all capabilities", lambda r: r["services"]["portal"].update(cap_drop=[])),
+            ("unprivileged read-only engine", lambda r: r["services"]["portal"].update(user="0:0")),
+            ("unprivileged read-only engine", lambda r: r["services"]["portal"].update(read_only=False)),
+            ("environment is not the reviewed one", lambda r: r["services"]["portal"]["environment"].update(
+                ZWA_PRIVATE_EXCHANGE_ROOT="/var/lib/zwa/zwa4e-phase4e-b")),
+            ("unreviewed settings", lambda r: r["services"]["zebra"].update(stdin_open=True)),
+            ("unexpected Compose services", lambda r: r["services"].update(
+                {"debug": {"image": "alpine", "network_mode": "host"}})),
+            ("unexpected top-level Compose keys", lambda r: r.update(secrets={"s": {"file": "/etc/shadow"}})),
+        ]
+        for message, change in cases:
+            with self.subTest(message):
+                self.refused(message, change)
+
+    def test_zebra_command_platform_and_config_are_exact(self):
+        cases = [
+            ("must be `<zebrad> -c /config/regtest-config.toml`", lambda r: r["services"]["zebra"].update(
+                entrypoint=["/usr/local/bin/zebrad", "-c", "/tmp/other.toml"])),
+            ("must be `<zebrad> -c /config/regtest-config.toml`", lambda r: r["services"]["zebra"].update(
+                command=["start"])),
+            ("platform is not linux/amd64", lambda r: r["services"]["zebra"].update(platform="linux/arm64")),
+        ]
+        for message, change in cases:
+            with self.subTest(message):
+                self.refused(message, change)
+        (self.deploy / "zebra/regtest-config.toml").write_text("[network]\nnetwork = \"Mainnet\"\n")
+        self.refused("not the pinned Zebra configuration", lambda r: None)
+
+    def test_zebra_executable_must_be_an_x86_64_elf(self):
+        for message, executable, mode in (
+                ("not an x86-64 ELF", elf(0xB7), 0o755),               # aarch64 binary
+                ("not an x86-64 ELF", b"#!/bin/sh\nexec zebrad\n", 0o755),
+                ("not an executable regular file", elf(), 0o644),
+                ("is not present", None, 0o755)):
+            with self.subTest(message):
+                self.host.executable, self.host.executable_mode = executable, mode
+                self.refused(message, lambda r: None)
 
 
 class StageGateTests(StageFixture):

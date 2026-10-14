@@ -34,9 +34,11 @@ import argparse
 from dataclasses import dataclass, field
 import hashlib
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
+import posixpath
 import re
 import stat
 import subprocess
@@ -45,6 +47,7 @@ import tarfile
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPOSITORY))
+from exchange.persistent_chain import CONFIG as ZEBRA_CONFIG  # noqa: E402
 from exchange.persistent_chain import (COMPOSE_PROJECT, PINNED_ZEBRA_IMAGES, RUNTIME_EVIDENCE,  # noqa: E402
                                        RUNTIME_KEY, ChainError, validate_identity)
 
@@ -120,8 +123,40 @@ print(json.dumps(persistent_chain.status(Path(sys.argv[1]), "zebra", 18232, host
 """
 
 
+KNOWN_SERVICES = frozenset({"zebra", "portal", "order-service", "demo-signer", "web", "caddy", "params", "bootstrap"})
+DECLARED_VOLUMES = frozenset({"zwa-root", "zwa-params", "zebra-state", "caddy-data", "caddy-config"})
+ZEBRA_KEYS = frozenset({"image", "entrypoint", "command", "volumes", "networks", "cap_drop", "security_opt",
+                        "restart", "mem_limit", "cpus", "logging", "platform"})
+PORTAL_KEYS = frozenset({"image", "entrypoint", "command", "volumes", "networks", "cap_drop", "security_opt",
+                         "restart", "mem_limit", "cpus", "logging", "environment", "healthcheck", "depends_on",
+                         "read_only", "tmpfs", "user", "platform"})
+HOST_ACCESS_KEYS = ("privileged", "network_mode", "pid", "ipc", "uts", "userns_mode", "cgroup", "cgroup_parent",
+                    "cap_add", "devices", "device_cgroup_rules", "volumes_from", "sysctls", "extra_hosts", "runtime",
+                    "isolation", "gpus", "storage_opt")
+ELF_MACHINE_X86_64 = 0x3E
+
+
 class StageError(RuntimeError):
     pass
+
+
+def _mounts(name: str, service: dict) -> set[tuple]:
+    """(type, source, target, read_only) per mount; refuses mount options and duplicates."""
+    found = []
+    for mount in service.get("volumes") or []:
+        if (not isinstance(mount, dict) or set(mount) - {"type", "source", "target", "read_only", "volume", "bind"}
+                or mount.get("type") not in ("volume", "bind") or mount.get("volume") not in (None, {})
+                or set(mount.get("bind") or {}) - {"create_host_path"}):
+            raise StageError(f"service {name} has an unsupported mount {mount}")
+        found.append((mount["type"], mount.get("source"), mount.get("target"), bool(mount.get("read_only"))))
+    if len(set(found)) != len(found):
+        raise StageError(f"service {name} repeats a mount")
+    return set(found)
+
+
+def _hardened(name: str, service: dict) -> None:
+    if service.get("cap_drop") != ["ALL"] or service.get("security_opt") != ["no-new-privileges:true"]:
+        raise StageError(f"the rendered {name} service must drop all capabilities with no-new-privileges")
 
 
 class UncertainStage(StageError):
@@ -133,6 +168,7 @@ class Result:
     code: int
     out: str
     err: str
+    raw: bytes = b""
 
 
 def load_attest_tool():
@@ -151,12 +187,13 @@ class Docker:
         self.runner = runner
         self.env = {key: os.environ[key] for key in SAFE_ENV if key in os.environ}
 
-    def __call__(self, *args: str, input: bytes | None = None, timeout: int = 1800) -> Result:
+    def __call__(self, *args, input: bytes | None = None, timeout: int = 1800, binary: bool = False) -> Result:
         done = self.runner([*self.prefix, *args], input=input, capture_output=True, env=self.env,
                            timeout=timeout)
         out, err = done.stdout, done.stderr
-        return Result(done.returncode, out.decode() if isinstance(out, bytes) else out,
-                      err.decode() if isinstance(err, bytes) else err)
+        raw = out if isinstance(out, bytes) else out.encode()
+        text = "" if binary else raw.decode(errors="replace")
+        return Result(done.returncode, text, err.decode(errors="replace") if isinstance(err, bytes) else err, raw)
 
     def ok(self, *args: str, input: bytes | None = None, what: str = "docker command") -> str:
         result = self(*args, input=input)
@@ -430,6 +467,7 @@ class Stage:
         return rendered, raw
 
     def check_rendered(self, rendered: dict, raw: bytes) -> dict:
+        """Exact allowlist for what staging starts (zebra, portal); safety rules for every service."""
         cfg = self.cfg
         if b"docker.sock" in raw or b"/var/run/docker" in raw:
             raise StageError("the rendered configuration mounts the Docker socket")
@@ -437,8 +475,69 @@ class Stage:
             raise StageError(f"the rendered configuration references {cfg.source_project} volumes")
         if rendered.get("name") != cfg.project:
             raise StageError("the rendered project name differs from --project")
+        unknown = {k for k in rendered if not k.startswith("x-")} - {"name", "services", "volumes", "networks"}
+        if unknown:
+            raise StageError(f"unexpected top-level Compose keys: {sorted(unknown)}")
+        self._check_volumes_and_networks(rendered)
         services = rendered.get("services") or {}
-        zebra, portal = services.get("zebra") or {}, services.get("portal") or {}
+        if not {"zebra", "portal"} <= set(services) <= KNOWN_SERVICES:
+            raise StageError(f"unexpected Compose services: {sorted(set(services) - KNOWN_SERVICES)}")
+        for name, service in services.items():
+            self._check_any_service(name, service, rendered)
+        zebra = self._check_zebra(services["zebra"])
+        self._check_portal(services["portal"])
+        return zebra
+
+    def _check_volumes_and_networks(self, rendered: dict) -> None:
+        cfg = self.cfg
+        volumes = rendered.get("volumes") or {}
+        if set(volumes) != DECLARED_VOLUMES:
+            raise StageError(f"the rendered top-level volumes are not the reviewed set: {sorted(volumes)}")
+        for name, spec in volumes.items():
+            # Only a plain project-scoped name: no external, driver or driver_opts (which can bind host paths).
+            if spec != {"name": f"{cfg.project}_{name}"}:
+                raise StageError(f"the rendered {name} volume is not the new {cfg.project}_{name}: {spec}")
+        networks = rendered.get("networks") or {}
+        if set(networks) != {"internal", "edge"}:
+            raise StageError(f"the rendered networks are not the reviewed internal/edge pair: {sorted(networks)}")
+        for name, spec in networks.items():
+            allowed = {"name", "ipam", "driver"} | ({"internal"} if name == "internal" else set())
+            if (not isinstance(spec, dict) or set(spec) - allowed or spec.get("name") != f"{cfg.project}_{name}"
+                    or spec.get("ipam", {}) != {} or spec.get("driver", "bridge") != "bridge"):
+                raise StageError(f"the rendered {name} network is not a new isolated {cfg.project}_{name} network")
+        if networks["internal"].get("internal") is not True:
+            raise StageError("the rendered internal network is not internal (it would have a route out)")
+
+    def _check_any_service(self, name: str, service: dict, rendered: dict) -> None:
+        cfg = self.cfg
+        if not isinstance(service, dict):
+            raise StageError(f"service {name} is malformed")
+        for key in HOST_ACCESS_KEYS:
+            if service.get(key) not in (None, False, [], {}):
+                raise StageError(f"service {name} sets {key}; host namespaces, privileges and devices are refused")
+        if (service.get("ports") or service.get("expose")) and name != "caddy":
+            raise StageError(f"service {name} publishes or exposes ports; only caddy may")
+        for port in service.get("ports") or []:
+            if not isinstance(port, dict) or port.get("target") not in (80, 443):
+                raise StageError("caddy may publish only 80 and 443")
+        networks = service.get("networks") or {}
+        if not isinstance(networks, dict) or set(networks) - set(rendered.get("networks") or {}):
+            raise StageError(f"service {name} joins an undeclared network")
+        deploy = cfg.deploy_dir.resolve()
+        for mount in _mounts(name, service):
+            kind, source, _target, read_only = mount
+            if kind == "volume" and source in DECLARED_VOLUMES:
+                continue
+            if kind == "bind" and read_only and isinstance(source, str) and (
+                    Path(source).resolve() == deploy or deploy in Path(source).resolve().parents):
+                continue
+            raise StageError(f"service {name} has an unapproved mount {mount}")
+
+    def _check_zebra(self, zebra: dict) -> dict:
+        cfg = self.cfg
+        extra = set(zebra) - ZEBRA_KEYS
+        if extra:
+            raise StageError(f"the rendered zebra service has unreviewed settings: {sorted(extra)}")
         entrypoint = zebra.get("entrypoint")
         if (not isinstance(entrypoint, list) or not entrypoint
                 or not all(isinstance(part, str) for part in entrypoint)):
@@ -446,6 +545,20 @@ class Stage:
         if entrypoint == ARM64_ENTRYPOINT:
             raise StageError("the rendered zebra entrypoint is the ARM64 entrypoint; "
                              "compose.amd64.yaml must override it for the AMD64 image")
+        if entrypoint[1:] != ["-c", "/config/regtest-config.toml"] or zebra.get("command") is not None:
+            raise StageError("the rendered zebra command must be `<zebrad> -c /config/regtest-config.toml`")
+        if zebra.get("platform", PLATFORM) != PLATFORM:
+            raise StageError("the rendered zebra platform is not linux/amd64")
+        _hardened("zebra", zebra)
+        if zebra.get("networks") not in ({"internal": None}, {"internal": {}}):
+            raise StageError("the rendered zebra service must join only the internal network")
+        config = cfg.deploy_dir / "zebra/regtest-config.toml"
+        expected = {("volume", "zebra-state", "/data", False),
+                    ("bind", str(config), "/config/regtest-config.toml", True)}
+        if _mounts("zebra", zebra) != expected:
+            raise StageError(f"the rendered zebra mounts are not exactly {sorted(expected)}")
+        if config.read_text() != ZEBRA_CONFIG:
+            raise StageError("deploy/zebra/regtest-config.toml is not the pinned Zebra configuration")
         image = zebra.get("image")
         if not isinstance(image, str):
             raise StageError("the rendered zebra service has no image")
@@ -455,24 +568,67 @@ class Stage:
             raise StageError(f"zebra image check failed: {exc}") from exc
         if (platform, image_id) != (PLATFORM, PINNED_ZEBRA_IMAGES[PLATFORM]):
             raise StageError("the rendered zebra image is not the pinned AMD64 image")
+        return {"zebraImage": image, "zebraImageId": image_id, "zebraEntrypoint": entrypoint}
+
+    def _check_portal(self, portal: dict) -> None:
+        cfg = self.cfg
+        extra = set(portal) - PORTAL_KEYS
+        if extra:
+            raise StageError(f"the rendered portal service has unreviewed settings: {sorted(extra)}")
         if portal.get("image") != cfg.engine_image:
             raise StageError(f"the rendered portal image is not {cfg.engine_image}")
-        for name in ("zebra", "portal"):
-            if (services.get(name) or {}).get("ports"):
-                raise StageError(f"the rendered {name} service publishes ports")
-        volumes = rendered.get("volumes") or {}
-        for volume in VOLUMES:
-            spec = volumes.get(volume) or {}
-            if spec.get("name") != f"{cfg.project}_{volume}" or spec.get("external"):
-                raise StageError(f"the rendered {volume} volume is not the new {cfg.project}_{volume}")
-        mounts = {(m.get("source"), m.get("target")) for m in zebra.get("volumes") or []}
-        if ("zebra-state", "/data") not in mounts:
-            raise StageError("the rendered zebra service does not use the zebra-state volume at /data")
-        portal_mounts = {(m.get("source"), m.get("target"), bool(m.get("read_only")))
-                         for m in portal.get("volumes") or []}
-        if ("zwa-root", "/var/lib/zwa", False) not in portal_mounts:
-            raise StageError("the rendered portal service does not mount zwa-root at /var/lib/zwa")
-        return {"zebraImage": image, "zebraImageId": image_id, "zebraEntrypoint": entrypoint}
+        if portal.get("platform", PLATFORM) != PLATFORM:
+            raise StageError("the rendered portal platform is not linux/amd64")
+        _hardened("portal", portal)
+        if (portal.get("user") != "10001:10001" or portal.get("read_only") is not True
+                or portal.get("tmpfs") != ["/tmp:size=64m,mode=1777"]):
+            raise StageError("the rendered portal is not the unprivileged read-only engine container")
+        if portal.get("networks") not in ({"internal": None}, {"internal": {}}):
+            raise StageError("the rendered portal service must join only the internal network")
+        environment = portal.get("environment") or {}
+        if (set(environment) != {"ZWA_PORTAL_TOKEN", "ZWA_PRIVATE_EXCHANGE_ROOT"}
+                or environment["ZWA_PRIVATE_EXCHANGE_ROOT"] != ENGINE_ROOT):
+            raise StageError("the rendered portal environment is not the reviewed one")
+        if set(portal.get("depends_on") or {}) - {"zebra"}:
+            raise StageError("the rendered portal depends on unreviewed services")
+        expected = {("volume", "zwa-root", "/var/lib/zwa", False),
+                    ("volume", "zwa-params", "/opt/zwa/params/ZcashParams", True)}
+        if _mounts("portal", portal) != expected:
+            raise StageError(f"the rendered portal mounts are not exactly {sorted(expected)}")
+
+    def check_zebra_executable(self, zebra: dict) -> dict:
+        """The entrypoint binary inside the pinned image is an x86-64 ELF executable.
+
+        Copies it out of a never-started, network-less throwaway container, removed afterwards
+        (with any anonymous volume the image declares). No chain volume is involved.
+        """
+        image = zebra["zebraImage"]
+        info = json.loads(self.docker.ok("image", "inspect", "--", image, what="zebra image inspect"))[0]
+        workdir = (info.get("Config") or {}).get("WorkingDir") or "/"
+        path = posixpath.normpath(posixpath.join(workdir, zebra["zebraEntrypoint"][0]))
+        created = self.docker.ok("create", "--network", "none", "--label", "zwa.provenance-stage=executable-check",
+                                 "--entrypoint", path, image, what="executable check container").strip()
+        if not HEX64.fullmatch(created):
+            raise StageError("unexpected container id from docker create")
+        try:
+            copied = self.docker("cp", "-L", f"{created}:{path}", "-", binary=True)
+        finally:
+            self.docker.ok("rm", "-v", created, what="remove executable check container")
+        if copied.code:
+            raise StageError(f"zebra entrypoint {path} is not present in {image}: {copied.err.strip()[:200]}")
+        try:
+            with tarfile.open(fileobj=io.BytesIO(copied.raw), mode="r:") as archive:
+                member = archive.next()
+                if member is None or not member.isreg() or not member.mode & 0o111:
+                    raise StageError(f"zebra entrypoint {path} is not an executable regular file")
+                data = _member_bytes(archive, member)
+        except tarfile.TarError as exc:
+            raise StageError(f"could not read zebra entrypoint {path}: {exc}") from exc
+        if (data[:4] != b"\x7fELF" or data[4:6] != b"\x02\x01"
+                or int.from_bytes(data[18:20], "little") != ELF_MACHINE_X86_64):
+            raise StageError(f"zebra entrypoint {path} is not an x86-64 ELF executable")
+        return {"zebraExecutable": path, "zebraExecutableSha256": hashlib.sha256(data).hexdigest(),
+                "elfMachine": "x86-64"}
 
     def check_engine_image(self) -> dict:
         info = self.docker.ok("image", "inspect", "--", self.cfg.engine_image, what="engine image inspect")
@@ -531,6 +687,7 @@ class Stage:
             raise StageError(f"this Docker host is {host}, not {PLATFORM}")
         rendered, raw = self.render()
         zebra = self.check_rendered(rendered, raw)
+        zebra.update(self.check_zebra_executable(zebra))
         engine = self.check_engine_image()
         self.check_isolation()
         summary = {"sourceRevision": revision, "project": cfg.project, "sourceProject": cfg.source_project,
