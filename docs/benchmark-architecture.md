@@ -175,11 +175,27 @@ reviewed.
   pinned for the host platform, attested with the existing tool after start.
 - **Nothing destructive.** `docker.py` cannot express `prune`, `down -v`,
   `rm`, `kill`, `--force`, `--volumes` or compose services outside the
-  benchmark set. `stop` keeps everything. `cleanup` is a separate command
-  that needs the project name and the manifest's sha256, refuses volumes it
-  did not create or that carry another project's label, and removes exactly
-  the manifest's volumes after `compose down` (without `-v`). Evidence is
-  never deleted.
+  benchmark set. `stop` keeps everything and is crash-equivalent for the
+  exchange; it is an emergency measure, not a step toward cleanup.
+- **Cleanup only at rest.** `cleanup` is a separate command. It needs the
+  project name and the manifest's sha256, and refuses volumes it did not
+  create or that carry another project's label (checked before anything
+  changes). It refuses while any purchase correlation is unresolved.
+  It then takes two read-only probes `--quiescence-seconds` apart, which
+  must show (`analysis.quiescence_problems`):
+  - the chain RPC live on regtest;
+  - every order released or settled;
+  - each settlement verified in its block, stabilized and not dropped;
+  - no wallet being provisioned;
+  - consistent inventory;
+  - every order named by any run's evidence present in the ledger;
+  - no change between the two probes.
+
+  Only then does it remove exactly the manifest's volumes after
+  `compose down` (without `-v`). An unreachable exchange is a refusal, not a
+  reason to proceed. The exception is `--prepare-failed`, for a project that
+  never completed prepare and never ran a level. Every attempt is recorded
+  in `cleanup-check-*.json`. Evidence is never deleted.
 - **Provenance preserved.** The checkout must be clean (or `--allow-dirty`,
   recorded). The manifest records the source revision, harness file hashes,
   Compose file hashes, the rendered sha256, engine and Zebra image IDs, and
@@ -244,7 +260,12 @@ account for the change in `sold`.
 | `TX_VERIFICATION_FAILED` | public `verify-tx` or the probe's RPC does not find the transaction in its block | worker and probe |
 | `INVENTORY_INCONSISTENT` | reservation or sale accounting differs | probe |
 | `DUPLICATE_SUBMISSION_MISMATCH` | a retried `buy` created a different order | worker |
-| `PORTAL_REFUSED`, `HARNESS_ERROR`, `OPERATOR_INTERRUPT` | repeated refusals, an internal error, Ctrl-C | harness |
+| `DURABILITY_NOT_OBSERVED` | with durability required: none within the drain window after the receipt, or none at the final check or in the probe | worker and probe |
+| `DURABILITY_LOST` | the settlement was durable once and later dropped or lost its durability | worker and probe |
+| `PURCHASE_AMBIGUOUS` | a buy's acceptance is unknown after same-key resends and the orders lookup | worker |
+| `ACCEPTANCE_FAILED` | the run does not meet the PASS rules (below), for any reason not already recorded | level |
+| `PORTAL_REFUSED` | any portal refusal of a session start, buy, order lookup or confirmation | worker |
+| `HARNESS_ERROR`, `OPERATOR_INTERRUPT` | an internal error, Ctrl-C | harness |
 
 Thresholds are command-line options with bounds (for example MemAvailable
 0.5–6 GiB, swap growth 0–2 GiB, disk 2–500 GiB), so a typo cannot disable a
@@ -267,6 +288,42 @@ listed in `stopReasons`.
 
 The run is then `STOPPED` if every order is terminal, or `PARTIAL` otherwise.
 `reconcile` re-reads the orders later.
+
+**What PASS means.** `analysis.acceptance_problems()` derives the result from
+the summary alone. `PASS` requires all of:
+
+- no stop reason, no consistency problem, and a final probe;
+- valid monitoring: at least 2 good samples, at most 1% failed samples, no
+  gap over max(5 s, 5 intervals), and coverage from the idle-before phase to
+  the final probe;
+- exactly the level's purchase count;
+- for each purchase:
+  - `SETTLED_VERIFIED` with no recorded problem;
+  - an order ID, final state `RECEIPT_AVAILABLE`, and a transaction, block
+    hash and height;
+  - final probe evidence with `SETTLED` reconciliation;
+  - `verify-tx` inclusion on regtest that matches the receipt;
+  - a passing final receipt re-check after the idle-after window;
+  - unless `--no-wait-durability`, observed durability: the receipt's
+    durability, a stabilization record, and no dropped record.
+
+Unmet rules trigger `ACCEPTANCE_FAILED`, so no failure is silent. The
+Level 3 gate re-runs the same function on the reviewed Level 2 summary.
+A failed, forged, fixture or older-format summary cannot unlock Level 3.
+
+**Ambiguous purchases.** Before each `buy`, a correlation record is fsynced
+to `private/correlations/`. It holds the account, session hash, idempotency
+key, offer, instrument and quantity. An unanswered buy is resent only with
+the same key (at most 3 attempts). If its result is still unknown, the
+portal's read-only `orders` lookup decides; each demo account makes one
+purchase, so its order list is complete:
+
+- no order: `NOT_ACCEPTED`;
+- one matching order: `ACCEPTED`;
+- otherwise: `PURCHASE_AMBIGUOUS`, owner review.
+
+A second purchase is never submitted to repair an unknown result.
+`reconcile` resolves leftover records by the same lookup.
 
 ## 6. Latency model
 
@@ -301,8 +358,10 @@ a negative or invented number.
 never evidence. Everything under `<workdir>/evidence/` is created exclusively
 and never overwritten. Before each record is written, the redactor removes
 values of keys that name secrets (session, token, client hash, seed, password,
-key material) and every registered secret value: the token and each buyer's
-session and client hash. These exist only in memory. After writing, the run
+key material) and every registered secret value: the token, and each buyer's
+session hash, client hash and idempotency key. The session hash and key also
+exist in the protected correlation records under `private/correlations/`
+(0700/0600), which are never evidence. After writing, the run
 directory is re-scanned for registered secrets and Zcash key encodings; a
 finding exits 4 and is recorded. The probe never opens a wallet home, and it
 prints no session or client hash, wallet address or wallet ID.
@@ -327,30 +386,60 @@ prints no session or client hash, wallet address or wallet ID.
   caught at 1 Hz from cgroup counters and the container's init process.
 - One host, one run per level. These are observations of this deployment,
   not statistical performance claims.
+- The portal's generic internal-error answer is treated as transient. Reads
+  retry it, and it cannot produce a PASS by itself, but persistent internal
+  errors surface only as timeouts.
+- Recovering an ambiguous purchase needs the demo session to be live (2
+  hours by default). After that, `reconcile` leaves the record `AMBIGUOUS`
+  for owner review.
+- Cleanup needs the stack running: a stopped or broken project can only be
+  cleaned after it is restarted and reconciled. `--prepare-failed` is
+  limited to projects that never completed prepare and never ran a level.
 
 ## 9. Verification performed locally
 
-- 106 unit and adversarial tests (`benchmark/test_safety.py` 25,
-  `test_metrics.py` 23, `test_workload.py` 26, `test_cli.py` 32). They run on
-  fixture `/proc` and cgroup trees, a fake Docker host that records every
-  argv, and a simulated exchange with injected faults.
-- 5 integration tests (`benchmark/test_integration.py`). The real relay and
-  probe processes run against the real `portal_server`, portal, schema-4
-  ledger, `OrderService` and `DemoSigner`; only the tx-tool, node and Zebra
-  are the existing exchange test doubles. These tests found one defect,
-  fixed in the same commit: an absent dealer-policy row was read as
-  not-ACTIVE.
-- A guard mutation pass: 29 single-line mutations of the safety, Docker,
-  watchdog, gate, inventory, receipt, redaction, cleanup, Level 3 and
-  read-only-probe checks. All 29 are detected: 28 by the full suite, and one
-  (ignoring terminal failure states) by the unit tests; the integration suite
-  would only time out on it after 900 s, and even then reports
-  `SETTLEMENT_TIMEOUT` rather than success.
+- 189 benchmark tests:
+
+  | File | Tests | Covers |
+  |---|---|---|
+  | `test_safety.py` | 25 | isolation rules, Docker allowlist |
+  | `test_metrics.py` | 23 | samplers, stop conditions |
+  | `test_workload.py` | 26 | levels, faults, latencies |
+  | `test_cli.py` | 63 | gates, Level 3 review, cleanup quiescence, failed prepare, evidence, schema, report |
+  | `test_review_findings.py` | 33 | reproductions of the four review findings, plus portal internal errors |
+  | `test_integration.py` | 7 | see below |
+
+  They run on fixture `/proc` and cgroup trees, a fake Docker host that
+  records every argv, and a simulated exchange with injected faults.
+- In `test_integration.py`, the real relay and probe processes run against
+  the real `portal_server`, portal, schema-4 ledger, `OrderService` and
+  `DemoSigner`; only the tx-tool, node and Zebra are the existing exchange
+  test doubles. This covers a lost `buy` answer recovered by same-key resend,
+  and a crashed submission recovered by the real `orders` lookup. These
+  tests found an absent dealer-policy row read as not-ACTIVE (fixed).
+- Review findings (2026-10-14). Each defect was reproduced by a failing test
+  before its fix:
+  - refused purchases, missing order evidence, missing monitoring and
+    undurable settlements reported PASS;
+  - a failed Level 2 could unlock Level 3;
+  - cleanup removed the volumes of a PARTIAL run with an order still
+    `SELLER_APPROVED`;
+  - a lost `buy` answer left an accepted order unrecorded.
+- A stress run (the suite repeated alongside the mutation pass) exposed a
+  false stop: the real portal's generic internal error was treated as a
+  refusal. It is now transient (fixed), with 0 failures in 24 runs under the
+  same load afterwards.
+- Mutation passes:
+  - 29 single-line mutations of the original guards, all detected;
+  - 32 mutations of the review-finding fixes (acceptance, refusal handling,
+    durability, Level 3 re-check, quiescence, failed prepare, correlation,
+    same-key resend, redaction), all detected by the full suite.
 - `mypy` (default mode), `pyflakes` and `flake8` at 120 columns are clean for
   `benchmark/` and the entry script.
 - A read-only `plan` against the real local Docker (Compose 5.3.1, arm64
   pinned Zebra image, the real rendering, the existing attestation tool) with
-  only the parameter checksum stubbed. No Docker resource changed.
+  only the parameter checksum stubbed. A protected-project `cleanup` is
+  refused before any Docker call. No Docker resource changed.
 - No real cryptographic settlement was executed for this work. The
   full-stack path (Groth16, Halo2, broadcast) has not yet run under the
   harness.

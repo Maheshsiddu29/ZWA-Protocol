@@ -137,7 +137,8 @@ Optional per-run settings:
 
 - `--idle-before`, `--idle-after`: quiet windows, default 30 s each.
 - `--sample-interval`: 0.25–1.0 s.
-- `--no-wait-durability`: skip waiting for the 110-block durability step.
+- `--no-wait-durability`: do not require the 110-block durability step. The
+  summary and report then state that the PASS does not cover durability.
 - Threshold flags: `--min-mem-available-gib`, `--max-swap-growth-mib`,
   `--min-disk-free-gib`, `--settlement-timeout`, `--drain-timeout`, etc.
 
@@ -150,6 +151,33 @@ A level refuses to start if:
 - Zebra's attestation fails;
 - the budget would be exceeded;
 - MemAvailable or disk is already near its threshold.
+
+**What PASS means.** A run is `PASS` only when all of these hold:
+
+- No stop condition was recorded, there are no consistency problems, and a
+  final probe exists.
+- Monitoring was valid:
+  - at least 2 samples;
+  - at most 1% failed samples;
+  - no gap over max(5 s, 5 intervals);
+  - coverage of the whole run.
+- Exactly the level's number of purchases ran, and each one:
+  - ended `SETTLED_VERIFIED` with no recorded problem;
+  - has final probe evidence and `SETTLED` reconciliation;
+  - is confirmed included on regtest by `verify-tx`;
+  - passed the final receipt re-check;
+  - unless `--no-wait-durability`, reached durability and kept it.
+
+Anything less is recorded as `ACCEPTANCE_FAILED` and the run is `STOPPED` or
+`PARTIAL`. Any portal refusal (session start, buy, order lookup, confirmation)
+stops the level.
+
+The portal's generic `request could not be completed` answer is the
+exchange's catch-all for an internal exception. It is treated as transient:
+reads retry it, a `buy` is resent with the same key, and a confirmation is
+never re-sent. Instead the order is read to see whether the confirmation
+applied. Level 3 re-derives these rules from the reviewed Level 2
+`summary.json` and does not trust its recorded result.
 
 ## 4. During a run: stops, safe cancellation and reconciliation
 
@@ -179,6 +207,28 @@ After `STOPPED` or `PARTIAL`:
 $BENCH reconcile $COMMON --run <runId>      # read-only; writes reconcile-<time>.json
 ```
 
+**Ambiguous purchases.** Before each `buy`, the harness writes a protected
+correlation record to `$W/private/correlations/` (0600). It holds the demo
+account, its session hash, the idempotency key, and the offer, instrument and
+quantity. If the exchange's answer is lost:
+
+1. The buy is resent with the **same** key and payload, at most 3 times
+   (the ledger returns the existing order).
+2. If the answer is still unknown, the harness reads the buyer's orders
+   through the portal's read-only `orders` action:
+   - no order: `NOT_ACCEPTED`;
+   - exactly one matching order: `ACCEPTED`, and that order is followed;
+   - anything else: `PURCHASE_AMBIGUOUS`, which stops the level as `PARTIAL`.
+
+A new key or a second purchase is never used to repair an unknown result.
+
+`reconcile` repeats that lookup for any unresolved record of the run, and
+never submits. If it cannot resolve a record (for example, the demo session
+has expired, after 2 hours), the record stays `AMBIGUOUS` for owner review.
+Compare the ledger's orders for that demo account by hand. `cleanup` refuses
+while any record is unresolved. Records contain session material: never copy
+`private/` with the evidence.
+
 | Class | Meaning | Action |
 |---|---|---|
 | `SETTLED` | receipt, and the transaction is in its block | none |
@@ -199,10 +249,12 @@ submitting):
 
 1. Prefer waiting: the drain is bounded and nothing new is being submitted.
 2. If you must stop the stack: `$BENCH stop $COMMON --confirm-project $P`.
-   This runs `docker compose stop` for this project only, keeps containers and
-   volumes, and is crash-equivalent for the exchange. An order whose
-   coordinator stops after both approvals becomes `UNCERTAIN`, which is the
-   designed fail-closed outcome.
+   This runs `docker compose stop` for this project only and keeps
+   containers, volumes and evidence. **It is crash-equivalent for the
+   exchange.** An order whose coordinator stops after both approvals becomes
+   `UNCERTAIN`, which is the designed fail-closed outcome. `stop` is not a
+   step toward cleanup: cleanup is refused until the project is running,
+   reconciled and quiescent again.
 3. Never use `docker kill`, `docker compose down -v`, `docker volume prune` or
    `docker system prune`, and never touch another project.
 4. Later, start the project again with exactly the harness's file set, attest
@@ -232,15 +284,45 @@ sha256sum $W/evidence/manifest.json
 $BENCH cleanup $COMMON --confirm-project $P --confirm-manifest-sha256 <that sha256>
 ```
 
-It refuses if:
+Cleanup deletes the ledger and wallet volumes, so it requires evidence that
+nothing is left to settle or reconcile. The project must be **running**, and
+every run reconciled. It refuses if:
 
 - another benchmark command holds the workdir;
-- any volume with this project's name or label is not in the manifest;
-- a volume is labelled for another project.
+- any volume with this project's name or label is not in the manifest, or a
+  volume is labelled for another project (all labels are checked before
+  anything is changed);
+- any purchase correlation record is unresolved;
+- either of two read-only probes, `--quiescence-seconds` apart (default 30,
+  5–600), fails or shows any of these:
+  - an unavailable or non-regtest chain RPC;
+  - an order that is active, unconfirmed, in progress or `UNCERTAIN`;
+  - a settlement that is unverified, not yet stabilized, or dropped;
+  - a demo wallet still being created or funded;
+  - inconsistent reservations or sales;
+  - an order named by any run's evidence but missing from the ledger;
+  - any change in tip, orders, wallets, settlements or offers between the
+    two probes.
 
-It runs `docker compose down` (without `-v`), then `docker volume rm` on each
-manifest volume after re-checking its label. It records
+Each attempt records `evidence/cleanup-check-<time>.json`. Only after a
+`QUIESCENT` check does it run `docker compose down` (without `-v`) and
+`docker volume rm` on each manifest volume, recording
 `evidence/cleanup-<time>.json`. Evidence stays.
+
+If the stack is stopped or the RPC is down, cleanup is refused with the
+remedy: start the project as in section 4, run `reconcile`, then retry. If
+the exchange is still mining (for example sponsor top-up after a run), retry
+later.
+
+**Failed prepare.** A project whose prepare never completed, and that never
+ran a level, never received a purchase from the harness. For it only:
+
+```sh
+$BENCH cleanup $COMMON --confirm-project $P --confirm-manifest-sha256 <sha256> --prepare-failed
+```
+
+This is refused if `prepare-result.json` says `PREPARED`, or if any level run,
+budget reservation or purchase record exists.
 
 Afterwards, confirm nothing else changed:
 
@@ -281,3 +363,5 @@ sharing anyway.
 | `level 3 requires ...` / `permitted only after a passing Level 2` | the Level 2 review gate |
 | `host checks failed` | not Linux/cgroup v2, or memory or disk already near a threshold |
 | `preconditions failed` | active or uncertain orders, inconsistent inventory, or a paused dealer |
+| `exchange is not quiescent` / `unresolved purchase(s)` | cleanup's quiescence evidence is missing; reconcile and wait |
+| `exchange state is unavailable` | cleanup could not probe the exchange; start the project and reconcile first |
