@@ -57,6 +57,21 @@ def elf(machine: int = 0x3E) -> bytes:
     return bytes(header) + b"zebrad"
 
 
+def kernel_allows(mode: int, owner: int, group: int, uid: int, gids: set[int], want: int) -> bool:
+    """Linux permission classes for a process without capabilities (written independently of the driver)."""
+    if uid == owner:
+        granted = (mode >> 6) & 7
+    elif group in gids:
+        granted = (mode >> 3) & 7
+    else:
+        granted = mode & 7
+    return granted & want == want
+
+
+PASSWD = b"root:x:0:0:root:/root:/bin/sh\nzebra:x:10001:10001::/home/zebra:/usr/sbin/nologin\n"
+GROUP = b"root:x:0:\nzebra:x:10001:\n"
+
+
 def rendering(deploy: Path, zebra_tag: str) -> dict:
     """The shape `docker compose config --format json` printed for compose.yaml plus an AMD64 override."""
     hardened = {"cap_drop": ["ALL"], "security_opt": ["no-new-privileges:true"], "restart": "unless-stopped",
@@ -154,6 +169,10 @@ class FakeHost:
         self.executable_mode = 0o755
         self.check_containers: list[str] = []
         self.removed: list[str] = []
+        self.zebra_user = "zebra"  # the image's USER; compose.yaml sets none for zebra
+        self.accounts: dict[str, bytes | None] = {"/etc/passwd": PASSWD, "/etc/group": GROUP}
+        self.probe_hook = None
+        self.probes: list[list[str]] = []
 
     def __call__(self, argv, input=None, capture_output=True, env=None, timeout=None):
         self.calls.append(list(argv))
@@ -171,7 +190,8 @@ class FakeHost:
         if args[:2] == ["image", "inspect"]:
             ref = args[-1]
             if ref == t.zebra_tag:
-                return 0, json.dumps([dict(self.zebra_image, Config={"WorkingDir": "/opt/zebra"})]), ""
+                return 0, json.dumps([dict(self.zebra_image, Config={"WorkingDir": "/opt/zebra",
+                                                                     "User": self.zebra_user})]), ""
             if ref == "zwa-engine:provenance-test":
                 return 0, json.dumps([{"Id": "sha256:" + "a" * 64, "Os": "linux", "Architecture": "amd64"}]), ""
             return 1, "", f"Error: No such image: {ref}"
@@ -198,6 +218,14 @@ class FakeHost:
             self.check_containers.append(f"{len(self.check_containers) + 1:064x}")
             return 0, self.check_containers[-1] + "\n", ""
         if args[0] == "cp":
+            path = args[-2].split(":", 1)[1]
+            if path in self.accounts:
+                if self.accounts[path] is None:
+                    return 1, "", f"Error response from daemon: Could not find the file {path} in container"
+                buffer = io.BytesIO()
+                with tarfile.open(fileobj=buffer, mode="w") as tar:
+                    add(tar, path.rsplit("/", 1)[1], data=self.accounts[path], uid=0, mode=0o644)
+                return 0, buffer.getvalue(), ""
             if self.executable is None:
                 return 1, "", "Error: Could not find the file /usr/local/bin/zebrad in container"
             buffer = io.BytesIO()
@@ -211,6 +239,8 @@ class FakeHost:
 
     def run(self, args):
         entry = args[args.index("--entrypoint") + 1]
+        if entry == "python3" and args[args.index("-c") + 1] == stage_module.ACCESS_PROBE:
+            return self.probe(args)
         if entry == "sh":  # engine code listing
             files = sorted(p for p in (REPOSITORY / "exchange").glob("*.py") if not p.name.startswith("test_"))
             return 0, "".join(f"{hashlib.sha256(p.read_bytes()).hexdigest()}  exchange/{p.name}\n"
@@ -260,6 +290,45 @@ class FakeHost:
             return 0, "".join("\t".join([p, k, str(u), str(g), format(m, "o"), str(s)]) + "\n"
                               for p, k, u, g, m, s in lines), ""
         raise AssertionError(args)
+
+    def probe(self, args):
+        """Run the real ACCESS_PROBE as this test user over the paths the container would see, then apply
+        what the kernel would do for the container's uid/groups without capabilities."""
+        self.probes.append(list(args))
+        uid, gid = (int(part) for part in args[args.index("--user") + 1].split(":"))
+        gids = {gid} | {int(args[i + 1]) for i, a in enumerate(args) if a == "--group-add"}
+        assert args[args.index("--network") + 1] == "none" and "--read-only" in args, args
+        assert args[args.index("--cap-drop") + 1] == "ALL", args
+        assert args[args.index("--security-opt") + 1] == "no-new-privileges:true", args
+        binds = {}
+        for i, arg in enumerate(args):
+            if arg == "--mount":
+                fields = dict(f.split("=", 1) if "=" in f else (f, True) for f in args[i + 1].split(","))
+                assert fields["type"] == "bind" and fields["readonly"] is True, fields
+                binds[fields["target"]] = fields["source"]
+        assert "-v" not in args, args
+        paths = args[args.index("-c") + 2:]
+        mapped = {binds.get(path, path): path for path in paths}
+        out = io.StringIO()
+        with patch.object(sys, "argv", ["-c", *mapped]), redirect_stdout(out):
+            exec(compile(stage_module.ACCESS_PROBE, "<access probe>", "exec"), {"__name__": "__main__"})
+        seen = json.loads(out.getvalue())
+        rename = lambda path: next((inside + path[len(host):] for host, inside in mapped.items()  # noqa: E731
+                                    if path == host or path.startswith(host + "/")), path)
+        report = {"identity": {"uid": uid, "euid": uid, "gid": gid, "egid": gid, "groups": sorted(gids - {gid})},
+                  "files": {}, "dirs": {}, "links": {}, "other": {}, "errors": {}}
+        for kind in ("files", "dirs", "links", "other", "errors"):
+            for path, value in seen[kind].items():
+                report[kind][rename(path)] = value
+        for path, meta in report["dirs"].items():
+            if not kernel_allows(*meta[:3], uid, gids, 4):
+                meta[3] = False
+        for path, meta in report["files"].items():
+            if not kernel_allows(*meta[:3], uid, gids, 4):
+                meta[3] = None   # open() fails with EACCES
+        if self.probe_hook:
+            self.probe_hook(report)
+        return 0, json.dumps(report), ""
 
     @staticmethod
     def unpack(archive: Path, directory: Path) -> None:
@@ -1339,6 +1408,237 @@ class StageGateTests(StageFixture):
         compose = (REPOSITORY / "deploy/compose.yaml").read_text()
         self.assertIn('entrypoint: ["target/release/zebrad", "-c", "/config/regtest-config.toml"]', compose)
         self.assertEqual(stage_module.ARM64_ENTRYPOINT, ["target/release/zebrad", "-c", "/config/regtest-config.toml"])
+
+
+class ZebraConfigAccessTests(StageFixture):
+    """AWS failure 1: the staging checkout's regtest-config.toml was mode 600, and zebra (its image USER,
+    all capabilities dropped) could not read it. plan must refuse before any volume or service exists."""
+
+    def setUp(self):
+        super().setUp()
+        self.config_file = self.deploy / "zebra/regtest-config.toml"
+        self.owner, self.group = self.config_file.stat().st_uid, self.config_file.stat().st_gid
+
+    def mode(self) -> int | None:
+        return stat.S_IMODE(self.config_file.lstat().st_mode) if os.path.lexists(self.config_file) else None
+
+    def plan(self) -> tuple[int, dict | None, str]:
+        shutil.rmtree(self.work / "evidence", ignore_errors=True)
+        self.host.calls.clear()
+        return self.main("plan")
+
+    def assert_refused(self, message: str) -> str:
+        before = self.mode()
+        code, _, err = self.plan()
+        self.assertEqual(code, 2, err)
+        self.assertIn(message, err)
+        self.assertEqual(self.mutating_calls(), [])
+        self.assertFalse(self.host.volumes)
+        self.assertEqual(self.mode(), before)   # never chmodded
+        self.assertFalse(any("chmod" in " ".join(c) for c in self.host.calls))
+        self.assertFalse((self.work / "evidence/plan.json").exists())
+        return err
+
+    def test_aws_mode_600_config_is_refused_before_any_volume_or_service(self):
+        self.config_file.chmod(0o600)
+        err = self.assert_refused("is not readable by the zebra container user zebra = uid 10001")
+        self.assertIn("mode 0600", err)
+        self.assertIn("never changes file modes", err)
+        self.assertEqual(self.host.probes, [])  # the host check refuses before the probe container
+        self.host.zebra_user = ""              # root without capabilities has no override either
+        self.host.accounts = {"/etc/passwd": None, "/etc/group": None}
+        if self.group != 0:
+            self.assert_refused("uid 0, gid 0")
+        self.assertEqual(self.mode(), 0o600)
+
+    def test_stage_refuses_a_config_made_unreadable_after_plan(self):
+        code, planned, err = self.main("plan")
+        self.assertEqual(code, 0, err)
+        self.config_file.chmod(0o600)
+        code, _, err = self.main("stage", "--rendered-sha256", planned["renderedSha256"])
+        self.assertEqual(code, 2)
+        self.assertIn("is not readable by the zebra container user", err)
+        self.assertFalse(self.host.volumes)
+        self.assertEqual(self.mode(), 0o600)
+
+    def test_config_made_unreadable_during_restore_halts_before_zebra_starts(self):
+        def chmod_during_restore(volume, _directory):
+            if volume == "zwa-params":
+                self.config_file.chmod(0o600)
+        self.host.corrupt_hook = chmod_during_restore
+        code, _, err = self.plan_and_stage()
+        self.assertEqual(code, 2)
+        self.assertIn("is not readable by the zebra container user", err)
+        self.assertFalse(any("up" in c for c in self.host.calls))  # zebra never started
+        self.assertEqual(self.mode(), 0o600)
+
+    def test_readable_configurations_are_accepted(self):
+        cases = [
+            ("zebra", 0o644, None),
+            ("zebra", 0o444, None),
+            ("", 0o644, None),                              # root, no capabilities: other bits suffice
+            (f"10001:{self.group}", 0o640, None),           # group class
+            (f"{self.owner}:{self.group}", 0o400, None),    # owner class
+            ("zebra", 0o640, b"root:x:0:\nzebra:x:10001:\nconfig:x:%d:zebra\n" % self.group),  # supplementary
+        ]
+        for user, mode, group_file in cases:
+            with self.subTest(user=user, mode=oct(mode)):
+                self.host.zebra_user = user
+                self.host.accounts["/etc/group"] = group_file or GROUP
+                self.config_file.chmod(mode)
+                code, planned, err = self.plan()
+                self.assertEqual(code, 0, err)
+                self.assertEqual(planned["zebraConfig"]["mode"], f"{mode:04o}")
+                self.assertEqual(planned["zebraConfig"]["sha256"], chain.CONFIG_SHA256)
+                self.assertEqual(self.mode(), mode)
+
+    def test_permission_classes_are_exclusive(self):
+        cases = [
+            (f"10001:{self.group}", 0o604, "mode 0604"),      # group matches: its empty bits apply, not other
+            (f"{self.owner}:99999", 0o044, "mode 0044"),     # owner matches: its empty bits apply
+            ("zebra", 0o640, "mode 0640"),                    # neither: other bits
+            ("zebra", 0o000, "mode 0000"),
+        ]
+        if self.group != 0:
+            cases.append(("", 0o640, "mode 0640"))
+        for user, mode, message in cases:
+            with self.subTest(user=user, mode=oct(mode)):
+                self.host.zebra_user = user
+                self.config_file.chmod(mode)
+                self.assert_refused(message)
+        self.config_file.chmod(0o644)
+
+    def test_probe_runs_with_zebra_identity_and_hardening_on_the_exact_bind(self):
+        self.host.accounts["/etc/group"] = GROUP + b"adm:x:4:zebra\n"
+        code, planned, err = self.plan()
+        self.assertEqual(code, 0, err)
+        self.assertEqual((planned["zebraConfig"]["uid"], planned["zebraConfig"]["groups"]), (10001, [4, 10001]))
+        probes = [c for c in self.host.probes if any(a.startswith("type=bind") for a in c)]
+        self.assertEqual(len(probes), 1)
+        call = probes[0]
+        self.assertEqual(call[call.index("--user") + 1], "10001:10001")
+        self.assertEqual(call[call.index("--group-add") + 1], "4")
+        self.assertEqual(call[call.index("--mount") + 1], f"type=bind,source={self.config_file},"
+                                                          "target=/config/regtest-config.toml,readonly")
+        self.assertEqual(call[call.index("--entrypoint") + 2], "zwa-engine:provenance-test")
+        self.assertEqual(call[-1], "/config/regtest-config.toml")
+        self.assertEqual(call[call.index("--entrypoint") + 3], "-I")
+
+    def test_container_side_failures_fail_closed(self):
+        target = "/config/regtest-config.toml"
+        cases = {
+            "not readable inside the container": lambda r: r["files"][target].__setitem__(3, None),  # e.g. LSM/ACL
+            "not the checkout's pinned configuration": lambda r: r["files"][target].__setitem__(3, "0" * 64),
+            "is not a regular file": lambda r: r.update(files={}, errors={target: "No such file or directory"}),
+            "not as uid 10001": lambda r: r["identity"].update(uid=0, euid=0),
+            "groups": lambda r: r["identity"].update(groups=[0]),
+            "malformed report": lambda r: r["files"][target].__setitem__(0, "0644"),
+        }
+        for message, hook in cases.items():
+            with self.subTest(message):
+                self.host.probe_hook = lambda report, hook=hook: (
+                    hook(report) if target in report["files"] or target in report["errors"] else None)
+                self.assert_refused(message)
+        self.host.probe_hook = None
+        real = self.host.probe
+        for message, answer in (("printed no JSON", (0, "not json", "")),
+                                ("configuration probe failed (exit 125)", (125, "", "docker: error"))):
+            with self.subTest(message):
+                self.host.probe = lambda args, answer=answer: answer if "--mount" in args else real(args)
+                self.assert_refused(message)
+        self.host.probe = real
+
+    def test_incorrect_config_files_and_mounts_are_refused(self):
+        good = self.config_file.read_bytes()
+        self.config_file.write_bytes(good + b"\n")
+        self.assert_refused("not the pinned Zebra configuration")
+        self.config_file.unlink()
+        self.assert_refused("zebra/regtest-config.toml must be an existing regular file")
+        self.config_file.mkdir()
+        self.assert_refused("zebra/regtest-config.toml must be an existing regular file")
+        self.config_file.rmdir()
+        (self.deploy / "zebra/real.toml").write_bytes(good)
+        self.config_file.symlink_to(self.deploy / "zebra/real.toml")
+        self.assert_refused("zebra/regtest-config.toml must be an existing regular file")
+        self.config_file.unlink()
+        self.config_file.write_bytes(good)
+        bind = lambda r: r["services"]["zebra"]["volumes"][1]  # noqa: E731
+        for message, change in (
+                ("zebra mounts are not exactly", lambda r: bind(r).update(target="/config/other.toml")),
+                ("service zebra has an unapproved mount", lambda r: bind(r).update(read_only=False)),
+                ("zebra mounts are not exactly", lambda r: bind(r).update(source=str(self.deploy / "Caddyfile"))),
+                ("zebra command must be", lambda r: r["services"]["zebra"].update(
+                    entrypoint=["/usr/local/bin/zebrad", "-c", "/config/other.toml"])),
+                ("unreviewed settings: ['user']", lambda r: r["services"]["zebra"].update(user="0:0"))):
+            with self.subTest(message):
+                original = json.loads(json.dumps(self.rendered))
+                change(self.rendered)
+                try:
+                    self.assert_refused(message)
+                finally:
+                    self.rendered = original
+
+    def test_config_reached_through_a_symlinked_directory_is_refused(self):
+        alias = self.work / "deploy-alias"
+        alias.symlink_to(self.deploy)
+        cfg = self.config()
+        cfg.deploy_dir = alias
+        stage = stage_module.Stage(cfg, stage_module.Docker(False, runner=self.host), log=lambda _m: None)
+        stage.zebra_identity = ("zebra", 10001, 10001, frozenset())
+        with self.assertRaisesRegex(stage_module.StageError, "reached without symlinks"):
+            stage.check_zebra_config()
+
+    def test_zebra_image_user_resolution(self):
+        resolve = stage_module.resolve_user
+        self.assertEqual(resolve("", None, None), (0, 0, frozenset()))
+        self.assertEqual(resolve("", PASSWD, GROUP), (0, 0, frozenset()))
+        self.assertEqual(resolve("zebra", PASSWD, GROUP), (10001, 10001, frozenset()))
+        self.assertEqual(resolve("zebra", PASSWD, GROUP + b"adm:x:4:syslog,zebra\n"), (10001, 10001, frozenset({4})))
+        self.assertEqual(resolve("10001", PASSWD, GROUP), (10001, 10001, frozenset()))
+        self.assertEqual(resolve("2000", PASSWD, GROUP), (2000, 0, frozenset()))      # not in passwd: gid 0
+        self.assertEqual(resolve("2000:3000", None, None), (2000, 3000, frozenset()))
+        self.assertEqual(resolve("zebra:root", PASSWD, GROUP + b"adm:x:4:zebra\n"), (10001, 0, frozenset()))
+        for spec, passwd, group, message in (
+                ("ghost", PASSWD, GROUP, "not in its /etc/passwd"),
+                ("ghost", None, None, "not in its /etc/passwd"),
+                ("zebra:ghost", PASSWD, GROUP, "not in its /etc/group"),
+                ("zebra;id", PASSWD, GROUP, "unsupported zebra image user"),
+                (None, PASSWD, GROUP, "unsupported zebra image user"),
+                ("zebra", b"zebra:x:abc:10001::/:/bin/sh\n", GROUP, "malformed line"),
+                ("zebra", PASSWD, b"zebra:x:\n", "malformed line"),
+                ("zebra", b"x" * 70000, GROUP, "too large"),
+                ("zebra", b"\xff:x:1:1::/:/bin/sh\n", GROUP, "not text")):
+            with self.subTest(spec=spec, message=message):
+                with self.assertRaisesRegex(stage_module.StageError, message):
+                    resolve(spec, passwd, group)
+
+    def test_image_account_files(self):
+        self.host.accounts = {"/etc/passwd": None, "/etc/group": None}   # e.g. a distroless image
+        self.host.zebra_user = "10001:10001"
+        code, planned, err = self.plan()
+        self.assertEqual(code, 0, err)
+        self.assertEqual(planned["zebraConfig"]["groups"], [10001])
+        self.host.zebra_user = "zebra"
+        self.assert_refused("not in its /etc/passwd")
+        real = self.host.handle
+
+        def cp_fails(args, stdin):
+            if args[0] == "cp" and args[-2].endswith(":/etc/passwd"):
+                return 1, "", "Error response from daemon: permission denied"
+            return real(args, stdin)
+        self.host.handle = cp_fails
+        self.assert_refused("could not copy /etc/passwd out of the zebra image")
+        self.assertEqual(self.host.check_containers, self.host.removed)  # throwaway container still removed
+
+    def test_dac_without_capabilities(self):
+        allows = stage_module.dac_allows
+        self.assertFalse(allows([0o600, 1000, 1000], 0, frozenset({0}), 4))      # root has no override
+        self.assertTrue(allows([0o600, 0, 0], 0, frozenset({0}), 4))
+        self.assertFalse(allows([0o604, 1000, 50], 7, frozenset({50}), 4))        # group class is exclusive
+        self.assertTrue(allows([0o604, 1000, 50], 7, frozenset({51}), 4))
+        self.assertFalse(allows([0o066, 7, 50], 7, frozenset({50}), 4))           # owner class is exclusive
+        self.assertTrue(allows([0o755, 0, 0], 10001, frozenset({10001}), 5))
+        self.assertFalse(allows([0o754, 0, 0], 10001, frozenset({10001}), 5))     # read but no execute
 
 
 if __name__ == "__main__":

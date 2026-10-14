@@ -10,8 +10,10 @@ host's AMD64 override, deploy/compose.amd64.yaml.
   plan   Read-only. Validates every input; verifies the backup checksums and
          the .tar.gz contents (paths, types, owners, modes, the chain
          identity, the proving parameters); renders and checks the Compose
-         configuration; checks the pinned AMD64 image and the engine image's
-         code; refuses existing staging volumes or containers. Prints the
+         configuration; checks the pinned AMD64 image, that zebra's effective
+         user can read its configuration through the exact read-only mount,
+         and the engine image's code; refuses existing staging volumes or
+         containers. Never changes a file mode. Prints the
          rendered-configuration sha256 for the operator to review.
   stage  Repeats every plan check and requires --rendered-sha256 from plan.
          Then: creates the new volumes, restores them preserving numeric
@@ -48,7 +50,7 @@ import tarfile
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPOSITORY))
-from exchange.persistent_chain import CONFIG as ZEBRA_CONFIG  # noqa: E402
+from exchange.persistent_chain import CONFIG as ZEBRA_CONFIG, CONFIG_SHA256  # noqa: E402
 from exchange.persistent_chain import (COMPOSE_PROJECT, PINNED_ZEBRA_IMAGES, RUNTIME_EVIDENCE,  # noqa: E402
                                        RUNTIME_KEY, ChainError, validate_identity)
 
@@ -164,6 +166,54 @@ HOST_ACCESS_KEYS = ("privileged", "network_mode", "pid", "ipc", "uts", "userns_m
                     "cap_add", "devices", "device_cgroup_rules", "volumes_from", "sysctls", "extra_hosts", "runtime",
                     "isolation", "gpus", "storage_opt")
 ELF_MACHINE_X86_64 = 0x3E
+ZEBRA_CONFIG_TARGET = "/config/regtest-config.toml"
+SAFE_BIND_SOURCE = re.compile(r"/[A-Za-z0-9._/-]{1,4000}\Z")  # no ',' or ':' to break --mount/-v parsing
+IMAGE_USER = re.compile(r"[A-Za-z0-9_.-]{0,64}(?::[A-Za-z0-9_.-]{1,64})?\Z")
+MAX_ACCOUNT_FILE = 65536
+READ, EXECUTE = 4, 1  # permission bits; EXECUTE on a directory is search
+
+# Run inside a one-shot container with the security settings of the container it stands in for (user,
+# groups, no capabilities, no-new-privileges, no network, read-only root, the same read-only bind). It
+# lists the given paths without following symlinks, really opens and hashes every regular file, and
+# prints the identity it ran as. Paths only via argv; it writes nothing.
+ACCESS_PROBE = r"""
+import hashlib, json, os, stat, sys
+report = {"identity": {"uid": os.getuid(), "euid": os.geteuid(), "gid": os.getgid(), "egid": os.getegid(),
+                       "groups": sorted(set(os.getgroups()))},
+          "files": {}, "dirs": {}, "links": {}, "other": {}, "errors": {}}
+def sha256(path):
+    try:
+        digest = hashlib.sha256()
+        with open(path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(1 << 20), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+    except OSError:
+        return None
+pending = list(reversed(sys.argv[1:]))
+while pending:
+    path = pending.pop()
+    try:
+        info = os.lstat(path)
+    except OSError as exc:
+        report["errors"][path] = exc.strerror or "error"
+        continue
+    meta = [stat.S_IMODE(info.st_mode), info.st_uid, info.st_gid]
+    if stat.S_ISDIR(info.st_mode):
+        try:
+            names = sorted(os.listdir(path))
+        except OSError:
+            names = None
+        report["dirs"][path] = meta + [names is not None]
+        pending.extend(os.path.join(path, name) for name in reversed(names or []))
+    elif stat.S_ISREG(info.st_mode):
+        report["files"][path] = meta + [sha256(path)]
+    elif stat.S_ISLNK(info.st_mode):
+        report["links"][path] = os.readlink(path)
+    else:
+        report["other"][path] = meta
+print(json.dumps(report, sort_keys=True))
+"""
 
 
 # The only code that touches the original backup. A fixed program run as its own process: unprivileged
@@ -340,6 +390,106 @@ def _mounts(name: str, service: dict) -> set[tuple]:
 def _hardened(name: str, service: dict) -> None:
     if service.get("cap_drop") != ["ALL"] or service.get("security_opt") != ["no-new-privileges:true"]:
         raise StageError(f"the rendered {name} service must drop all capabilities with no-new-privileges")
+
+
+def dac_allows(meta: list, uid: int, groups: frozenset[int], want: int) -> bool:
+    """Linux permission bits for a process with no capabilities (cap_drop: ALL), so not even uid 0 may
+    override them: the owner class alone applies to the owner, then the group class, then other."""
+    mode, owner, group = meta[:3]
+    bits = mode >> 6 if uid == owner else mode >> 3 if group in groups else mode
+    return bits & want == want
+
+
+def _account_lines(raw: bytes | None, fields: int, what: str) -> list[list[str]]:
+    if raw is None:
+        return []
+    if len(raw) > MAX_ACCOUNT_FILE:
+        raise StageError(f"the zebra image's {what} is too large")
+    rows = []
+    for line in raw.decode(errors="strict").splitlines():
+        if not line.strip() or line.startswith("#"):
+            continue
+        row = line.split(":")
+        # runc reads a malformed numeric field as 0 (root): refuse instead of guessing.
+        if len(row) < fields or not row[2].isdigit() or (what == "/etc/passwd" and not row[3].isdigit()):
+            raise StageError(f"the zebra image's {what} has a malformed line")
+        rows.append(row)
+    return rows
+
+
+def resolve_user(spec: object, passwd: bytes | None, group: bytes | None) -> tuple[int, int, frozenset[int]]:
+    """(uid, primary gid, supplementary gids) Docker gives a container whose image sets USER `spec`
+    (runc's GetExecUser with Docker's root defaults). Unresolvable or unusual specs are refused."""
+    if not isinstance(spec, str) or not IMAGE_USER.fullmatch(spec):
+        raise StageError(f"unsupported zebra image user {spec!r}")
+    user_arg, _, group_arg = spec.partition(":")
+    try:
+        users = _account_lines(passwd, 7, "/etc/passwd")
+        groups = _account_lines(group, 4, "/etc/group")
+    except UnicodeDecodeError as exc:
+        raise StageError("the zebra image's account files are not text") from exc
+    if user_arg == "":
+        matches = [u for u in users if int(u[2]) == 0]
+    elif user_arg.isdigit():
+        matches = [u for u in users if int(u[2]) == int(user_arg)]
+    else:
+        matches = [u for u in users if u[0] == user_arg]
+    if matches:
+        name, uid, gid = matches[0][0], int(matches[0][2]), int(matches[0][3])
+    elif user_arg and not user_arg.isdigit():
+        raise StageError(f"the zebra image's user {user_arg!r} is not in its /etc/passwd")
+    else:
+        name, uid, gid = None, int(user_arg or 0), 0
+    extra: frozenset[int] = frozenset()
+    if group_arg:
+        found = [g for g in groups if (int(g[2]) == int(group_arg) if group_arg.isdigit() else g[0] == group_arg)]
+        if found:
+            gid = int(found[0][2])
+        elif group_arg.isdigit():
+            gid = int(group_arg)
+        else:
+            raise StageError(f"the zebra image's group {group_arg!r} is not in its /etc/group")
+    elif name is not None:
+        extra = frozenset(int(g[2]) for g in groups if name in g[3].split(","))
+    return uid, gid, extra
+
+
+def probe_report(output: str, what: str) -> dict:
+    """ACCESS_PROBE output, type-checked; anything malformed fails closed."""
+    try:
+        report = json.loads(output)
+    except ValueError as exc:
+        raise StageError(f"{what} printed no JSON") from exc
+
+    def ints(values, count):
+        return isinstance(values, list) and len(values) >= count and all(type(v) is int for v in values[:count])
+    identity = report.get("identity") if isinstance(report, dict) else None
+    if (not isinstance(identity, dict) or not all(type(identity.get(k)) is int for k in ("uid", "euid", "gid", "egid"))
+            or not ints(identity.get("groups"), len(identity.get("groups") or []))
+            or not all(isinstance(report.get(k), dict) for k in ("files", "dirs", "links", "other", "errors"))
+            or not all(ints(m, 3) and len(m) == 4 and (m[3] is None or isinstance(m[3], str) and HEX64.fullmatch(m[3]))
+                       for m in report["files"].values())
+            or not all(ints(m, 3) and len(m) == 4 and isinstance(m[3], bool) for m in report["dirs"].values())):
+        raise StageError(f"{what} printed a malformed report")
+    return report
+
+
+def access_problems(report: dict, uid: int, groups: frozenset[int], executables: tuple[str, ...] = ()) -> list[str]:
+    """Every path the identity could not list, search, read or run, judged twice: by the probe's real
+    open/listdir as that identity, and by the permission bits it saw."""
+    problems = [f"{path}: {error}" for path, error in report["errors"].items()]
+    for path, meta in report["dirs"].items():
+        if not meta[3] or not dac_allows(meta, uid, groups, READ | EXECUTE):
+            problems.append(f"{path}/ is not listable and searchable (mode {meta[0]:04o}, owner {meta[1]}:{meta[2]})")
+    for path, meta in report["files"].items():
+        if meta[3] is None or not dac_allows(meta, uid, groups, READ):
+            problems.append(f"{path} is not readable (mode {meta[0]:04o}, owner {meta[1]}:{meta[2]})")
+    problems += [f"{path} is a device, FIFO or socket" for path in report["other"]]
+    for path in executables:
+        meta = report["files"].get(path)
+        if meta is None or not dac_allows(meta, uid, groups, READ | EXECUTE):
+            problems.append(f"{path} is not an executable regular file for uid {uid}")
+    return sorted(problems)
 
 
 class UncertainStage(StageError):
@@ -806,7 +956,14 @@ class Stage:
                     ("bind", str(config), "/config/regtest-config.toml", True)}
         if _mounts("zebra", zebra) != expected:
             raise StageError(f"the rendered zebra mounts are not exactly {sorted(expected)}")
-        if config.read_text() != ZEBRA_CONFIG:
+        try:
+            pinned = config.read_text() == ZEBRA_CONFIG
+        except OSError as exc:
+            info = config.lstat()
+            raise StageError(f"deploy/zebra/regtest-config.toml (mode {stat.S_IMODE(info.st_mode):04o}, owner "
+                             f"{info.st_uid}:{info.st_gid}) is not readable by this operator: {exc.strerror}. "
+                             "This tool never changes file modes") from exc
+        if not pinned:
             raise StageError("deploy/zebra/regtest-config.toml is not the pinned Zebra configuration")
         image = zebra.get("image")
         if not isinstance(image, str):
@@ -868,14 +1025,16 @@ class Stage:
             raise StageError(f"the rendered portal mounts are not exactly {sorted(expected)}")
 
     def check_zebra_executable(self, zebra: dict) -> dict:
-        """The entrypoint binary inside the pinned image is an x86-64 ELF executable.
+        """The entrypoint binary inside the pinned image is an x86-64 ELF executable; also the image's
+        USER and account files, from which the zebra container's identity is resolved.
 
-        Copies it out of a never-started, network-less throwaway container, removed afterwards
+        Copies them out of a never-started, network-less throwaway container, removed afterwards
         (with any anonymous volume the image declares). No chain volume is involved.
         """
         image = zebra["zebraImage"]
         info = json.loads(self.docker.ok("image", "inspect", "--", image, what="zebra image inspect"))[0]
-        workdir = (info.get("Config") or {}).get("WorkingDir") or "/"
+        config = info.get("Config") or {}
+        workdir = config.get("WorkingDir") or "/"
         path = posixpath.normpath(posixpath.join(workdir, zebra["zebraEntrypoint"][0]))
         created = self.docker.ok("create", "--network", "none", "--label", "zwa.provenance-stage=executable-check",
                                  "--entrypoint", path, image, what="executable check container").strip()
@@ -883,8 +1042,11 @@ class Stage:
             raise StageError("unexpected container id from docker create")
         try:
             copied = self.docker("cp", "-L", f"{created}:{path}", "-", binary=True)
+            accounts = {name: self._copy_account_file(created, name) for name in ("/etc/passwd", "/etc/group")}
         finally:
             self.docker.ok("rm", "-v", created, what="remove executable check container")
+        self.zebra_identity = (config.get("User") or "", *resolve_user(config.get("User") or "",
+                                                                       accounts["/etc/passwd"], accounts["/etc/group"]))
         if copied.code:
             raise StageError(f"zebra entrypoint {path} is not present in {image}: {copied.err.strip()[:200]}")
         try:
@@ -900,6 +1062,86 @@ class Stage:
             raise StageError(f"zebra entrypoint {path} is not an x86-64 ELF executable")
         return {"zebraExecutable": path, "zebraExecutableSha256": hashlib.sha256(data).hexdigest(),
                 "elfMachine": "x86-64"}
+
+    def _copy_account_file(self, container: str, path: str) -> bytes | None:
+        """A small regular file from the throwaway container, or None when the image has no such file."""
+        copied = self.docker("cp", "-L", f"{container}:{path}", "-", binary=True)
+        if copied.code:
+            if re.search(r"could not find the file|no such file", copied.err, re.IGNORECASE):
+                return None
+            raise StageError(f"could not copy {path} out of the zebra image: {copied.err.strip()[:200]}")
+        try:
+            with tarfile.open(fileobj=io.BytesIO(copied.raw), mode="r:") as archive:
+                member = archive.next()
+                if member is None or not member.isreg() or member.size > MAX_ACCOUNT_FILE:
+                    raise StageError(f"the zebra image's {path} is not a small regular file")
+                return _member_bytes(archive, member)
+        except tarfile.TarError as exc:
+            raise StageError(f"could not read the zebra image's {path}: {exc}") from exc
+
+    def probe(self, what: str, image: str, *, user: tuple[int, int], groups: frozenset[int] = frozenset(),
+              bind: tuple[str, str] | None = None, paths: tuple[str, ...]) -> dict:
+        """ACCESS_PROBE in a one-shot container of `image` as uid:gid plus `groups`, with every capability
+        dropped, no-new-privileges, no network and a read-only root; `bind` is mounted read-only."""
+        args = ["run", "--rm", "--network", "none", "--user", f"{user[0]}:{user[1]}", "--cap-drop", "ALL",
+                "--security-opt", "no-new-privileges:true", "--read-only"]
+        for gid in sorted(groups):
+            args += ["--group-add", str(gid)]
+        if bind is not None:
+            source, target = bind
+            if not SAFE_BIND_SOURCE.fullmatch(source) or not SAFE_BIND_SOURCE.fullmatch(target):
+                raise StageError(f"{what}: unsupported characters in the bind path {source!r}")
+            args += ["--mount", f"type=bind,source={source},target={target},readonly"]
+        result = self.docker(*args, "--entrypoint", "python3", image, "-I", "-c", ACCESS_PROBE, *paths)
+        if result.code:
+            raise StageError(f"{what} failed (exit {result.code}): {result.err.strip()[:400]}")
+        report = probe_report(result.out, what)
+        identity = report["identity"]
+        ran = (identity["uid"], identity["euid"], identity["gid"], identity["egid"])
+        if (ran != (user[0], user[0], user[1], user[1])
+                or set(identity["groups"]) | {user[1]} != set(groups) | {user[1]}):
+            raise StageError(f"{what} ran as {identity}, not as uid {user[0]}, gid {user[1]}, groups {sorted(groups)}")
+        return report
+
+    def check_zebra_config(self) -> dict:
+        """The zebra container can read the pinned configuration through its exact mount.
+
+        compose.yaml sets no `user` for zebra (and the allowlist refuses one), so zebra runs as its image's
+        USER with all capabilities dropped: even uid 0 cannot override permission bits. The bind source is
+        checked here on the host, then read in a probe container with zebra's resolved identity and the
+        same read-only bind. Nothing is ever chmodded: an unreadable file stops staging.
+        """
+        config = self.cfg.deploy_dir / "zebra/regtest-config.toml"
+        spec, uid, gid, extra = self.zebra_identity
+        groups = extra | {gid}
+        who = f"the zebra container user {spec or '(image default: root)'} = uid {uid}, gid {gid}, " \
+              f"groups {sorted(groups)}, with all capabilities dropped"
+        try:
+            info = os.lstat(config)
+        except OSError as exc:
+            raise StageError(f"deploy/zebra/regtest-config.toml is missing: {exc.strerror}") from exc
+        if not stat.S_ISREG(info.st_mode) or Path(os.path.realpath(config)) != config:
+            raise StageError("deploy/zebra/regtest-config.toml must be a regular file reached without symlinks")
+        host = [stat.S_IMODE(info.st_mode), info.st_uid, info.st_gid]
+        if not dac_allows(host, uid, groups, READ):
+            raise StageError(f"deploy/zebra/regtest-config.toml (mode {host[0]:04o}, owner {host[1]}:{host[2]}) "
+                             f"is not readable by {who}. Prepare the staging checkout under umask 022 "
+                             "(see the runbook); this tool never changes file modes")
+        if _sha256(config) != CONFIG_SHA256:
+            raise StageError("deploy/zebra/regtest-config.toml is not the pinned Zebra configuration")
+        report = self.probe("zebra configuration probe", self.cfg.engine_image, user=(uid, gid), groups=extra,
+                            bind=(str(config), ZEBRA_CONFIG_TARGET), paths=(ZEBRA_CONFIG_TARGET,))
+        seen = report["files"].get(ZEBRA_CONFIG_TARGET)
+        if seen is None or set(report["files"]) != {ZEBRA_CONFIG_TARGET} or report["links"] or report["dirs"]:
+            raise StageError(f"the zebra configuration mount at {ZEBRA_CONFIG_TARGET} is not a regular file")
+        problems = access_problems(report, uid, groups)
+        if problems:
+            raise StageError(f"the zebra configuration is not readable inside the container by {who}: "
+                             f"{problems[0]}. This tool never changes file modes")
+        if seen[3] != CONFIG_SHA256 or seen[0] != host[0]:
+            raise StageError(f"the file mounted at {ZEBRA_CONFIG_TARGET} is not the checkout's pinned configuration")
+        return {"user": spec, "uid": uid, "gid": gid, "groups": sorted(groups), "mode": f"{host[0]:04o}",
+                "owner": host[1:], "sha256": CONFIG_SHA256}
 
     def check_engine_image(self) -> dict:
         info = self.docker.ok("image", "inspect", "--", self.cfg.engine_image, what="engine image inspect")
@@ -964,6 +1206,7 @@ class Stage:
         zebra = self.check_rendered(rendered, raw)
         zebra.update(self.check_zebra_executable(zebra))
         engine = self.check_engine_image()
+        zebra_config = self.check_zebra_config()  # before any volume is restored or service started
         self.check_isolation()
         summary = {"sourceRevision": revision, "project": cfg.project, "sourceProject": cfg.source_project,
                    "backupDir": str(cfg.backup_dir), "backupListing": backup_listing,
@@ -971,7 +1214,7 @@ class Stage:
                    "archivedIdentitySha256": hashlib.sha256(identity).hexdigest(),
                    "renderedSha256": hashlib.sha256(raw).hexdigest(),
                    "overrideSha256": _sha256(cfg.override), "stageEnvSha256": _sha256(cfg.stage_env),
-                   "zebra": zebra, "engine": engine, "paramsDir": self.params_dir,
+                   "zebra": zebra, "zebraConfig": zebra_config, "engine": engine, "paramsDir": self.params_dir,
                    "dockerPrefix": self.docker.prefix}
         self.manifests, self.archived_identity, self.rendered_raw = manifests, identity, raw
         return summary
@@ -1109,8 +1352,8 @@ class Stage:
         if not HEX64.fullmatch(rendered_sha256) or rendered_sha256 != summary["renderedSha256"] \
                 or planned.get("renderedSha256") != rendered_sha256:
             raise StageError("--rendered-sha256 does not match the reviewed plan and the current rendering")
-        for key in ("checksums", "archivedIdentitySha256", "overrideSha256", "stageEnvSha256", "zebra", "engine",
-                    "paramsDir", "backupListing"):
+        for key in ("checksums", "archivedIdentitySha256", "overrideSha256", "stageEnvSha256", "zebra", "zebraConfig",
+                    "engine", "paramsDir", "backupListing"):
             if planned.get(key) != summary[key]:
                 raise StageError(f"{key} changed since plan")
         log = self.log
@@ -1121,6 +1364,8 @@ class Stage:
             raise StageError("backup checksums changed during restore")
 
         log("starting zebra only")
+        if self.check_zebra_config() != summary["zebraConfig"]:  # again, immediately before the start
+            raise StageError("the zebra configuration's mode, owner or identity changed since plan")
         up = self.compose("up", "-d", "--no-deps", "zebra")
         if up.code:
             raise StageError(f"starting zebra failed: {up.err.strip()[:400]}")
