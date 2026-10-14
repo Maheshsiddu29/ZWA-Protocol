@@ -16,7 +16,9 @@ import json
 import os
 from pathlib import Path
 import secrets
+import re
 import shutil
+import stat
 import subprocess
 import sys
 import tarfile
@@ -46,6 +48,7 @@ def load_stage():
 
 
 stage_module = load_stage()
+RealBackupReader = stage_module.BackupReader
 
 
 def elf(machine: int = 0x3E) -> bytes:
@@ -217,7 +220,8 @@ class FakeHost:
         if entry == "tar":
             backup = next(a[:-len(":/backup:ro")] for a in args if a.endswith(":/backup:ro"))
             archive = Path(backup) / args[args.index("-xzf") + 1].removeprefix("/backup/")
-            manifest, _ = stage_module.inspect_archive(archive, short, self.t.cfg)
+            manifest, _ = stage_module.inspect_archive(RealBackupReader(Path(backup), sudo=False), archive.name,
+                                                       short, self.t.cfg)
             self.volumes[volume] = manifest
             self.unpack(archive, self.volume_root / volume)
             if short == "zwa-root":
@@ -368,12 +372,18 @@ class StageFixture(unittest.TestCase):
             add(tar, ".", kind="d", mode=0o755, uid=0)
             for name, data in self.params.items():
                 add(tar, f"./{name}", data=data, uid=10001, mode=0o644)
+        for volume in ("caddy-data", "caddy-config"):  # listed and verified, never restored
+            with tarfile.open(self.backup / f"zwa-demo_{volume}.tar.gz", "w:gz") as tar:
+                add(tar, ".", kind="d", mode=0o755, uid=0)
+                add(tar, "./caddy", data=volume.encode(), uid=0, mode=0o600)
         self.write_sums()
 
-    def write_sums(self) -> None:
+    def write_sums(self, absolute: bool = True) -> None:
+        """Like the AWS manifest: `sha256sum` output with absolute paths inside the backup directory."""
         names = sorted(p.name for p in self.backup.glob("*.tar.gz"))
         (self.backup / "SHA256SUMS").write_text("".join(
-            f"{hashlib.sha256((self.backup / n).read_bytes()).hexdigest()}  {n}\n" for n in names))
+            f"{hashlib.sha256((self.backup / n).read_bytes()).hexdigest()}  {self.backup / n if absolute else n}\n"
+            for n in names))
 
     def args(self, action: str, *extra: str) -> list[str]:
         return [action, "--backup-dir", str(self.backup), "--recovery-root", str(self.recovery),
@@ -688,7 +698,7 @@ class PlanRefusalTests(StageFixture):
         outside.mkdir()
         code, _, err = self.main("plan", "--recovery-root", str(self.work / "other"))
         self.assertEqual(code, 2)
-        self.assertIn("--backup-dir must be an existing", err)
+        self.assertIn("--backup-dir must be an absolute", err)
         (self.deploy / "env/web.env").chmod(0o644)
         self.assert_plan_refused("web.env must exist with mode 600")
         (self.deploy / "env/web.env").chmod(0o600)
@@ -946,6 +956,310 @@ class SetupProfileTests(StageFixture):
         self.assertEqual(json.loads(" ".join(flow.split())), stage_module.BOOTSTRAP_COMMAND)
         self.assertIn('- ${ZWA_PARAMS_DIR:?set to the host directory holding the checksummed ZcashParams}:/src:ro',
                       compose)
+
+
+FAKE_SUDO = """#!{python}
+import json, os, subprocess, sys
+here = os.path.dirname(os.path.abspath(__file__))
+with open(os.path.join(here, "sudo.log"), "a") as log:
+    log.write(json.dumps(sys.argv[1:]) + "\\n")
+try:
+    with open(os.path.join(here, "sudo.ctl")) as handle:
+        control = json.load(handle)
+except FileNotFoundError:
+    control = {{}}
+args = sys.argv[1:]
+if control.get("mode") == "deny":
+    sys.stderr.write("sudo: a password is required\\n")
+    sys.exit(1)
+if control.get("mode") in ("truncate", "fail-after") and args[-1] == control.get("name"):
+    out = subprocess.run(args, capture_output=True).stdout
+    sys.stdout.buffer.write(out[: len(out) // 2] if control["mode"] == "truncate" else out)
+    sys.stdout.flush()
+    sys.exit(1)
+os.execv(args[0], args)
+"""
+
+
+class BackupManifestTests(StageFixture):
+    """sha256sum manifests with relative or absolute (AWS) entries; never rewritten."""
+
+    def parse(self, text: str) -> dict:
+        return stage_module.parse_manifest(text, self.backup)
+
+    def test_absolute_five_entry_manifest_is_accepted_and_every_archive_verified(self):
+        manifest = (self.backup / "SHA256SUMS").read_text()
+        self.assertEqual(len(manifest.splitlines()), 5)
+        entries = [line.split("  ", 1)[1] for line in manifest.splitlines()]
+        self.assertTrue(all(entry.startswith(str(self.backup) + "/") for entry in entries))
+        code, planned, err = self.main("plan")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(sorted(planned["checksums"]), sorted(p.name for p in self.backup.glob("*.tar.gz")))
+        self.assertEqual(len(planned["checksums"]), 5)
+        self.assertEqual((self.backup / "SHA256SUMS").read_text(), manifest)  # never rewritten
+
+    def test_relative_manifest_remains_compatible(self):
+        self.write_sums(absolute=False)
+        code, planned, err = self.main("plan")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(len(planned["checksums"]), 5)
+
+    def test_every_listed_archive_is_checksummed_but_only_three_are_restored(self):
+        caddy = self.backup / "zwa-demo_caddy-config.tar.gz"
+        good = caddy.read_bytes()
+        caddy.write_bytes(good[:-4] + b"evil")  # an archive that is never restored
+        code, _, err = self.main("plan")
+        self.assertEqual(code, 2)
+        self.assertIn("checksum mismatch: zwa-demo_caddy-config.tar.gz", err)
+        caddy.write_bytes(good)
+        shutil.rmtree(self.work / "evidence")
+        self.host.calls.clear()
+        self.assertEqual(self.plan_and_stage()[0], 0)
+        restores = [c for c in self.host.calls if "--entrypoint" in c and c[c.index("--entrypoint") + 1] == "tar"]
+        self.assertEqual(sorted(c[c.index("-xzf") + 1] for c in restores),
+                         [f"/backup/zwa-demo_{v}.tar.gz" for v in sorted(stage_module.VOLUMES)])
+
+    def test_paths_outside_the_backup_traversal_nesting_and_duplicates_are_refused(self):
+        b, digest = self.backup, "a" * 64
+        other = self.recovery / "paired-other"
+        cases = {
+            f"{other}/zwa-demo_zwa-root.tar.gz": "outside",
+            "/etc/passwd": "outside",
+            f"{self.recovery}/zwa-demo_zwa-root.tar.gz": "outside",
+            f"{b}/../{b.name}/zwa-demo_zwa-root.tar.gz": "outside",
+            f"{b}/./zwa-demo_zwa-root.tar.gz": "outside",
+            f"{b}//zwa-demo_zwa-root.tar.gz": "outside",
+            f"{b}/sub/zwa-demo_zwa-root.tar.gz": "outside",
+            f"{b}/": "outside",
+            "../zwa-demo_zwa-root.tar.gz": "not a plain file name",
+            "./zwa-demo_zwa-root.tar.gz": "not a plain file name",
+            "sub/zwa-demo_zwa-root.tar.gz": "not a plain file name",
+            "..": "not a plain file name",
+            "zwa demo.tar.gz": "not a plain file name",
+        }
+        for entry, message in cases.items():
+            with self.subTest(entry), self.assertRaisesRegex(stage_module.StageError, message):
+                self.parse(f"{digest}  {entry}\n")
+        for text in (f"{digest}  x.tar.gz\n{digest}  {b}/x.tar.gz\n",
+                     f"{digest}  {b}/x.tar.gz\n{'b' * 64}  {b}/x.tar.gz\n",
+                     f"{digest}  x.tar.gz\n{digest} *x.tar.gz\n"):
+            with self.subTest(text), self.assertRaisesRegex(stage_module.StageError, "repeats x.tar.gz"):
+                self.parse(text)
+        for text in ("A" * 64 + "  x.tar.gz\n", "a" * 63 + "  x.tar.gz\n", f"{digest}x.tar.gz\n"):
+            with self.subTest(text), self.assertRaisesRegex(stage_module.StageError, "unrecognized"):
+                self.parse(text)
+        self.assertEqual(self.parse(f"{digest}  x.tar.gz\n{digest} *{b}/y.tar.gz\n\n"),
+                         {"x.tar.gz": digest, "y.tar.gz": digest})
+
+    def test_symlinked_missing_or_non_regular_archives_are_refused(self):
+        archive = self.backup / "zwa-demo_caddy-data.tar.gz"
+        outside = self.work / "outside.tar.gz"
+        archive.rename(outside)
+        archive.symlink_to(outside)  # same bytes, so the checksum alone would pass
+        code, _, err = self.main("plan")
+        self.assertEqual(code, 2)
+        self.assertIn("backup read of zwa-demo_caddy-data.tar.gz failed (exit 3)", err)
+        archive.unlink()
+        shutil.rmtree(self.work / "evidence")
+        code, _, err = self.main("plan")
+        self.assertIn("cannot open zwa-demo_caddy-data.tar.gz", err)
+        archive.mkdir()
+        shutil.rmtree(self.work / "evidence")
+        code, _, err = self.main("plan")
+        self.assertIn("zwa-demo_caddy-data.tar.gz is not a regular file", err)
+        self.assertEqual(self.mutating_calls(), [])
+
+    def test_symlinked_backup_directory_or_recovery_root_is_refused(self):
+        alias = self.recovery / "paired-alias"
+        alias.symlink_to(self.backup)
+        code, _, err = self.main("plan", "--backup-dir", str(alias))
+        self.assertEqual(code, 2)
+        self.assertIn("not a symlink", err)
+        root_alias = self.work / "recovery-alias"
+        root_alias.symlink_to(self.recovery)
+        shutil.rmtree(self.work / "evidence", ignore_errors=True)
+        code, _, err = self.main("plan", "--recovery-root", str(root_alias),
+                                 "--backup-dir", str(root_alias / self.backup.name))
+        self.assertEqual(code, 2)
+        self.assertRegex(err, "not a symlink|not a canonical absolute path")
+
+
+class ProtectedBackupAccessTests(StageFixture):
+    """A backup readable only by root: read through the narrow sudo reader, never chmod/chown/copied."""
+
+    def snapshot(self) -> dict:
+        return {p.name: (hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() and os.access(p, os.R_OK)
+                         else None, p.lstat().st_mode, p.lstat().st_uid, p.lstat().st_size, p.lstat().st_mtime_ns)
+                for p in sorted(self.backup.iterdir())}
+
+    def fake_sudo(self, control: dict | None = None) -> Path:
+        tools = self.work / "fake-sudo"
+        tools.mkdir(exist_ok=True)
+        script = tools / "sudo"
+        script.write_text(FAKE_SUDO.format(python=sys.executable))
+        script.chmod(0o755)
+        if control is not None:
+            (tools / "sudo.ctl").write_text(json.dumps(control))
+        return script
+
+    def sudo_main(self, action: str, control: dict | None = None, *extra: str):
+        script = self.fake_sudo(control)
+
+        def reader(backup, *, sudo, python):
+            self.assertTrue(sudo)
+            self.assertEqual(python, stage_module.SYSTEM_PYTHON)  # what the real sudo would run
+            return _SudoForTest(backup, script)
+        with patch.object(stage_module, "BackupReader", side_effect=reader):
+            return self.main(action, "--backup-sudo", *extra)
+
+    def sudo_log(self) -> list[list[str]]:
+        log = self.work / "fake-sudo/sudo.log"
+        return [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+
+    def test_direct_read_of_a_root_only_manifest_fails_closed_with_a_hint(self):
+        manifest = self.backup / "SHA256SUMS"
+        manifest.chmod(0o000)
+        self.addCleanup(manifest.chmod, 0o644)
+        before = self.snapshot()
+        code, _, err = self.main("plan")
+        self.assertEqual(code, 2)
+        self.assertIn("backup read of SHA256SUMS failed", err)
+        self.assertIn("re-run with --backup-sudo", err)
+        self.assertEqual(self.snapshot(), before)  # still mode 000: never chmodded
+        self.assertEqual(stat.S_IMODE(manifest.lstat().st_mode), 0)
+        self.assertEqual(self.mutating_calls(), [])
+
+    def test_direct_read_of_a_root_only_directory_fails_closed(self):
+        self.backup.chmod(0o000)
+        self.addCleanup(self.backup.chmod, 0o755)
+        code, _, err = self.main("plan")
+        self.assertEqual(code, 2)
+        self.assertIn("re-run with --backup-sudo", err)
+        self.assertEqual(stat.S_IMODE(self.backup.lstat().st_mode), 0)
+
+    def test_sudo_reads_use_only_the_fixed_reader_on_validated_names(self):
+        before = self.snapshot()
+        code, planned, err = self.sudo_main("plan")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(planned["backupRead"], "sudo")
+        calls = self.sudo_log()
+        self.assertGreater(len(calls), 5)
+        allowed = {"SHA256SUMS"} | set(planned["checksums"])
+        for argv in calls:
+            self.assertEqual(argv[:4], [sys.executable, "-I", "-c", stage_module.BACKUP_READER])
+            self.assertEqual(argv[5], str(self.backup))
+            self.assertIn(argv[4], ("list", "read"))
+            if argv[4] == "read":
+                self.assertEqual(len(argv), 7)
+                self.assertIn(argv[6], allowed)
+            else:
+                self.assertEqual(len(argv), 6)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_sudo_refusal_fails_closed(self):
+        code, _, err = self.sudo_main("plan", {"mode": "deny"})
+        self.assertEqual(code, 2)
+        self.assertIn("failed (exit 1): sudo: a password is required", err)
+        self.assertEqual(self.mutating_calls(), [])
+
+    def test_failure_during_privileged_reading_fails_closed(self):
+        for mode, name in (("truncate", "zwa-demo_zebra-state.tar.gz"),
+                           ("fail-after", "zwa-demo_caddy-data.tar.gz"),   # full, correct bytes but exit 1
+                           ("fail-after", "SHA256SUMS")):
+            with self.subTest(mode=mode, name=name):
+                shutil.rmtree(self.work / "evidence", ignore_errors=True)
+                shutil.rmtree(self.work / "fake-sudo", ignore_errors=True)
+                self.host.calls.clear()
+                code, _, err = self.sudo_main("plan", {"mode": mode, "name": name})
+                self.assertEqual(code, 2, f"{mode} {name} was accepted")
+                self.assertRegex(err, f"backup read of {re.escape(name)} failed \\(exit 1\\)|checksum mismatch")
+                self.assertEqual(self.mutating_calls(), [])
+
+    def test_staging_with_sudo_reads_leaves_the_backup_byte_and_metadata_identical(self):
+        before = self.snapshot()
+        script = self.fake_sudo()
+        with patch.object(stage_module, "BackupReader",
+                          side_effect=lambda backup, *, sudo, python: _SudoForTest(backup, script)):
+            code, result, err = self.plan_and_stage("--backup-sudo")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(result["result"], "STAGING_PASSED")
+        self.assertEqual(self.snapshot(), before)
+
+    def test_backup_metadata_change_during_staging_halts(self):
+        real = self.host.run
+
+        def touch_backup(args):
+            out = real(args)
+            if args[args.index("--entrypoint") + 1] == "tar":
+                os.utime(self.backup / "zwa-demo_caddy-data.tar.gz", ns=(1, 1))
+            return out
+        self.host.run = touch_backup
+        code, _, err = self.plan_and_stage()
+        self.assertEqual(code, 2)
+        self.assertIn("original backup directory's files or metadata changed", err)
+
+    def test_wallet_and_ledger_bytes_never_reach_output_or_evidence(self):
+        code, _, err = self.plan_and_stage()
+        self.assertEqual(code, 0, err)
+        secrets_ = (b"dealer wallet", b"judge wallet", b"SQLite format 3")
+        for path in (self.work / "evidence").iterdir():
+            for marker in secrets_:
+                self.assertNotIn(marker, path.read_bytes(), path.name)
+        code, out, err = self.main("stop")
+        for marker in secrets_:
+            self.assertNotIn(marker.decode(), json.dumps(out) + err)
+
+    def test_sudo_interpreter_must_be_root_owned(self):
+        user_owned = self.work / "python3"
+        user_owned.write_text("")
+        with self.assertRaisesRegex(stage_module.StageError, "root-owned"):
+            stage_module.BackupReader(self.backup, sudo=True, python=str(user_owned))
+        with self.assertRaisesRegex(stage_module.StageError, "unavailable"):
+            stage_module.BackupReader(self.backup, sudo=True, python=str(self.work / "missing"))
+        if os.path.exists(stage_module.SYSTEM_PYTHON) and os.stat(stage_module.SYSTEM_PYTHON).st_uid == 0:
+            reader = stage_module.BackupReader(self.backup, sudo=True)
+            self.assertEqual(reader.command("read", str(self.backup), "SHA256SUMS"),
+                             ["sudo", "-n", "/usr/bin/python3", "-I", "-c", stage_module.BACKUP_READER,
+                              "read", str(self.backup), "SHA256SUMS"])
+
+
+class _SudoForTest(RealBackupReader):
+    """The real reader with --backup-sudo semantics, but `sudo` is the logging test double."""
+
+    def __init__(self, backup, script):
+        self.backup, self.sudo, self.popen = str(backup), True, subprocess.Popen
+        self.prefix = [str(script), sys.executable]
+
+
+class BackupReaderProgramTests(StageFixture):
+    """The fixed reader program itself, run as its own process."""
+
+    def run_reader(self, *args: str) -> subprocess.CompletedProcess:
+        return subprocess.run([sys.executable, "-I", "-c", stage_module.BACKUP_READER, *args],
+                              capture_output=True, timeout=20)
+
+    def test_reader_refuses_non_canonical_paths_special_files_and_other_requests(self):
+        alias = self.work / "alias"
+        alias.symlink_to(self.backup)
+        result = self.run_reader("list", str(alias))
+        self.assertEqual(result.returncode, 3)
+        self.assertIn(b"not a canonical absolute path", result.stderr)
+        os.mkfifo(self.backup / "pipe.tar.gz")
+        self.addCleanup((self.backup / "pipe.tar.gz").unlink)
+        result = self.run_reader("read", str(self.backup), "pipe.tar.gz")  # must not hang on a FIFO
+        self.assertEqual((result.returncode, result.stdout), (3, b""))
+        self.assertIn(b"is not a regular file", result.stderr)
+        for request in (("read", str(self.backup), "../x"), ("read", str(self.backup), ".."),
+                        ("write", str(self.backup), "x"), ("read", "relative", "SHA256SUMS"), ("read",)):
+            with self.subTest(request):
+                self.assertEqual(self.run_reader(*request).returncode, 3)
+
+    def test_reader_lists_metadata_only_and_streams_exact_bytes(self):
+        listing = json.loads(self.run_reader("list", str(self.backup)).stdout)
+        self.assertEqual(sorted(listing), sorted(p.name for p in self.backup.iterdir()))
+        self.assertTrue(all(len(entry) == 5 for entry in listing.values()))
+        archive = self.backup / "zwa-demo_zwa-root.tar.gz"
+        self.assertEqual(self.run_reader("read", str(self.backup), archive.name).stdout, archive.read_bytes())
 
 
 class StageGateTests(StageFixture):

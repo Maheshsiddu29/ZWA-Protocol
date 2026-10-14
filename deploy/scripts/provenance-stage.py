@@ -31,6 +31,7 @@ Exit 0 = passed, 2 = refused or failed (stop and inspect), 3 = uncertain write
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 import hashlib
 import importlib.util
@@ -64,7 +65,7 @@ PARAMS_SHA256 = {
 HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 TAG = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\Z")
 PAIRED = re.compile(r"paired-[A-Za-z0-9._-]{1,80}\Z")
-CHECKSUM_LINE = re.compile(r"([0-9a-f]{64}) [ *]([A-Za-z0-9._-]{1,128})\Z")
+CHECKSUM_ENTRY = re.compile(r"([0-9a-f]{64}) [ *](\S(?:.*\S)?)\Z")
 SAFE_ENV = ("PATH", "HOME", "LANG", "LC_ALL", "DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG",
             "DOCKER_CERT_PATH", "DOCKER_TLS_VERIFY")
 
@@ -165,8 +166,161 @@ HOST_ACCESS_KEYS = ("privileged", "network_mode", "pid", "ipc", "uts", "userns_m
 ELF_MACHINE_X86_64 = 0x3E
 
 
+# The only code that touches the original backup. A fixed program run as its own process: unprivileged
+# by default, or with --backup-sudo as `sudo -n /usr/bin/python3 -I -c BACKUP_READER ...`. It reads and
+# lists, never writes; it opens only plain names directly inside one canonical directory, without
+# following symlinks, and streams bytes to the driver (no copy is written anywhere).
+BACKUP_READER = r"""
+import json, os, re, stat, sys
+def fail(message):
+    sys.stderr.write("BACKUP_READ_REFUSED " + message + "\n")
+    sys.exit(3)
+if len(sys.argv) < 3:
+    fail("usage")
+op, backup = sys.argv[1], sys.argv[2]
+if not os.path.isabs(backup) or os.path.realpath(backup) != backup:
+    fail("backup directory is not a canonical absolute path")
+try:
+    directory = os.open(backup, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+except OSError as exc:
+    fail("cannot open backup directory: " + (exc.strerror or "error"))
+if op == "list" and len(sys.argv) == 3:
+    out = {}
+    for name in sorted(os.listdir(directory)):
+        info = os.stat(name, dir_fd=directory, follow_symlinks=False)
+        out[name] = [stat.filemode(info.st_mode), info.st_uid, info.st_gid, info.st_size, info.st_mtime_ns]
+    sys.stdout.write(json.dumps(out, sort_keys=True))
+elif (op == "read" and len(sys.argv) == 4 and re.fullmatch(r"[A-Za-z0-9._-]{1,128}", sys.argv[3])
+        and sys.argv[3] not in (".", "..")):
+    try:
+        fd = os.open(sys.argv[3], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+    except OSError as exc:
+        fail("cannot open " + sys.argv[3] + ": " + (exc.strerror or "error"))
+    if not stat.S_ISREG(os.fstat(fd).st_mode):
+        fail(sys.argv[3] + " is not a regular file")
+    out = sys.stdout.buffer
+    while True:
+        chunk = os.read(fd, 1 << 20)
+        if not chunk:
+            break
+        out.write(chunk)
+    out.flush()
+else:
+    fail("unsupported request")
+"""
+BACKUP_NAME = re.compile(r"[A-Za-z0-9._-]{1,128}\Z")
+MAX_MANIFEST_BYTES = 65536
+SYSTEM_PYTHON = "/usr/bin/python3"
+
+
 class StageError(RuntimeError):
     pass
+
+
+def trusted_interpreter(path: str) -> None:
+    """The interpreter sudo runs must be root-owned and writable only by root."""
+    try:
+        info = os.stat(path)
+    except OSError as exc:
+        raise StageError(f"--backup-sudo interpreter {path} is unavailable") from exc
+    if (not os.path.isabs(path) or not stat.S_ISREG(info.st_mode) or info.st_uid != 0
+            or info.st_mode & 0o022):
+        raise StageError(f"--backup-sudo interpreter {path} is not a root-owned, root-only-writable file")
+
+
+class BackupReader:
+    """Reads the original paired backup through BACKUP_READER; never writes, copies or chmods it."""
+
+    def __init__(self, backup: Path, *, sudo: bool, python: str = SYSTEM_PYTHON,
+                 sudo_command: tuple[str, ...] = ("sudo", "-n"), popen=subprocess.Popen):
+        if sudo:
+            trusted_interpreter(python)
+        self.backup, self.sudo, self.popen = str(backup), sudo, popen
+        self.prefix = [*sudo_command, python] if sudo else [sys.executable]
+
+    def command(self, *args: str) -> list[str]:
+        return [*self.prefix, "-I", "-c", BACKUP_READER, *args, ]
+
+    def _failure(self, what: str, code: int, err: bytes) -> StageError:
+        detail = err.decode(errors="replace").strip()[-300:]
+        hint = (" The backup is not readable by this user: re-run with --backup-sudo."
+                if not self.sudo and "Permission denied" in detail else "")
+        return StageError(f"backup read of {what} failed (exit {code}): {detail}{hint}")
+
+    @contextmanager
+    def open(self, name: str):
+        """Yield the file's bytes as a stream; fail closed unless the reader read all of it and exited 0."""
+        if not BACKUP_NAME.fullmatch(name) or name in (".", ".."):
+            raise StageError(f"invalid backup file name {name!r}")
+        process = self.popen(self.command("read", self.backup, name), stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, stdin=subprocess.DEVNULL)
+        try:
+            yield process.stdout
+            while process.stdout.read(1 << 20):  # drain whatever the consumer did not need
+                pass
+            err = process.stderr.read()
+            code = process.wait()
+        except BaseException:
+            process.kill()
+            process.wait()
+            raise
+        finally:
+            process.stdout.close()
+            process.stderr.close()
+        if code:
+            raise self._failure(name, code, err)
+
+    def read_small(self, name: str, limit: int) -> bytes:
+        with self.open(name) as stream:
+            data = stream.read(limit + 1)
+        if len(data) > limit:
+            raise StageError(f"{name} is larger than {limit} bytes")
+        return data
+
+    def sha256(self, name: str) -> str:
+        digest = hashlib.sha256()
+        with self.open(name) as stream:
+            for chunk in iter(lambda: stream.read(1 << 20), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    def listing(self) -> dict:
+        process = self.popen(self.command("list", self.backup), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                             stdin=subprocess.DEVNULL)
+        out, err = process.communicate()
+        if process.returncode:
+            raise self._failure("the backup directory", process.returncode, err)
+        try:
+            return json.loads(out)
+        except ValueError as exc:
+            raise StageError("unreadable backup directory listing") from exc
+
+
+def parse_manifest(text: str, backup: Path) -> dict[str, str]:
+    """{file name: sha256} from a sha256sum manifest whose entries are plain names inside the backup
+    directory, or absolute paths directly inside exactly that directory. The file itself is never rewritten."""
+    root = str(backup)
+    expected: dict[str, str] = {}
+    for number, line in enumerate(text.splitlines(), 1):
+        if not line.strip():
+            continue
+        match = CHECKSUM_ENTRY.fullmatch(line.rstrip("\r"))
+        if not match:
+            raise StageError(f"unrecognized checksum line {number}")
+        digest, entry = match.groups()
+        if entry.startswith("/"):
+            if (posixpath.normpath(entry) != entry or posixpath.dirname(entry) != root
+                    or not BACKUP_NAME.fullmatch(posixpath.basename(entry))):
+                raise StageError(f"checksum line {number} names a path outside {root}/ or a nested path")
+            name = posixpath.basename(entry)
+        elif BACKUP_NAME.fullmatch(entry) and entry not in (".", ".."):
+            name = entry
+        else:
+            raise StageError(f"checksum line {number} is not a plain file name or an absolute path in {root}/")
+        if name in expected:
+            raise StageError(f"checksum line {number} repeats {name}")
+        expected[name] = digest
+    return expected
 
 
 def _mounts(name: str, service: dict) -> set[tuple]:
@@ -249,6 +403,8 @@ class Config:
     settled_height: int
     docker_sudo: bool = False
     expect_params_dir: str | None = None
+    backup_sudo: bool = False
+    backup_python: str = SYSTEM_PYTHON
     deploy_dir: Path = field(default_factory=lambda: Path(__file__).resolve().parents[1])
     repo_root: Path = REPOSITORY
 
@@ -287,9 +443,11 @@ def validate_config(cfg: Config) -> None:
         raise StageError("--checksum-file must be a plain file name inside the backup directory")
     recovery = cfg.recovery_root.resolve()
     backup = cfg.backup_dir
-    if (not backup.is_absolute() or backup.is_symlink() or not backup.is_dir()
-            or backup.resolve().parent != recovery or not PAIRED.fullmatch(backup.name)):
-        raise StageError(f"--backup-dir must be an existing {recovery}/paired-* directory (not a symlink)")
+    # Existence, type and canonical path are checked by BACKUP_READER, which may need --backup-sudo
+    # when the backup is readable only by root.
+    if (not backup.is_absolute() or backup.is_symlink() or posixpath.normpath(str(backup)) != str(backup)
+            or backup.parent != recovery or not PAIRED.fullmatch(backup.name)):
+        raise StageError(f"--backup-dir must be an absolute {recovery}/paired-* path (not a symlink)")
     if not cfg.evidence.is_absolute() or cfg.evidence.is_symlink():
         raise StageError("--evidence-dir must be an absolute path (not a symlink)")
     evidence = cfg.evidence.resolve() if cfg.evidence.exists() else cfg.evidence.parent.resolve() / cfg.evidence.name
@@ -313,26 +471,18 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def verify_checksums(cfg: Config) -> dict[str, str]:
-    listing = cfg.backup_dir / cfg.checksum_file
-    if listing.is_symlink() or not listing.is_file():
-        raise StageError(f"checksum file {cfg.checksum_file} is missing from the backup directory")
-    expected = {}
-    for number, line in enumerate(listing.read_text().splitlines(), 1):
-        if not line.strip():
-            continue
-        match = CHECKSUM_LINE.fullmatch(line.strip())
-        if not match or match.group(2) in expected:
-            raise StageError(f"unrecognized or duplicate checksum line {number}")
-        expected[match.group(2)] = match.group(1)
+def verify_checksums(cfg: Config, reader: BackupReader) -> dict[str, str]:
+    """Verify every archive the manifest lists (all of them, not only the three that are restored)."""
+    raw = reader.read_small(cfg.checksum_file, MAX_MANIFEST_BYTES)
+    try:
+        expected = parse_manifest(raw.decode(), cfg.backup_dir)
+    except UnicodeDecodeError as exc:
+        raise StageError(f"{cfg.checksum_file} is not text") from exc
     for volume in VOLUMES:
         if cfg.archive(volume) not in expected:
             raise StageError(f"{cfg.archive(volume)} is not listed in {cfg.checksum_file}")
     for name, digest in expected.items():
-        path = cfg.backup_dir / name
-        if path.is_symlink() or not path.is_file():
-            raise StageError(f"{name} is missing or not a regular file")
-        if _sha256(path) != digest:
+        if reader.sha256(name) != digest:
             raise StageError(f"checksum mismatch: {name}")
     return expected
 
@@ -366,14 +516,19 @@ def _member_sha256(archive: tarfile.TarFile, member: tarfile.TarInfo) -> str:
     return digest.hexdigest()
 
 
-def inspect_archive(path: Path, volume: str, cfg: Config) -> tuple[dict, bytes | None]:
-    """Manifest {path: [type, uid, gid, mode, size, sha256]} of a safe .tar.gz, read without extracting."""
+def inspect_archive(reader: BackupReader, name: str, volume: str, cfg: Config) -> tuple[dict, bytes | None]:
+    """Manifest {path: [type, uid, gid, mode, size, sha256]} of a safe .tar.gz, streamed, never extracted."""
+    with reader.open(name) as stream:
+        return _inspect_stream(stream, name, volume, cfg)
+
+
+def _inspect_stream(stream, archive_name: str, volume: str, cfg: Config) -> tuple[dict, bytes | None]:
     manifest: dict[str, list] = {}
     symlinks: set[str] = set()
     identity = None
     params: dict[str, str] = {}
     try:
-        with tarfile.open(path, mode="r:gz") as archive:
+        with tarfile.open(fileobj=stream, mode="r|gz") as archive:
             for member in archive:
                 name = _member_path(member.name)
                 if name in manifest:
@@ -397,26 +552,30 @@ def inspect_archive(path: Path, volume: str, cfg: Config) -> tuple[dict, bytes |
                     kind = "h"
                 else:
                     raise StageError(f"device, FIFO or other special archive member: {name!r}")
-                digest = (_member_sha256(archive, member) if kind == "f"
-                          else manifest[_member_path(member.linkname)][5] if kind == "h" else None)
-                manifest[name] = [kind, member.uid, member.gid, member.mode & 0o7777,
-                                  member.size if kind == "f" else None, digest]
+                # A streamed archive can read each member once: the identity's bytes are read once
+                # (it is small) and hashed; every other regular member is hashed in chunks.
                 if volume == "zwa-root" and name == IDENTITY_MEMBER and kind == "f":
                     if member.size > 8192:
                         raise StageError("archived chain identity is too large")
                     identity = _member_bytes(archive, member)
+                    digest = hashlib.sha256(identity).hexdigest()
+                else:
+                    digest = (_member_sha256(archive, member) if kind == "f"
+                              else manifest[_member_path(member.linkname)][5] if kind == "h" else None)
+                manifest[name] = [kind, member.uid, member.gid, member.mode & 0o7777,
+                                  member.size if kind == "f" else None, digest]
                 if volume == "zwa-params" and name in PARAMS_SHA256 and kind == "f":
                     params[name] = digest
     except (tarfile.TarError, EOFError, OSError) as exc:
-        raise StageError(f"{path.name} is not a readable .tar.gz archive: {exc}") from exc
+        raise StageError(f"{archive_name} is not a readable .tar.gz archive: {exc}") from exc
     if volume == "zwa-root":
         if identity is None:
-            raise StageError(f"{path.name} has no regular {IDENTITY_MEMBER}")
+            raise StageError(f"{archive_name} has no regular {IDENTITY_MEMBER}")
         check_archived_identity(identity, cfg)
     if volume == "zebra-state" and not any(name.startswith("state/") for name in manifest):
-        raise StageError(f"{path.name} contains no Zebra state/ directory")
+        raise StageError(f"{archive_name} contains no Zebra state/ directory")
     if volume == "zwa-params" and params != PARAMS_SHA256:
-        raise StageError(f"{path.name} does not contain the checksummed Sapling parameters")
+        raise StageError(f"{archive_name} does not contain the checksummed Sapling parameters")
     return manifest, identity
 
 
@@ -486,12 +645,20 @@ def source_revision(repo_root: Path) -> str:
 
 
 class Stage:
-    def __init__(self, cfg: Config, docker: Docker | None = None, attest_tool=None, log=print):
+    def __init__(self, cfg: Config, docker: Docker | None = None, attest_tool=None, log=print,
+                 reader: BackupReader | None = None):
+        self.reader = reader
         self.cfg = cfg
         self.docker = docker or Docker(cfg.docker_sudo)
         self.tool = attest_tool or load_attest_tool()
         self.tool._docker = self._tool_docker  # host checks go through the same validated Docker access
         self.log = log
+
+    @property
+    def backup(self) -> BackupReader:
+        if self.reader is None:
+            raise StageError("internal error: the backup reader is set up by plan")
+        return self.reader
 
     def _tool_docker(self, *args: str) -> str:
         result = self.docker(*args)
@@ -779,10 +946,13 @@ class Stage:
             _write_private(cfg.stage_env, stage_env_bytes(cfg))
         elif cfg.stage_env.read_bytes() != stage_env_bytes(cfg):
             raise StageError("--env-file changed since plan")
-        checksums = verify_checksums(cfg)
+        if self.reader is None:
+            self.reader = BackupReader(cfg.backup_dir, sudo=cfg.backup_sudo, python=cfg.backup_python)
+        backup_listing = self.reader.listing()  # names and metadata only; recorded to prove nothing changed
+        checksums = verify_checksums(cfg, self.reader)
         manifests, identity = {}, None
         for volume in VOLUMES:
-            manifests[volume], found = inspect_archive(cfg.backup_dir / cfg.archive(volume), volume, cfg)
+            manifests[volume], found = inspect_archive(self.reader, cfg.archive(volume), volume, cfg)
             identity = found if volume == "zwa-root" else identity
         if identity is None:
             raise StageError("no chain identity found in the zwa-root archive")
@@ -796,7 +966,8 @@ class Stage:
         engine = self.check_engine_image()
         self.check_isolation()
         summary = {"sourceRevision": revision, "project": cfg.project, "sourceProject": cfg.source_project,
-                   "backupDir": str(cfg.backup_dir), "checksums": checksums,
+                   "backupDir": str(cfg.backup_dir), "backupListing": backup_listing,
+                   "backupRead": "sudo" if cfg.backup_sudo else "direct", "checksums": checksums,
                    "archivedIdentitySha256": hashlib.sha256(identity).hexdigest(),
                    "renderedSha256": hashlib.sha256(raw).hexdigest(),
                    "overrideSha256": _sha256(cfg.override), "stageEnvSha256": _sha256(cfg.stage_env),
@@ -939,14 +1110,14 @@ class Stage:
                 or planned.get("renderedSha256") != rendered_sha256:
             raise StageError("--rendered-sha256 does not match the reviewed plan and the current rendering")
         for key in ("checksums", "archivedIdentitySha256", "overrideSha256", "stageEnvSha256", "zebra", "engine",
-                    "paramsDir"):
+                    "paramsDir", "backupListing"):
             if planned.get(key) != summary[key]:
                 raise StageError(f"{key} changed since plan")
         log = self.log
 
         log("restoring new volumes")
         self.restore()
-        if verify_checksums(cfg) != summary["checksums"]:
+        if verify_checksums(cfg, self.backup) != summary["checksums"]:
             raise StageError("backup checksums changed during restore")
 
         log("starting zebra only")
@@ -1031,8 +1202,10 @@ class Stage:
         final = self.positive("record after revert", self.record_args(), json.dumps(attestation).encode())
         if final.get("outcome") != "WRITTEN" or self.files("files-final.json") != files_before:
             raise StageError("re-recording after the revert rehearsal failed")
-        if verify_checksums(cfg) != summary["checksums"]:
+        if verify_checksums(cfg, self.backup) != summary["checksums"]:
             raise StageError("backup checksums changed during staging")
+        if self.backup.listing() != summary["backupListing"]:
+            raise StageError("the original backup directory's files or metadata changed during staging")
         result = {"result": "STAGING_PASSED", "project": cfg.project, "renderedSha256": rendered_sha256,
                   "archivedIdentitySha256": summary["archivedIdentitySha256"],
                   "migratedIdentitySha256": final["sha256"]["after"], "drills": [d["drill"] for d in drills],
@@ -1063,6 +1236,8 @@ def parse(argv: list[str] | None) -> tuple[str, Config, str | None]:
     parser.add_argument("--expect-settled-tx", required=True, metavar="TXID:HEIGHT")
     parser.add_argument("--expect-params-dir", help="pin ZWA_PARAMS_DIR, e.g. /srv/zwa/params/ZcashParams")
     parser.add_argument("--docker-sudo", action="store_true", help="run Docker as `sudo -n docker`")
+    parser.add_argument("--backup-sudo", action="store_true",
+                        help="read a root-only backup through `sudo -n /usr/bin/python3 -I -c <fixed reader>`")
     parser.add_argument("--rendered-sha256", help="stage: the renderedSha256 printed by plan")
     args = parser.parse_args(argv)
     txid, _, height = args.expect_settled_tx.partition(":")
@@ -1074,7 +1249,8 @@ def parse(argv: list[str] | None) -> tuple[str, Config, str | None]:
                  source_project=args.source_project, project=args.project, engine_tag=args.engine_tag,
                  env_file=args.env_file, evidence=args.evidence_dir, expect_genesis=args.expect_genesis,
                  expect_anchor_height=args.expect_anchor_height, settled_txid=txid, settled_height=int(height),
-                 docker_sudo=args.docker_sudo, expect_params_dir=args.expect_params_dir)
+                 docker_sudo=args.docker_sudo, expect_params_dir=args.expect_params_dir,
+                 backup_sudo=args.backup_sudo)
     return args.action, cfg, args.rendered_sha256
 
 
