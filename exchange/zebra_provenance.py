@@ -359,7 +359,7 @@ def show(root: Path) -> dict:
     meta = validate_identity(json.loads(data))
     return {"genesisHash": meta["genesisHash"], "anchorHeight": meta["anchorHeight"],
             "anchorHash": meta["anchorHash"], "management": meta.get("management", "docker-local"),
-            "provenance": runtime_provenance(meta, "external"),
+            "provenance": runtime_provenance(meta, "external"), "zebraRuntime": meta.get(RUNTIME_KEY),
             "sha256": hashlib.sha256(data).hexdigest()}
 
 

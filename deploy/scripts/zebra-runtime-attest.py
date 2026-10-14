@@ -40,12 +40,15 @@ from exchange.persistent_chain import PINNED_ZEBRA_IMAGES  # noqa: E402
 from exchange.zebra_provenance import ATTESTATION_SCHEMA, MACHINE_PLATFORMS, PROJECT  # noqa: E402
 
 
+DOCKER = ["docker"]  # ["sudo", "-n", "docker"] with --docker-sudo
+
+
 class AttestError(RuntimeError):
     pass
 
 
 def _docker(*args: str) -> str:
-    result = subprocess.run(["docker", *args], capture_output=True, text=True, timeout=60)
+    result = subprocess.run([*DOCKER, *args], capture_output=True, text=True, timeout=60)
     if result.returncode:
         raise AttestError(result.stderr.strip() or f"docker {args[0]} failed")
     return result.stdout
@@ -137,7 +140,11 @@ def main(argv: list[str] | None = None) -> None:
     verified.add_argument("--image", required=True)
     verified.add_argument("--project", required=True)
     verified.add_argument("--recorded-show", type=Path)
+    for sub in (checked, attested, verified):
+        sub.add_argument("--docker-sudo", action="store_true", help="run Docker as `sudo -n docker`")
     args = parser.parse_args(argv)
+    if args.docker_sudo:
+        DOCKER[:] = ["sudo", "-n", "docker"]
     try:
         if args.action == "check-image":
             image_id, platform = check_image(args.image)
