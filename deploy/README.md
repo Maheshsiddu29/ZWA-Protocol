@@ -56,10 +56,12 @@ deleted when a session retires.
 
 ## Resource estimate
 
-Two Zebra images are pinned, both from QED-it/zebra
-`0aef55cea41b83f17610e6ea708e59995f9e739f`: the local **linux/arm64** build
+Two Zebra images are pinned. The owner declares both were built from QED-it/zebra
+`0aef55cea41b83f17610e6ea708e59995f9e739f`. The image IDs identify image
+content, not source, and there is no reproducible-build evidence for the amd64
+image. The local **linux/arm64** build is
 `sha256:540a3429ef14ff3c575258255e4310951606d16c86ec5e1c37e285ea95178185` and
-the **linux/amd64** build used on the AWS EC2 host,
+the **linux/amd64** build used on the AWS EC2 host is
 `sha256:2c3f3dde0230f572911d70b7f74cc8f4587c1a139b0756d904e3b09eba2e32b9`.
 `scripts/preflight.sh` refuses a tag that does not resolve to the pin for the
 host's own platform (no emulation). See
@@ -98,18 +100,26 @@ python3 ../website/scripts/provision-local-roles.py env/web.env dealer:seller
 ./scripts/preflight.sh
 docker compose --profile setup run --rm params   # copies and checksums the parameters into a volume
 docker compose up -d zebra
-python3 -I scripts/zebra-runtime-attest.py attest --image "$ZWA_ZEBRA_IMAGE" --project zwa-demo > /dev/null
+python3 -I scripts/zebra-runtime-attest.py verify --image "$ZWA_ZEBRA_IMAGE" --project zwa-demo
 docker compose --profile setup run --rm bootstrap
 docker compose up -d
 ```
 
-The `attest` step runs on the host (no container has the Docker socket). It
-checks that the running `zebra` container uses exactly the pinned image ID for
-this platform. Repeat it after any Zebra restart or image change.
-`bootstrap` records only the version-1 `image` label. To record the verified
-runtime image in `chain-identity.json`, run the explicit
-`exchange.zebra_provenance record` step from the provenance runbook. Status
-reports `provenance.evidence` as `UNVERIFIED` until then.
+On an amd64 host, add `-f compose.yaml -f compose.amd64.yaml` (the host's
+AMD64 override, which must replace the arm64 zebra entrypoint) to **every**
+`docker compose` command, and use `--docker-sudo` on the attestation tool
+where Docker needs root.
+
+The `verify` step runs on the host; no container has the Docker socket. It
+checks that the running `zebra` container uses exactly the pinned image ID
+for this platform. Repeat it after **every** Zebra start, restart, recreation
+or image change: nothing inside the engine can see the container.
+`bootstrap` records only the version-1 `image` label, so status reports
+`provenance.evidence: LABEL_ONLY`. The explicit
+`exchange.zebra_provenance record --expect-compose-project …` step in
+[`docs/zebra-provenance-migration.md`](../docs/zebra-provenance-migration.md)
+adds `POINT_IN_TIME_HOST_ATTESTATION`. That is evidence of one container at one
+time, never of the image running now (`currentRuntimeVerified: false`).
 
 The domain's DNS A/AAAA record must point at the VM before Caddy can obtain
 a certificate. The Compose example binds Caddy to loopback for safe local

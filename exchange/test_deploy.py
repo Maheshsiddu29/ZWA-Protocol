@@ -7,6 +7,7 @@ from http.server import ThreadingHTTPServer
 import importlib.util
 import json
 from pathlib import Path
+import re
 import secrets
 import shutil
 import subprocess
@@ -244,6 +245,23 @@ class ZebraHostAttestationTests(unittest.TestCase):
         for image in persistent_chain.PINNED_ZEBRA_IMAGES.values():
             self.assertIn(image, script)
         self.assertNotIn("test \"$(docker image inspect", script)
+
+    def test_runbooks_make_no_overstated_or_unasserted_claims(self):
+        runbook = (REPOSITORY / "docs/zebra-provenance-migration.md").read_text()
+        for text in (runbook, (REPOSITORY / "deploy/README.md").read_text(),
+                     (REPOSITORY / "exchange/zebra_provenance.py").read_text()):
+            self.assertNotIn("|| true", text)                  # negative drills must be asserted
+            self.assertNotIn("zebra_runtime_attest.py", text)  # the script is zebra-runtime-attest.py
+            self.assertNotIn("compare-and-swap", text.lower())  # not guaranteed against non-cooperating writers
+        blocks = re.findall(r"```sh\n(.*?)```", runbook, re.S)
+        self.assertTrue(blocks)
+        for line in "\n".join(blocks).splitlines():
+            if "docker compose" in line or "compose -p" in line:
+                self.assertIn("compose.amd64.yaml", line)
+        for required in ("zwa-recovery/paired-", ".tar.gz", "provenance-stage.py plan", "--rendered-sha256",
+                         "--docker-sudo", "declaredSourceRevision", "POINT_IN_TIME_HOST_ATTESTATION",
+                         "PROVENANCE_UNCERTAIN", "never revert blindly", "identity_lock"):
+            self.assertIn(required, runbook)
 
     def test_no_container_receives_the_docker_socket(self):
         compose = (REPOSITORY / "deploy/compose.yaml").read_text()
