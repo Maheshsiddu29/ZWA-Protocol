@@ -8,6 +8,8 @@ wallet scans against the live RPC before advertising current holdings.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
+import fcntl
 import hashlib
 import json
 import os
@@ -57,6 +59,37 @@ CONFIG_SHA256 = hashlib.sha256(CONFIG.encode()).hexdigest()
 
 class ChainError(RuntimeError):
     pass
+
+
+LOCK_NAME = ".chain-identity.lock"
+LOCK_TIMEOUT = 30.0
+
+
+@contextmanager
+def identity_lock(root: Path, timeout: float = LOCK_TIMEOUT):
+    """Serialize read-modify-write of chain-identity.json between writers.
+
+    An advisory flock on a sidecar file. It orders only the writers that take
+    it: start, adopt_external, checkpoint and status in this module, and
+    exchange.zebra_provenance. A process running code from before this lock
+    (for example an engine image built at cf7f133) is NOT excluded, so such
+    writers must be stopped before a provenance migration. Readers need no
+    lock: every write is a rename of a complete file.
+    """
+    fd = os.open(root / LOCK_NAME, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+    try:
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise ChainError("chain identity is locked by another writer") from None
+                time.sleep(0.05)
+        yield
+    finally:
+        os.close(fd)  # releases the lock
 
 
 def _atomic_json(path: Path, data: dict) -> None:
@@ -227,14 +260,20 @@ def _state_exists(chain: Path) -> bool:
 
 
 def start(root: Path, container: str, port: int) -> dict:
+    _paths(root)
+    if not root.exists():
+        root.mkdir(mode=0o700)
+    with identity_lock(root):
+        return _start(root, container, port)
+
+
+def _start(root: Path, container: str, port: int) -> dict:
     chain, config = _paths(root)
-    meta = _meta(root) if root.exists() else None
+    meta = _meta(root)
     if meta and meta.get("detectedReset"):
         raise ChainError("CHAIN_RESET: " + meta["detectedReset"])
     if meta and not _state_exists(chain):
         raise ChainError("CHAIN_RESET: recorded state database is missing")
-    if not root.exists():
-        root.mkdir(mode=0o700)
     chain.mkdir(mode=0o700, exist_ok=True)
     if config.exists():
         if config.is_symlink() or config.read_text() != CONFIG:
@@ -299,21 +338,27 @@ def adopt_external(root: Path, port: int, host: str) -> dict:
     the explicit exchange.zebra_provenance step after a host attestation.
     """
     _paths(root)
-    if _meta(root) is not None:
-        raise ChainError("chain identity already exists; refusing to adopt again")
-    height = _rpc(port, "getblockcount", host=host)
-    if height != 0:
-        raise ChainError("only a fresh chain at height 0 can be adopted")
-    genesis = _rpc(port, "getblockhash", [0], host=host)
-    meta = {"version": 1, "image": IMAGE, "configSha256": CONFIG_SHA256, "genesisHash": genesis,
-            "anchorHeight": 0, "anchorHash": genesis, "lastStartState": "CHAIN_ACTIVE",
-            "lastObservedHeight": 0, "management": "external"}
-    _atomic_json(root / "chain-identity.json", meta)
+    with identity_lock(root):
+        if _meta(root) is not None:
+            raise ChainError("chain identity already exists; refusing to adopt again")
+        height = _rpc(port, "getblockcount", host=host)
+        if height != 0:
+            raise ChainError("only a fresh chain at height 0 can be adopted")
+        genesis = _rpc(port, "getblockhash", [0], host=host)
+        meta = {"version": 1, "image": IMAGE, "configSha256": CONFIG_SHA256, "genesisHash": genesis,
+                "anchorHeight": 0, "anchorHash": genesis, "lastStartState": "CHAIN_ACTIVE",
+                "lastObservedHeight": 0, "management": "external"}
+        _atomic_json(root / "chain-identity.json", meta)
     return {"state": "CHAIN_ACTIVE", "height": 0, "genesisHash": genesis}
 
 
 def checkpoint(root: Path, port: int, host: str = "127.0.0.1") -> dict:
     _paths(root)
+    with identity_lock(root):
+        return _checkpoint(root, port, host)
+
+
+def _checkpoint(root: Path, port: int, host: str) -> dict:
     meta = _meta(root)
     if not meta:
         raise ChainError("chain has not been initialized")
@@ -362,8 +407,14 @@ def status(root: Path, container: str, port: int, *, host: str = "127.0.0.1",
             raise ChainError("genesis hash changed")
         verify_anchor(meta, lambda _h: anchor, height)
     except ChainError as exc:
-        meta["detectedReset"] = str(exc)
-        _atomic_json(root / "chain-identity.json", meta)
+        with identity_lock(root):
+            current = _meta(root)
+            if current is None or any(current.get(key) != meta.get(key)
+                                      for key in ("genesisHash", "anchorHeight", "anchorHash")):
+                # Another writer moved the identity on; this check is stale.
+                return {"state": "CHAIN_STOPPED", "reason": "IDENTITY_CHANGED"}
+            current["detectedReset"] = str(exc)
+            _atomic_json(root / "chain-identity.json", current)
         return {"state": "CHAIN_RESET", "reason": str(exc)}
     return {"state": meta["lastStartState"], "height": height,
             "anchorHeight": meta["anchorHeight"], "anchorHash": meta["anchorHash"],

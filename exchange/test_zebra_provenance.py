@@ -6,7 +6,7 @@ and a fake RPC. The protected research root is never opened.
 
 from __future__ import annotations
 
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 import hashlib
 import io
 import json
@@ -15,6 +15,9 @@ from pathlib import Path
 import re
 import secrets
 import shutil
+import stat
+import threading
+import time
 import unittest
 from unittest.mock import patch
 from urllib.error import URLError
@@ -100,9 +103,14 @@ class Fixture(unittest.TestCase):
         return raw
 
     def tree(self) -> dict[str, tuple[str, int]]:
+        """Every file and its mode, except the identity lock, which must stay an empty 0600 file."""
+        lock = self.root / chain.LOCK_NAME
+        if lock.exists():
+            self.assertEqual((lock.stat().st_size, lock.stat().st_mode & 0o777), (0, 0o600))
         return {str(path.relative_to(self.root)): (hashlib.sha256(path.read_bytes()).hexdigest(),
                                                    path.stat().st_mode)
-                for path in sorted(self.root.rglob("*")) if path.is_file() and not path.is_symlink()}
+                for path in sorted(self.root.rglob("*"))
+                if path.is_file() and not path.is_symlink() and path != lock}
 
     def record(self, data=None, *, machine="linux/amd64", **kwargs) -> dict:
         kwargs.setdefault("expect_genesis", GENESIS)
@@ -295,10 +303,10 @@ class CrashSafetyTests(Fixture):
             chain._atomic_json(self.identity, advanced)  # a writer that was not stopped
             return temp
         with patch.object(provenance, "_write_temp", side_effect=checkpoint_races):
-            with self.assertRaisesRegex(chain.ChainError, "changed during migration"):
+            with self.assertRaisesRegex(chain.ChainError, "does not take the identity lock"):
                 self.record()
         self.assertEqual(json.loads(self.identity.read_text()), advanced)
-        self.assertEqual(sorted(p.name for p in self.root.iterdir() if p.name.startswith(".chain-identity")), [])
+        self.assertEqual(sorted(p.name for p in self.root.iterdir() if p.name.endswith(".provenance-tmp")), [])
 
     def test_failures_before_the_rename_leave_original_bytes(self):
         for target in ("replace", "fsync", "fchmod"):
@@ -323,7 +331,7 @@ class RevertTests(Fixture):
         self.assertNotEqual(self.tree(), before)
         self.assertTrue(self.revert()["changed"])
         self.assertEqual(self.tree(), before)
-        self.assertEqual(self.revert(), {"changed": False, "reason": "NOT_RECORDED"})
+        self.assertEqual(self.revert()["reason"], "NOT_RECORDED")
         self.assertTrue(self.record()["changed"])  # can be recorded again
 
     def test_revert_refuses_once_the_identity_moved_on(self):
@@ -341,6 +349,142 @@ class RevertTests(Fixture):
              patch.object(provenance, "_read_regular", side_effect=AssertionError("opened")):
             with self.assertRaisesRegex(chain.ChainError, "protected"):
                 provenance.revert(self.root)
+
+
+class WriterCoordinationTests(Fixture):
+    """Finding: a writer landing between the comparison and os.replace() was lost."""
+
+    def rpc_patch(self):
+        return patch.object(chain, "_rpc", side_effect=lambda _p, m, params=None, host="127.0.0.1":
+                            self.chain.rpc(m, params))
+
+    def test_checkpoint_interleaved_immediately_before_replace_waits_and_is_kept(self):
+        self.chain.tip = 620
+        original = self.identity.read_bytes()
+        real_replace = os.replace
+        state = {}
+
+        def checkpoint_now():
+            try:
+                state["result"] = chain.checkpoint(self.root, 18232, "zebra")
+            except Exception as exc:  # pragma: no cover - reported below
+                state["error"] = exc
+
+        def replace(src, dst):
+            if str(src).endswith(".provenance-tmp"):
+                worker = threading.Thread(target=checkpoint_now)
+                worker.start()
+                state["worker"] = worker
+                time.sleep(0.4)
+                # The cooperating checkpoint is blocked on the identity lock.
+                state["blocked"] = worker.is_alive() and self.identity.read_bytes() == original
+            return real_replace(src, dst)
+        with self.rpc_patch(), patch.object(provenance.os, "replace", side_effect=replace):
+            self.assertTrue(self.record()["changed"])
+            state["worker"].join(10)
+        self.assertTrue(state["blocked"])
+        self.assertNotIn("error", state)
+        data = chain._meta(self.root)
+        self.assertEqual(data["anchorHeight"], 520)          # checkpoint applied ...
+        self.assertEqual(data[chain.RUNTIME_KEY]["imageId"], AMD64)  # ... on top of the migration
+
+    def test_migration_waits_for_a_writer_holding_the_lock_then_refuses(self):
+        before = self.tree()
+        with chain.identity_lock(self.root), patch.object(provenance, "MIGRATION_LOCK_TIMEOUT", 0.3):
+            with self.assertRaisesRegex(chain.ChainError, "locked by another writer"):
+                self.record()
+        self.assertEqual(self.tree(), before)
+        self.assertTrue(self.record()["changed"])
+
+    def test_non_cooperating_writer_after_the_comparison_is_not_excluded(self):
+        """The quiescence boundary: a writer without the lock (cf7f133 engine) must be stopped."""
+        advanced = dict(aws_identity(), anchorHeight=400, anchorHash="7" * 64)
+        real_replace = os.replace
+
+        def replace(src, dst):
+            if str(src).endswith(".provenance-tmp"):
+                real_replace(src, dst)
+                chain._atomic_json(self.identity, advanced)  # lands after our rename, before read-back
+                return None
+            return real_replace(src, dst)
+        with patch.object(provenance.os, "replace", side_effect=replace):
+            with self.assertRaises(provenance.UncertainWrite):
+                self.record()
+        self.assertEqual(json.loads(self.identity.read_text()), advanced)
+
+    def test_status_does_not_record_a_stale_reset_over_a_newer_identity(self):
+        advanced = dict(aws_identity(), anchorHeight=400, anchorHash="7" * 64)
+        self.chain = FakeChain(anchor="5" * 64)  # status sees anchor 335 changed
+        real_lock = chain.identity_lock
+
+        @contextmanager
+        def lock_after_checkpoint(root, timeout=chain.LOCK_TIMEOUT):
+            chain._atomic_json(self.identity, advanced)  # a checkpoint finished first
+            with real_lock(root, timeout):
+                yield
+        with self.rpc_patch(), patch.object(chain, "identity_lock", side_effect=lock_after_checkpoint):
+            result = chain.status(self.root, "zebra", 18232, host="zebra", managed="external")
+        self.assertEqual(result, {"state": "CHAIN_STOPPED", "reason": "IDENTITY_CHANGED"})
+        self.assertEqual(json.loads(self.identity.read_text()), advanced)
+
+
+class UncertainOutcomeTests(Fixture):
+    """Finding: a failure after os.replace() was reported as an ordinary error."""
+
+    @staticmethod
+    def failing_directory_fsync():
+        real = os.fsync
+
+        def fsync(fd):
+            if stat.S_ISDIR(os.fstat(fd).st_mode):
+                raise OSError(5, "Input/output error")
+            return real(fd)
+        return patch.object(provenance.os, "fsync", side_effect=fsync)
+
+    def test_directory_fsync_failure_after_rename_is_uncertain_and_reconcilable(self):
+        original = self.identity.read_bytes()
+        with self.failing_directory_fsync(), self.assertRaises(provenance.UncertainWrite) as caught:
+            self.record()
+        written = self.identity.read_bytes()
+        self.assertIn(chain.RUNTIME_KEY, json.loads(written))  # the rename did happen
+        self.assertEqual(caught.exception.before, hashlib.sha256(original).hexdigest())
+        self.assertEqual(caught.exception.after, hashlib.sha256(written).hexdigest())
+        self.assertEqual([p for p in self.root.iterdir() if p.name.endswith(".provenance-tmp")], [])
+        # Reconcile by re-running the same record: confirms content, re-fsyncs, changes nothing.
+        again = self.record()
+        self.assertEqual((again["reason"], again["durable"]), ("ALREADY_RECORDED", True))
+        self.assertEqual(self.identity.read_bytes(), written)
+
+    def test_reconfirmation_failure_stays_uncertain(self):
+        self.record()
+        migrated = self.identity.read_bytes()
+        with self.failing_directory_fsync(), self.assertRaises(provenance.UncertainWrite):
+            self.record()
+        self.assertEqual(self.identity.read_bytes(), migrated)
+
+    def test_revert_directory_fsync_failure_is_uncertain(self):
+        original = self.identity.read_bytes()
+        self.record()
+        with patch.object(provenance, "PROTECTED_ROOTS", frozenset()), self.failing_directory_fsync(), \
+             self.assertRaises(provenance.UncertainWrite):
+            provenance.revert(self.root)
+        self.assertEqual(self.identity.read_bytes(), original)
+
+    def test_command_line_reports_uncertain_with_exit_3(self):
+        out, err = io.StringIO(), io.StringIO()
+        argv = ["record", "--root", str(self.root), "--rpc-host", "zebra", "--expect-genesis", GENESIS,
+                "--expect-anchor-height", "335"]
+        stdin = io.TextIOWrapper(io.BytesIO(json.dumps(attestation()).encode()))
+        rpc = lambda _p, m, params=None, host=None: self.chain.rpc(m, params)  # noqa: E731
+        with self.failing_directory_fsync(), redirect_stdout(out), redirect_stderr(err), \
+             patch.object(provenance.sys, "stdin", stdin), patch.object(provenance, "_rpc", side_effect=rpc), \
+             patch.object(provenance, "machine_platform", return_value="linux/amd64"), \
+             patch.object(provenance.time, "time", return_value=NOW), self.assertRaises(SystemExit) as caught:
+            provenance.main(argv)
+        self.assertEqual(caught.exception.code, 3)
+        self.assertEqual(json.loads(out.getvalue())["outcome"], "UNCERTAIN")
+        self.assertIn("PROVENANCE_UNCERTAIN", err.getvalue())
+        self.assertIn("Do not revert", err.getvalue())
 
 
 class CompatibilityAfterMigrationTests(Fixture):

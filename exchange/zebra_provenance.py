@@ -15,8 +15,23 @@ socket). Here the attestation is rechecked against the pinned image table and
 this machine's platform, and the identity's genesis and durable anchor are
 rechecked against the live chain. The only change is one added "zebraRuntime"
 object: the version, recorded "image" label, genesis, anchor, heights and
-every ledger, wallet and order file are left as they are. On any error nothing
-is written. The write is a compare-and-swap atomic replace.
+every ledger, wallet and order file are left as they are.
+
+Write guarantees, stated exactly:
+- The whole read-check-write holds persistent_chain.identity_lock, so it is
+  serialized with every writer that takes that lock (this module and
+  persistent_chain's start/adopt/checkpoint/status). No such writer's update
+  can be lost.
+- Writers that do not take the lock (engines built before it existed, such
+  as cf7f133) are not excluded. The bytes are re-compared just before the
+  rename, but a non-cooperating write after that comparison can be
+  overwritten. Stop every engine service except zebra before migrating.
+- The new file is complete before the rename (temp file + fsync), so readers
+  see the old or the new identity, never a partial one. A failure before the
+  rename changes nothing (exit 1). A failure after the rename (directory
+  fsync, read-back) is reported as UNCERTAIN (exit 3) with the before/after
+  hashes: inspect with `show`, then re-run the same `record`, which confirms
+  the content and re-fsyncs. Never revert blindly on an uncertain outcome.
 
     python3 -m exchange.zebra_provenance show --root /var/lib/zwa/zwa4e-demo
 
@@ -42,7 +57,7 @@ import time
 
 from .config import PROTECTED_ROOTS
 from .persistent_chain import (PINNED_ZEBRA_IMAGES, RUNTIME_KEY, ZEBRA_SOURCE_REVISION, ChainError, _paths,
-                               _rpc, runtime_provenance, validate_identity, verify_anchor)
+                               _rpc, identity_lock, runtime_provenance, validate_identity, verify_anchor)
 
 IDENTITY = "chain-identity.json"
 MAX_IDENTITY_BYTES = 8192
@@ -55,10 +70,19 @@ MAX_CLOCK_SKEW = 120
 MACHINE_PLATFORMS = {"x86_64": "linux/amd64", "amd64": "linux/amd64",
                      "aarch64": "linux/arm64", "arm64": "linux/arm64"}
 PROJECT = re.compile(r"[a-z0-9][a-z0-9_-]{0,62}\Z")
+MIGRATION_LOCK_TIMEOUT = 10.0
 
 
 class ProvenanceError(ChainError):
     pass
+
+
+class UncertainWrite(ProvenanceError):
+    """The rename happened (or may have), but the result is not confirmed."""
+
+    def __init__(self, message: str, before: str, after: str):
+        super().__init__(message)
+        self.before, self.after = before, after
 
 
 def machine_platform() -> str | None:
@@ -138,21 +162,56 @@ def _write_temp(directory: Path, payload: bytes, like: os.stat_result) -> Path:
     return temp
 
 
-def _replace_unchanged(path: Path, original: bytes, payload: bytes, like: os.stat_result) -> None:
+def _fsync_directory(directory: Path) -> None:
+    fd = os.open(directory, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _replace_locked(path: Path, original: bytes, payload: bytes, like: os.stat_result) -> None:
+    """Replace the identity; the caller holds identity_lock (see the module docstring)."""
+    before, after = hashlib.sha256(original).hexdigest(), hashlib.sha256(payload).hexdigest()
     temp = _write_temp(path.parent, payload, like)
     try:
         current, info = _read_regular(path)
         if current != original or (info.st_dev, info.st_ino) != (like.st_dev, like.st_ino):
-            raise ProvenanceError("chain identity changed during migration; nothing was written")
+            raise ProvenanceError("chain identity was changed by a writer that does not take the identity "
+                                  "lock; nothing was written. Stop every engine service except zebra")
         os.replace(temp, path)
     except BaseException:
         temp.unlink(missing_ok=True)
         raise
-    directory = os.open(path.parent, os.O_RDONLY)
+    # From here on the new bytes are visible: report failures as uncertain, never as "nothing written".
     try:
-        os.fsync(directory)
-    finally:
-        os.close(directory)
+        _fsync_directory(path.parent)
+    except OSError as exc:
+        raise UncertainWrite(f"identity renamed into place but the directory fsync failed ({exc}); "
+                             "durability is unconfirmed", before, after) from exc
+    try:
+        written, _ = _read_regular(path)
+    except ProvenanceError as exc:
+        raise UncertainWrite(f"identity renamed into place but could not be read back ({exc})",
+                             before, after) from exc
+    if written != payload:
+        raise UncertainWrite("identity differs from what was just written; a writer that does not take the "
+                             "identity lock is active", before, hashlib.sha256(written).hexdigest())
+
+
+def _confirm_durable(path: Path, data: bytes) -> None:
+    """Re-fsync an identity whose content is already correct (reconciles an UNCERTAIN outcome)."""
+    digest = hashlib.sha256(data).hexdigest()
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        _fsync_directory(path.parent)
+    except OSError as exc:
+        raise UncertainWrite(f"recorded identity is correct but its durability is unconfirmed ({exc})",
+                             digest, digest) from exc
 
 
 def _chain_view(rpc, meta: dict) -> int:
@@ -185,6 +244,13 @@ def record(root: Path, attestation: object, *, rpc, expect_genesis: str, expect_
     _paths(root)
     if root.is_symlink() or not root.is_dir():
         raise ProvenanceError("root must be an existing directory")
+    with identity_lock(root, MIGRATION_LOCK_TIMEOUT):
+        return _record_locked(root, attestation, rpc=rpc, expect_genesis=expect_genesis,
+                              expect_anchor_height=expect_anchor_height, dry_run=dry_run, now=now, machine=machine)
+
+
+def _record_locked(root: Path, attestation: object, *, rpc, expect_genesis: str, expect_anchor_height: int,
+                   dry_run: bool, now: int | None, machine: str | None) -> dict:
     path = root / IDENTITY
     original, info = _read_regular(path)
     try:
@@ -204,7 +270,10 @@ def record(root: Path, attestation: object, *, rpc, expect_genesis: str, expect_
     existing = meta.get(RUNTIME_KEY)
     if existing is not None:
         if (existing["imageId"], existing["platform"]) == (claim["imageId"], claim["platform"]):
-            return {"changed": False, "reason": "ALREADY_RECORDED", "zebraRuntime": existing}
+            if not dry_run:
+                _confirm_durable(path, original)
+            return {"changed": False, "reason": "ALREADY_RECORDED", "durable": not dry_run,
+                    "zebraRuntime": existing, "sha256": hashlib.sha256(original).hexdigest()}
         raise ProvenanceError("a different Zebra runtime is already recorded; refusing to overwrite it")
 
     runtime = {"schema": 1, "imageId": claim["imageId"], "platform": claim["platform"],
@@ -223,13 +292,9 @@ def record(root: Path, attestation: object, *, rpc, expect_genesis: str, expect_
         raise ProvenanceError("migrated chain identity is too large")
     if dry_run:
         return {"changed": False, "reason": "DRY_RUN", "zebraRuntime": runtime}
-    _replace_unchanged(path, original, payload, info)
-    written, _ = _read_regular(path)
-    if written != payload:
-        raise ProvenanceError("chain identity changed after the migration write")
-    validate_identity(json.loads(written))
-    return {"changed": True, "zebraRuntime": runtime,
-            "sha256": {"before": runtime["migratedFromSha256"], "after": hashlib.sha256(written).hexdigest()}}
+    _replace_locked(path, original, payload, info)
+    return {"changed": True, "outcome": "WRITTEN", "durable": True, "zebraRuntime": runtime,
+            "sha256": {"before": runtime["migratedFromSha256"], "after": hashlib.sha256(payload).hexdigest()}}
 
 
 def revert(root: Path, *, dry_run: bool = False) -> dict:
@@ -238,6 +303,11 @@ def revert(root: Path, *, dry_run: bool = False) -> dict:
     if str(root) in PROTECTED_ROOTS:
         raise ProvenanceError("refusing to change a protected research root")
     _paths(root)
+    with identity_lock(root, MIGRATION_LOCK_TIMEOUT):
+        return _revert_locked(root, dry_run)
+
+
+def _revert_locked(root: Path, dry_run: bool) -> dict:
     path = root / IDENTITY
     current, info = _read_regular(path)
     try:
@@ -246,7 +316,7 @@ def revert(root: Path, *, dry_run: bool = False) -> dict:
         raise ProvenanceError("chain identity is not valid JSON") from exc
     runtime = meta.get(RUNTIME_KEY)
     if runtime is None:
-        return {"changed": False, "reason": "NOT_RECORDED"}
+        return {"changed": False, "reason": "NOT_RECORDED", "sha256": hashlib.sha256(current).hexdigest()}
     previous = {key: value for key, value in meta.items() if key != RUNTIME_KEY}
     payload = serialize(previous)
     if hashlib.sha256(payload).hexdigest() != runtime["migratedFromSha256"]:
@@ -255,8 +325,8 @@ def revert(root: Path, *, dry_run: bool = False) -> dict:
     validate_identity(previous)
     if dry_run:
         return {"changed": False, "reason": "DRY_RUN", "sha256": runtime["migratedFromSha256"]}
-    _replace_unchanged(path, current, payload, info)
-    return {"changed": True, "sha256": runtime["migratedFromSha256"]}
+    _replace_locked(path, current, payload, info)
+    return {"changed": True, "outcome": "WRITTEN", "durable": True, "sha256": runtime["migratedFromSha256"]}
 
 
 def show(root: Path) -> dict:
@@ -309,6 +379,12 @@ def main(argv: list[str] | None = None) -> None:
                             rpc=lambda method, params=None: _rpc(args.rpc_port, method, params, host=args.rpc_host),
                             expect_genesis=args.expect_genesis, expect_anchor_height=args.expect_anchor_height,
                             dry_run=args.dry_run)
+    except UncertainWrite as exc:
+        print(json.dumps({"outcome": "UNCERTAIN", "detail": str(exc),
+                          "sha256": {"before": exc.before, "after": exc.after}}, indent=2, sort_keys=True))
+        print(f"PROVENANCE_UNCERTAIN {exc}; before={exc.before} after={exc.after}. Do not revert: run `show`, "
+              "compare its sha256, then re-run the same command to confirm and re-fsync", file=sys.stderr)
+        raise SystemExit(3) from exc
     except (ChainError, OSError, ValueError) as exc:
         print(f"PROVENANCE_REFUSED {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
