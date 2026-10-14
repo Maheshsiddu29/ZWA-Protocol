@@ -260,9 +260,21 @@ class ZebraHostAttestationTests(unittest.TestCase):
         for line in "\n".join(blocks).splitlines():
             if "docker compose" in line or "compose -p" in line:
                 self.assertIn("compose.amd64.yaml", line)
+        self.assertIn('LIVE="/opt/zwa/repo"', runbook)
+        self.assertIn('LIVE_DEPLOY="$LIVE/deploy"', runbook)
+        self.assertNotIn("ZWA-Protocol", runbook)                     # the old, wrong live path
+        # A bundle is verified and fetched only when one is supplied.
+        self.assertRegex(runbook, r'if ! has_reviewed && \[\[ -n "\$BUNDLE" \]\]; then\n'
+                                  r'  git -C "\$STAGE_CHECKOUT" bundle verify "\$BUNDLE"')
+        self.assertEqual(runbook.count("bundle verify"), 1)
+        # Live files are only read and copied out, never written into the live checkout.
+        for line in "\n".join(blocks).splitlines():
+            if re.search(r"\b(install|cp|mv|chmod|chown|rm|tee)\b", line) and "LIVE" in line:
+                self.assertNotRegex(line, r"(install|cp|mv|chmod|chown|rm|tee)\b[^|]*\$LIVE", line)
         for required in ("zwa-recovery/paired-", ".tar.gz", "provenance-stage.py plan", "--rendered-sha256",
                          "--docker-sudo", "declaredSourceRevision", "POINT_IN_TIME_HOST_ATTESTATION",
-                         "PROVENANCE_UNCERTAIN", "never revert blindly", "identity_lock"):
+                         "PROVENANCE_UNCERTAIN", "never revert blindly", "identity_lock", "x86-64 ELF",
+                         "SHA-256 of every regular file", "Not yet exercised on real Docker"):
             self.assertIn(required, runbook)
 
     def test_no_container_receives_the_docker_socket(self):

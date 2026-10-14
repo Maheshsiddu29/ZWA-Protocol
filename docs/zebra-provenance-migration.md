@@ -131,7 +131,8 @@ It then also refuses, still without writing:
 
 - a live chain whose genesis or anchor differs, or whose tip is below the anchor;
 - any RPC failure;
-- a different runtime already recorded.
+- a different runtime already recorded;
+- an existing record that belongs to **another Compose project**, even with the same image and architecture. A record is confirmed (`ALREADY_RECORDED`) only for the same project; a replaced container there is reported (`sameContainerAsRecord: false`), never written.
 
 ## Write guarantees and the writer-quiescence boundary
 
@@ -183,78 +184,111 @@ To reconcile an exit 3:
 
 On the existing EC2 host, these facts hold:
 
-- the live checkout uses a host-local `deploy/compose.amd64.yaml` override;
-- `deploy/scripts/preflight.sh` has a local amd64 edit;
-- the paired backups are `~/zwa-recovery/paired-*/` with `zwa-demo_<volume>.tar.gz` archives.
+- The live checkout is **`/opt/zwa/repo`** and its deployment directory is **`/opt/zwa/repo/deploy`**.
+- That deployment uses a host-local `deploy/compose.amd64.yaml` override, and `deploy/scripts/preflight.sh` has a local amd64 edit.
+- The paired backups are `~/zwa-recovery/paired-*/`, holding `zwa-demo_<volume>.tar.gz` archives.
 
-`deploy/scripts/provenance-stage.py` does the staging. Each step validates
-its inputs and stops at the first unexpected result.
+Nothing below modifies, replaces or moves any file in `/opt/zwa/repo`. Files
+there are only read and copied out, with `sudo` where they are not readable by
+the operator. `deploy/scripts/provenance-stage.py` does the staging. Each step
+validates its inputs and stops at the first unexpected result.
 
-### 0. Variables (validated before use)
+### 0. Variables and helpers (validated before use)
 
 ```sh
 set -euo pipefail
-LIVE="$HOME/ZWA-Protocol"                             # live checkout: read only below
-STAGE_CHECKOUT="$HOME/zwa-provenance-stage"           # new, separate checkout
+LIVE="/opt/zwa/repo"                                  # live checkout: read only below
+LIVE_DEPLOY="$LIVE/deploy"                            # live deployment directory: read only below
+STAGE_CHECKOUT="$HOME/zwa-provenance-stage"           # new, separate checkout (never under /opt/zwa)
 REVIEWED="REPLACE_WITH_40_HEX_REVIEWED_COMMIT"
+BUNDLE=""                                             # optional: path to an owner-made git bundle
 BACKUP="$HOME/zwa-recovery/REPLACE_WITH_paired-DIRECTORY_NAME"
-EVIDENCE="$HOME/zwa-prov-stage-evidence/$(date -u +%Y%m%dT%H%M%SZ)"
+STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+INPUTS="$HOME/zwa-prov-stage-inputs/$STAMP"           # private snapshot of the live inputs
+EVIDENCE="$HOME/zwa-prov-stage-evidence/$STAMP"
 [[ "$REVIEWED" =~ ^[0-9a-f]{40}$ ]] || { echo "REVIEWED is not a commit id" >&2; exit 1; }
-[[ "$(basename "$BACKUP")" =~ ^paired-[A-Za-z0-9._-]+$ && -d "$BACKUP" && ! -L "$BACKUP" ]] \
+[[ "$(basename "$BACKUP")" =~ ^paired-[A-Za-z0-9._-]+$ && -d "$BACKUP" && ! -L "$BACKUP" \
+   && "$(dirname "$BACKUP")" == "$HOME/zwa-recovery" ]] \
   || { echo "BACKUP is not a ~/zwa-recovery/paired-* directory" >&2; exit 1; }
-[[ ! -e "$STAGE_CHECKOUT" && ! -e "$EVIDENCE" ]] || { echo "staging paths already exist" >&2; exit 1; }
-test -f "$LIVE/deploy/compose.amd64.yaml" && test -f "$LIVE/deploy/.env"
-mkdir -p -m 700 "$(dirname "$EVIDENCE")"
+[[ -z "$BUNDLE" || ( -f "$BUNDLE" && ! -L "$BUNDLE" ) ]] || { echo "BUNDLE is not a file" >&2; exit 1; }
+[[ ! -e "$STAGE_CHECKOUT" && ! -e "$INPUTS" && ! -e "$EVIDENCE" ]] \
+  || { echo "staging paths already exist" >&2; exit 1; }
+[[ -d "$LIVE/.git" && -d "$LIVE_DEPLOY" ]] || { echo "LIVE is not the /opt/zwa/repo checkout" >&2; exit 1; }
+mkdir -p -m 700 "$INPUTS" "$(dirname "$EVIDENCE")"
+# Read a live file without modifying it; fall back to sudo only for reading.
+read_live() { if [[ -r "$1" ]]; then cat -- "$1"; else sudo cat -- "$1"; fi; }
+# Copy a live file out to a private path owned by the operator (the live file is untouched).
+copy_live() { (umask 077; read_live "$1" > "$2"); chmod "$3" "$2"; }
+git_live() { if git -C "$LIVE" rev-parse HEAD > /dev/null 2>&1; then git -C "$LIVE" "$@"; else sudo git -C "$LIVE" "$@"; fi; }
 # Docker access: plain if the user may use the socket, otherwise sudo (prompt once now).
 if docker info > /dev/null 2>&1; then D=(docker); SUDO_FLAG=()
 else sudo -v; D=(sudo -n docker); SUDO_FLAG=(--docker-sudo); fi
 "${D[@]}" info --format '{{.OSType}}/{{.Architecture}}'      # expect linux/x86_64
 ```
 
-### 1. Preserve AWS-local files (read only)
+### 1. Snapshot and preserve the AWS-local inputs (read only)
 
 ```sh
-KEEP="$HOME/zwa-aws-local-$(date -u +%Y%m%dT%H%M%SZ)"
-mkdir -m 700 "$KEEP"
-git -C "$LIVE" rev-parse HEAD                     # record it; expect cf7f133f0bb34cd4a4add8a87fba06273ba90a8f
-git -C "$LIVE" status --porcelain | tee "$KEEP/live-status.txt"
-git -C "$LIVE" diff -- deploy/scripts/preflight.sh > "$KEEP/preflight-local.patch"
-cp -p "$LIVE/deploy/scripts/preflight.sh" "$LIVE/deploy/compose.amd64.yaml" "$KEEP/"
-sha256sum "$KEEP"/* | tee "$KEEP/SHA256SUMS"
+git_live rev-parse HEAD | tee "$INPUTS/live-head.txt"       # record it; expected cf7f133f0bb34cd4a4add8a87fba06273ba90a8f
+git_live status --porcelain | tee "$INPUTS/live-status.txt"
+git_live diff -- deploy/scripts/preflight.sh > "$INPUTS/preflight-local.patch"
+copy_live "$LIVE_DEPLOY/scripts/preflight.sh" "$INPUTS/preflight.sh" 600
+copy_live "$LIVE_DEPLOY/compose.amd64.yaml"   "$INPUTS/compose.amd64.yaml" 600
+copy_live "$LIVE_DEPLOY/.env"                 "$INPUTS/live.env" 600
+copy_live "$LIVE_DEPLOY/env/web.env"          "$INPUTS/web.env" 600
+(cd "$INPUTS" && sha256sum -- * > SHA256SUMS && cat SHA256SUMS)
 ```
 
-Never run `git checkout -- .`, `git reset --hard`, `git stash`, `git pull` or
-`docker compose down` in the live checkout for this work. The new preflight
-accepts both pins, which supersedes the local preflight edit. Retire that edit
-only after the owner compares it with the new file.
+Never run `git checkout -- .`, `git reset --hard`, `git stash`, `git pull`,
+`install`, `cp` or `docker compose down` **into or in** `/opt/zwa/repo` for this
+work. The new preflight accepts both pins, which supersedes the local preflight
+edit. Retire that edit only after the owner compares it with the new file.
 
 ### 2. Separate checkout of the reviewed commit
 
-The commit arrives by an owner push, or as a bundle made by the owner
-(`git bundle create zwa-provenance.bundle cf7f133..<branch>`).
+The reviewed commit may already be available: in the live checkout's object
+store, or on its `origin` after an owner push. Otherwise the owner supplies a
+bundle (`git bundle create zwa-provenance.bundle cf7f133..<branch>`) and sets
+`BUNDLE`. A bundle is verified and fetched only when one is used.
 
 ```sh
-git clone --no-checkout "$LIVE" "$STAGE_CHECKOUT"
-git -C "$STAGE_CHECKOUT" bundle verify "$HOME/zwa-provenance.bundle"     # if using a bundle
-git -C "$STAGE_CHECKOUT" fetch "$HOME/zwa-provenance.bundle" "+refs/heads/*:refs/remotes/bundle/*"
+git clone --no-checkout --no-hardlinks "$LIVE" "$STAGE_CHECKOUT" 2> /dev/null \
+  || sudo git clone --no-checkout --no-hardlinks "$LIVE" "$STAGE_CHECKOUT"
+[[ -O "$STAGE_CHECKOUT" ]] || sudo chown -R "$(id -u):$(id -g)" "$STAGE_CHECKOUT"   # the new copy only
+has_reviewed() { git -C "$STAGE_CHECKOUT" cat-file -e "$REVIEWED^{commit}" 2> /dev/null; }
+if ! has_reviewed && [[ -n "$BUNDLE" ]]; then
+  git -C "$STAGE_CHECKOUT" bundle verify "$BUNDLE"
+  git -C "$STAGE_CHECKOUT" fetch "$BUNDLE" "+refs/heads/*:refs/remotes/bundle/*"
+fi
+if ! has_reviewed; then
+  ORIGIN_URL="$(git_live remote get-url origin)"
+  if ! git -C "$STAGE_CHECKOUT" fetch "$ORIGIN_URL" "$REVIEWED"; then   # read-only fetch
+    echo "origin does not serve $REVIEWED" >&2
+  fi
+fi
+has_reviewed || { echo "reviewed commit $REVIEWED is not available; set BUNDLE" >&2; exit 1; }
 git -C "$STAGE_CHECKOUT" checkout --detach "$REVIEWED"
 test "$(git -C "$STAGE_CHECKOUT" rev-parse HEAD)" = "$REVIEWED"
-install -m 644 "$LIVE/deploy/compose.amd64.yaml" "$STAGE_CHECKOUT/deploy/compose.amd64.yaml"
+install -m 644 "$INPUTS/compose.amd64.yaml" "$STAGE_CHECKOUT/deploy/compose.amd64.yaml"
 install -d -m 700 "$STAGE_CHECKOUT/deploy/env"
-install -m 600 "$LIVE/deploy/env/web.env" "$STAGE_CHECKOUT/deploy/env/web.env"
+install -m 600 "$INPUTS/web.env" "$STAGE_CHECKOUT/deploy/env/web.env"
 cat "$STAGE_CHECKOUT/deploy/compose.amd64.yaml"   # review: zebra image and entrypoint for AMD64
 ```
 
-The driver passes the live `.env` read-only through `--env-file`. It writes
-`$EVIDENCE/stage.env` (mode 600), which differs only in `ZWA_ENGINE_TAG`. Every
-Compose command it runs is
+A failed origin fetch is reported and then caught by the explicit
+`has_reviewed` check, which stops the script. If git reports "dubious
+ownership" for `/opt/zwa/repo`, the helpers above already retry read-only
+commands with `sudo`; never change that repository's configuration. The
+driver reads the snapshot
+`$INPUTS/live.env` through `--env-file` and writes `$EVIDENCE/stage.env` (mode
+600), which differs only in `ZWA_ENGINE_TAG`. Every Compose command it runs is
 `docker compose --project-directory <checkout>/deploy --env-file $EVIDENCE/stage.env -p zwa-prov-stage -f compose.yaml -f compose.amd64.yaml …`.
 
 ### 3. Engine image with the reviewed code
 
 Preferred: a full rebuild per `deploy/README.md`. A staging alternative is an
-overlay on the deployed engine image of the two engine files changed since
-`cf7f133`:
+overlay on the deployed engine image of the only two engine files changed
+since `cf7f133`:
 
 ```sh
 LIVE_PORTAL=$("${D[@]}" ps -q --filter label=com.docker.compose.project=zwa-demo \
@@ -262,10 +296,11 @@ LIVE_PORTAL=$("${D[@]}" ps -q --filter label=com.docker.compose.project=zwa-demo
 LIVE_ENGINE=$("${D[@]}" inspect --format '{{.Config.Image}}' "$LIVE_PORTAL")     # read only
 [[ "$LIVE_ENGINE" =~ ^zwa-engine:[A-Za-z0-9_.-]+$ ]] || { echo "unexpected engine image $LIVE_ENGINE" >&2; exit 1; }
 STAGE_TAG="provenance-${REVIEWED:0:12}"
-git -C "$STAGE_CHECKOUT" diff --name-only cf7f133 -- exchange ':!exchange/test_*'   # expect exactly the two below
+test "$(git -C "$STAGE_CHECKOUT" diff --name-only cf7f133 -- exchange ':!exchange/test_*' | tr '\n' ' ')" \
+  = "exchange/persistent_chain.py exchange/zebra_provenance.py "
 printf 'FROM %s\nCOPY exchange/persistent_chain.py exchange/zebra_provenance.py /app/ZWA-Brand-Integration/exchange/\n' \
-  "$LIVE_ENGINE" > "$(dirname "$EVIDENCE")/Dockerfile.$STAGE_TAG"
-"${D[@]}" build -f "$(dirname "$EVIDENCE")/Dockerfile.$STAGE_TAG" -t "zwa-engine:$STAGE_TAG" "$STAGE_CHECKOUT"
+  "$LIVE_ENGINE" > "$INPUTS/Dockerfile.$STAGE_TAG"
+"${D[@]}" build -f "$INPUTS/Dockerfile.$STAGE_TAG" -t "zwa-engine:$STAGE_TAG" "$STAGE_CHECKOUT"
 ```
 
 `plan` refuses any engine image whose `exchange/*.py` differ from the reviewed
@@ -276,26 +311,30 @@ fails that check; then rebuild fully.
 
 ```sh
 cd "$STAGE_CHECKOUT"
-python3 -I deploy/scripts/provenance-stage.py plan "${SUDO_FLAG[@]}" \
-  --backup-dir "$BACKUP" --engine-tag "$STAGE_TAG" --env-file "$LIVE/deploy/.env" --evidence-dir "$EVIDENCE" \
-  --expect-genesis 029f11d80ef9765602235e1bc9727e3eb6ba20839319f761fee920d63401e327 \
-  --expect-anchor-height 335 \
-  --expect-settled-tx c02b4e6da7e5deee80eeafa56d2334d5bc31a2f074f06f88ffa1966110da99c6:325
+STAGE_ARGS=(--backup-dir "$BACKUP" --engine-tag "$STAGE_TAG" --env-file "$INPUTS/live.env"
+  --evidence-dir "$EVIDENCE"
+  --expect-genesis 029f11d80ef9765602235e1bc9727e3eb6ba20839319f761fee920d63401e327
+  --expect-anchor-height 335
+  --expect-settled-tx c02b4e6da7e5deee80eeafa56d2334d5bc31a2f074f06f88ffa1966110da99c6:325)
+python3 -I deploy/scripts/provenance-stage.py plan "${SUDO_FLAG[@]}" "${STAGE_ARGS[@]}"
 ```
 
-`plan` checks the following, and creates no volume, container or file outside `$EVIDENCE`:
+`plan` creates no volume or file outside `$EVIDENCE`. Its only Docker change is
+one never-started, network-less container used to copy the zebra executable
+out, removed again with `rm -v`. It checks:
 
 - **Backup:** `$BACKUP/SHA256SUMS` lists and matches all three `zwa-demo_*.tar.gz` (`--checksum-file` names another manifest).
-- **Archive contents** (read without extracting): safe paths and types; no setuid; nothing below symlinks.
+- **Archive contents** (read without extracting):
+  - relative paths only; no traversal, devices, FIFOs or setuid;
+  - nothing below a symlink, and hard links only to earlier regular members;
+  - a streamed SHA-256 of every regular file.
 - **Archived identity:** the expected unmigrated external identity.
 - **Proving parameters:** match their checksums.
-- **Rendered Compose configuration:**
-  - project `zwa-prov-stage`;
-  - new `zwa-prov-stage_*` volumes;
-  - a zebra entrypoint that is **not** the ARM64 one;
-  - the pinned native AMD64 zebra image;
-  - the staging engine image;
-  - no published ports, no Docker socket, no `zwa-demo_*` volumes.
+- **Rendered Compose configuration** (an exact allowlist):
+  - **`zebra`:** only its reviewed keys; exactly `zebra-state:/data` plus the read-only pinned config bind; only the project's `internal: true` network; `cap_drop: ALL` and `no-new-privileges`; `<zebrad> -c /config/regtest-config.toml`, which is not the ARM64 entrypoint; the pinned native AMD64 image.
+  - **`portal`:** exactly `zwa-root` read-write and `zwa-params` read-only; user 10001 with a read-only root; the reviewed environment; the staging engine image.
+  - **Every service:** no privileged mode, host namespaces, `cap_add` or devices; no undeclared networks or volumes; no external, driver or `driver_opts` volumes; only read-only binds inside the reviewed `deploy/`; ports only on caddy 80/443; no Docker socket; no `zwa-demo_*` names.
+- **Zebra executable:** the entrypoint inside the pinned image is an executable **x86-64 ELF** (sha256 recorded).
 - **Engine code:** matches the checkout.
 - **Isolation:** no staging volume or container exists yet.
 
@@ -305,19 +344,19 @@ it contains the portal token, so do not share it). Note `renderedSha256`.
 ### 5. Stage
 
 ```sh
-python3 -I deploy/scripts/provenance-stage.py stage "${SUDO_FLAG[@]}" \
-  --backup-dir "$BACKUP" --engine-tag "$STAGE_TAG" --env-file "$LIVE/deploy/.env" --evidence-dir "$EVIDENCE" \
-  --expect-genesis 029f11d80ef9765602235e1bc9727e3eb6ba20839319f761fee920d63401e327 \
-  --expect-anchor-height 335 \
-  --expect-settled-tx c02b4e6da7e5deee80eeafa56d2334d5bc31a2f074f06f88ffa1966110da99c6:325 \
-  --rendered-sha256 <renderedSha256 from plan.json>
+read_live "$LIVE_DEPLOY/.env" | cmp - "$INPUTS/live.env"     # live inputs unchanged since the snapshot
+python3 -I deploy/scripts/provenance-stage.py stage "${SUDO_FLAG[@]}" "${STAGE_ARGS[@]}" \
+  --rendered-sha256 "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["renderedSha256"])' \
+                       "$EVIDENCE/plan.json")"
 ```
 
-`stage` repeats every plan check and refuses a different rendering, override,
-env file, backup or engine image. Then it runs these steps:
+Run `stage` only after reviewing the plan; passing the hash from `plan.json`
+records that review. `stage` repeats every plan check, and refuses a
+different rendering, override, env file, backup or engine image. Then it runs
+these steps:
 
 1. Creates `zwa-prov-stage_{zwa-root,zebra-state,zwa-params}`.
-2. Restores each from the read-only backup mount with `tar --numeric-owner --same-owner --same-permissions -xzf` inside `--network none` one-shots. It verifies every restored path's type, owner, group and mode against the archive.
+2. Restores each from the read-only backup mount with `tar --numeric-owner --same-owner --same-permissions -xzf` inside `--network none` one-shots. It verifies every restored path's type, owner, group, mode and size, and the **SHA-256 of every regular file**, against the archive.
 3. Re-verifies the backup checksums.
 4. Starts **only** `zebra`. On the host, it checks that the running container uses the pinned AMD64 ID and the reviewed (non-ARM64) entrypoint.
 5. Checks that the settled transaction is in block 325 and that the tip has reached the 335 anchor.
@@ -330,8 +369,8 @@ env file, backup or engine image. Then it runs these steps:
    - another Compose project (`zwa-demo`);
    - stale attestation;
    - malformed JSON.
-8. Runs a fresh host attestation, then a dry run (identity unchanged), `record`, and `record` again (`ALREADY_RECORDED`). It checks the record (AMD64 pin, project, `migratedFromSha256`).
-9. Checks that the files snapshot and the M10 state report are identical before and after. It runs a fresh host `verify` (`sameContainerAsRecord`), and checks `status` (`currentRuntimeVerified: false`) and the settled transaction again.
+8. Runs a fresh host attestation, then a dry run (identity unchanged), `record`, and `record` again (`ALREADY_RECORDED` in the same project). It checks the record (AMD64 pin, project, `migratedFromSha256`).
+9. Checks that the files snapshot and the M10 state report are identical before and after. It runs a fresh host `verify` (same project, `sameContainerAsRecord`), and checks `status` (`currentRuntimeVerified: false`) and the settled transaction again.
 10. Revert rehearsal: the identity returns to the archived bytes, then is recorded again.
 
 It prints `STAGING_PASSED` and writes `$EVIDENCE/stage.json`. Zebra stays
@@ -342,16 +381,34 @@ an uncertain write: reconcile as above and **do not revert**.
 ### 6. Stop staging
 
 ```sh
-python3 -I deploy/scripts/provenance-stage.py stop "${SUDO_FLAG[@]}" --backup-dir "$BACKUP" \
-  --engine-tag "$STAGE_TAG" --env-file "$LIVE/deploy/.env" --evidence-dir "$EVIDENCE" \
-  --expect-genesis 029f11d80ef9765602235e1bc9727e3eb6ba20839319f761fee920d63401e327 \
-  --expect-anchor-height 335 \
-  --expect-settled-tx c02b4e6da7e5deee80eeafa56d2334d5bc31a2f074f06f88ffa1966110da99c6:325
+python3 -I deploy/scripts/provenance-stage.py stop "${SUDO_FLAG[@]}" "${STAGE_ARGS[@]}"
 ```
 
 `stop` runs `docker compose down` for `zwa-prov-stage` only, keeping its
 volumes. Remove `zwa-prov-stage_*` volumes only after the owner reviews the
 evidence, by name. Never use `down -v`, and never touch `zwa-demo_*`.
+
+### Not yet exercised on real Docker
+
+The unit tests drive the driver against a faithful fake Docker host. On
+the developer's arm64 Mac, only these real-Docker pieces were run:
+
+- the Compose rendering and its allowlist;
+- the executable copy-out and ELF check, against the arm64 image, which was correctly refused;
+- the host attestation tool.
+
+**Never run anywhere** until the owner runs them on the EC2 host:
+
+- `plan` and `stage` end to end on an AMD64 host;
+- the real `compose.amd64.yaml`;
+- the real `SHA256SUMS` manifest and `.tar.gz` layout;
+- `tar -xzf` restores and the `find`/digest one-shots into real volumes;
+- `docker compose up`/`run` in `zwa-prov-stage`;
+- real Zebra RPC for the settled-transaction check;
+- `--docker-sudo`;
+- this section's shell helpers on that host.
+
+Any mismatch makes `plan` or `stage` refuse; it does not proceed.
 
 ## Original AWS state (separate owner approval; not executed)
 
