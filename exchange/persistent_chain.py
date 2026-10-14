@@ -18,7 +18,21 @@ import sys
 import time
 from urllib.request import Request, urlopen
 
-IMAGE = "sha256:540a3429ef14ff3c575258255e4310951606d16c86ec5e1c37e285ea95178185"
+# QED-it/zebra (zsa-swap-multiple-ag) revision every pinned image was built from.
+ZEBRA_SOURCE_REVISION = "0aef55cea41b83f17610e6ea708e59995f9e739f"
+# The only Zebra images accepted as runtime provenance, by build platform.
+PINNED_ZEBRA_IMAGES = {
+    "linux/arm64": "sha256:540a3429ef14ff3c575258255e4310951606d16c86ec5e1c37e285ea95178185",
+    "linux/amd64": "sha256:2c3f3dde0230f572911d70b7f74cc8f4587c1a139b0756d904e3b09eba2e32b9",
+}
+# Every version-1 identity records this value under "image". For docker-local
+# chains it is also the container image checked on each start and status. For
+# external (Compose) chains this process cannot see the container, so the
+# value is only a recorded label; host-attested runtime provenance is kept
+# separately under RUNTIME_KEY and never inferred from the label.
+RECORDED_IMAGE = PINNED_ZEBRA_IMAGES["linux/arm64"]
+IMAGE = RECORDED_IMAGE  # docker-local runtime image (the local arm64 workflow)
+RUNTIME_KEY = "zebraRuntime"
 CONFIG = """[mining]
 miner_address = 'tmLTZegcJN5zaufWQBARHkvqC62mTumm3jR'
 
@@ -85,23 +99,87 @@ def _rpc(port: int, method: str, params: list | None = None, host: str = "127.0.
     return data["result"]
 
 
+def _hex64(value: object) -> bool:
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+
+
+def _height(value: object) -> bool:
+    return type(value) is int and value >= 0
+
+
+RUNTIME_FIELDS = frozenset({"schema", "imageId", "platform", "sourceRevision", "evidence", "attestedAt",
+                            "recordedImage", "verifiedChain", "migratedFromSha256"})
+VERIFIED_CHAIN_FIELDS = frozenset({"genesisHash", "anchorHeight", "anchorHash", "observedHeight"})
+
+
+def validate_runtime(meta: dict) -> dict | None:
+    """Strictly check the optional host-attested runtime provenance.
+
+    It is written only by the explicit exchange.zebra_provenance migration,
+    only for externally managed chains, and must name a pinned image built
+    for its own platform. Anything else fails closed.
+    """
+    if RUNTIME_KEY not in meta:
+        return None
+    runtime = meta[RUNTIME_KEY]
+    chain = runtime.get("verifiedChain") if isinstance(runtime, dict) else None
+    if (not isinstance(runtime, dict) or set(runtime) != RUNTIME_FIELDS
+            or meta.get("management") != "external"
+            or type(runtime["schema"]) is not int or runtime["schema"] != 1
+            or not isinstance(runtime["platform"], str)
+            or PINNED_ZEBRA_IMAGES.get(runtime["platform"]) != runtime["imageId"]
+            or runtime["sourceRevision"] != ZEBRA_SOURCE_REVISION
+            or runtime["evidence"] != "HOST_ATTESTED"
+            or type(runtime["attestedAt"]) is not int or runtime["attestedAt"] <= 0
+            or runtime["recordedImage"] != meta["image"]
+            or not _hex64(runtime["migratedFromSha256"])
+            or not isinstance(chain, dict) or set(chain) != VERIFIED_CHAIN_FIELDS
+            or chain["genesisHash"] != meta["genesisHash"]
+            or not _height(chain["anchorHeight"]) or chain["anchorHeight"] > meta["anchorHeight"]
+            or not _hex64(chain["anchorHash"])
+            or (chain["anchorHeight"] == meta["anchorHeight"] and chain["anchorHash"] != meta["anchorHash"])
+            or not _height(chain["observedHeight"]) or chain["observedHeight"] < chain["anchorHeight"]):
+        raise ChainError("Zebra runtime provenance is malformed or not a pinned image")
+    return runtime
+
+
+def validate_identity(data: object) -> dict:
+    """Version-1 chain identity, with or without recorded runtime provenance."""
+    if (not isinstance(data, dict)
+            or data.get("version") != 1 or data.get("image") != RECORDED_IMAGE
+            or data.get("configSha256") != CONFIG_SHA256
+            or not _height(data.get("anchorHeight"))
+            or not _hex64(data.get("anchorHash"))
+            or not _hex64(data.get("genesisHash"))
+            or data.get("lastStartState") not in ("CHAIN_ACTIVE", "CHAIN_RESTARTED")
+            or data.get("management", "external") != "external"):
+        raise ChainError("chain identity or pinned configuration changed")
+    validate_runtime(data)
+    return data
+
+
 def _meta(root: Path) -> dict | None:
     path = root / "chain-identity.json"
     if not path.exists():
         return None
     if path.is_symlink() or path.stat().st_size > 8192:
         raise ChainError("unsafe chain identity file")
-    data = json.loads(path.read_text())
-    if (data.get("version") != 1 or data.get("image") != IMAGE
-            or data.get("configSha256") != CONFIG_SHA256
-            or type(data.get("anchorHeight")) is not int or data["anchorHeight"] < 0
-            or not isinstance(data.get("anchorHash"), str)
-            or not re.fullmatch(r"[0-9a-f]{64}", data["anchorHash"])
-            or not isinstance(data.get("genesisHash"), str)
-            or not re.fullmatch(r"[0-9a-f]{64}", data["genesisHash"])
-            or data.get("lastStartState") not in ("CHAIN_ACTIVE", "CHAIN_RESTARTED")):
-        raise ChainError("chain identity or pinned configuration changed")
-    return data
+    return validate_identity(json.loads(path.read_text()))
+
+
+def runtime_provenance(meta: dict, managed: str) -> dict:
+    """What this process can honestly say about the running Zebra image."""
+    if managed == "docker-local":
+        # _validate_container compared the live container's image ID.
+        return {"recordedImage": meta["image"], "runtimeImage": IMAGE,
+                "platform": "linux/arm64", "evidence": "CONTAINER_INSPECTED"}
+    runtime = meta.get(RUNTIME_KEY)
+    if runtime is None:
+        # The recorded label alone never proves which image is running.
+        return {"recordedImage": meta["image"], "evidence": "UNVERIFIED"}
+    return {"recordedImage": meta["image"], "runtimeImage": runtime["imageId"],
+            "platform": runtime["platform"], "evidence": "HOST_ATTESTED",
+            "attestedAt": runtime["attestedAt"]}
 
 
 def verify_anchor(meta: dict, block_hash_at_height, tip_height: int) -> None:
@@ -216,7 +294,9 @@ def adopt_external(root: Path, port: int, host: str) -> dict:
     """Record the identity of a fresh, separately managed chain (Compose).
 
     Only a chain at height 0 with no prior identity is adopted; from then on
-    every status read checks its genesis and anchor hashes.
+    every status read checks its genesis and anchor hashes. "image" is the
+    version-1 recorded label; runtime provenance is recorded separately by
+    the explicit exchange.zebra_provenance step after a host attestation.
     """
     _paths(root)
     if _meta(root) is not None:
@@ -286,7 +366,8 @@ def status(root: Path, container: str, port: int, *, host: str = "127.0.0.1",
         _atomic_json(root / "chain-identity.json", meta)
         return {"state": "CHAIN_RESET", "reason": str(exc)}
     return {"state": meta["lastStartState"], "height": height,
-            "anchorHeight": meta["anchorHeight"], "anchorHash": meta["anchorHash"]}
+            "anchorHeight": meta["anchorHeight"], "anchorHash": meta["anchorHash"],
+            "provenance": runtime_provenance(meta, managed)}
 
 
 def stop(root: Path, container: str, port: int) -> dict:
