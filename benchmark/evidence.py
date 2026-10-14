@@ -107,6 +107,7 @@ class JsonLines:
     def __init__(self, path: Path, redact: Redactor):
         descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_APPEND |
                              getattr(os, "O_NOFOLLOW", 0), 0o600)
+        self.path = path
         self._out = os.fdopen(descriptor, "w")
         self._redact = redact
         self._lock = threading.Lock()
@@ -145,6 +146,11 @@ class Workdir:
     @property
     def env_file(self) -> Path:
         return self.private / "bench.env"
+
+    @property
+    def correlations(self) -> Path:
+        """Protected purchase correlation records (session hash and idempotency key); never evidence."""
+        return self.private / "correlations"
 
     @property
     def manifest_path(self) -> Path:

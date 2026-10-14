@@ -24,7 +24,7 @@ import threading
 import time
 from typing import Callable, Protocol
 
-from . import analysis
+from . import analysis, correlation
 from .engine import SETTLED, TERMINAL_FAILURE, EngineError, PortalRefused
 from .evidence import JsonLines, Redactor
 from .safety import LEVELS, check_genesis, check_level
@@ -35,6 +35,7 @@ from .watchdog import StopController, Thresholds, Watchdog
 INSTRUMENTS = ("zwa-gold-reference", "zwa-treasury-style", "zwa-credit-participation")
 WALLET_STATES = ("REQUESTED", "CREATED", "FUNDING", "READY")
 PORTAL_REFUSAL_LIMIT = 5
+BUY_ATTEMPTS = 3  # same key and payload every time
 # Every purchase outcome (summary.json transactions[].outcome; pinned by the schema test).
 OUTCOMES = ("NOT_STARTED", "ABANDONED_BEFORE_PURCHASE", "WALLET_FAILED", "WALLET_TIMEOUT", "NO_INVENTORY",
             "DUPLICATE_MISMATCH", "FAILED_BEFORE_QUOTE", "QUOTE_TIMEOUT", "QUOTE_MISMATCH",
@@ -187,8 +188,10 @@ class Worker:
 
     def __init__(self, purchase: Purchase, *, relay, controller: StopController, thresholds: Thresholds,
                  events: JsonLines, redactor: Redactor, queue_position: int, wait_durability: bool,
-                 poll: float = 1.0, timing: Timing | None = None):
+                 poll: float = 1.0, timing: Timing | None = None,
+                 correlations: correlation.CorrelationStore | None = None):
         self.p = purchase
+        self.correlations = correlations
         self.relay = relay
         self.controller = controller
         self.t = thresholds
@@ -322,15 +325,23 @@ class Worker:
             return False
         self.p.offer_id = offer["offerId"]
         self.p.payment = self.p.quantity * offer["priceZatPerUnit"]
-        key = "bench-" + secrets.token_hex(8)
+        # One key for this logical buy, durably recorded before anything is sent. It is correlation material:
+        # registered with the redactor, kept only in private/, never regenerated.
+        key = self.redactor.register("bench-" + secrets.token_hex(12))
         payload = {"offerId": offer["offerId"], "quantity": self.p.quantity, "idempotencyKey": key}
+        if self.correlations is not None:
+            self.correlations.begin(self.p.label, account=self.p.account or "", session=self.session, key=key,
+                                    offer_id=offer["offerId"], instrument=self.p.instrument,
+                                    quantity=self.p.quantity)
         self.mark("purchaseSubmitted")
-        first = self.call("buy", payload)
+        first = self.submit_buy(payload)
+        if first is None:
+            return False
         self.mark("purchaseAccepted")
         self.p.order_id = first["id"]
         self.note_state(first.get("state"))
         # A retried submission (lost response) must return the same order and reserve nothing more.
-        second = self.call("buy", payload)
+        second = self.resend_buy(payload)
         self.mark("duplicateChecked", sameOrder=second.get("id") == first["id"])
         if second.get("id") != first["id"]:
             self.fail("DUPLICATE_SUBMISSION_MISMATCH", "a retried buy with the same idempotency key "
@@ -341,6 +352,61 @@ class Worker:
                 self.cancel_unconfirmed("duplicate mismatch", second["id"])
             return False
         return True
+
+    def record_correlation(self, status: str, order_id: str | None, reason: str) -> None:
+        if self.correlations is not None:
+            self.correlations.update(self.p.label, status=status, order_id=order_id, reason=reason)
+
+    def submit_buy(self, payload: dict) -> dict | None:
+        """Submit the one logical buy. Unanswered attempts are resent with the same key and payload; anything
+        still unknown is resolved by reading the buyer's orders, never by another purchase."""
+        refused: PortalRefused | None = None
+        for attempt in range(BUY_ATTEMPTS):
+            try:
+                view = self.call("buy", payload)
+            except PortalRefused as exc:
+                refused = exc  # possibly after an earlier attempt was accepted: only a lookup can tell
+                break
+            except EngineError:
+                if attempt + 1 < BUY_ATTEMPTS:
+                    self.timing.sleep(self.poll)
+                continue
+            self.record_correlation("ACCEPTED", view.get("id"), f"buy answered on attempt {attempt + 1}")
+            return view
+        record = {"account": self.p.account, "sessionHash": self.session}
+        status, order_id, reason = correlation.classify(
+            correlation.lookup(self.relay, record, self.timing.sleep), instrument=self.p.instrument,
+            quantity=self.p.quantity)
+        self.record_correlation(status, order_id, ("refused: " if refused else "unanswered: ") + reason)
+        if refused is not None:
+            self.fail("PORTAL_REFUSED", f"buy: {refused}")
+        if status == "ACCEPTED":
+            self.mark("purchaseRecoveredByLookup")
+            recovered = self.poll_call("order", {"orderId": order_id})
+            if recovered is None:
+                self.fail("PURCHASE_AMBIGUOUS", "the recovered order could not be read")
+                self.p.order_id = order_id
+                self.p.outcome = "PURCHASE_AMBIGUOUS"
+                return None
+            return recovered
+        if status == "NOT_ACCEPTED":
+            if refused is None:
+                self.fail("HARNESS_ERROR", "the buy never reached the exchange (no order exists)")
+            self.p.outcome = "PORTAL_REFUSED" if refused is not None else "HARNESS_ERROR"
+            return None
+        self.fail("PURCHASE_AMBIGUOUS", f"whether the exchange accepted the buy is unknown: {reason}")
+        self.p.outcome = "PURCHASE_AMBIGUOUS"
+        return None
+
+    def resend_buy(self, payload: dict) -> dict:
+        """The deliberate duplicate: the same key and payload, which must return the same order."""
+        for attempt in range(BUY_ATTEMPTS):
+            try:
+                return self.call("buy", payload)
+            except EngineError:
+                if attempt + 1 < BUY_ATTEMPTS:
+                    self.timing.sleep(self.poll)
+        raise EngineError("the duplicate-submission check could not be completed")
 
     def quote(self) -> bool:
         # Purchases queue on the single dealer wallet; later positions wait for earlier settlements.
@@ -528,8 +594,9 @@ class LevelPlan:
 class LevelRun:
     def __init__(self, plan: LevelPlan, *, thresholds: Thresholds, relay, probe, monitor: Monitor,
                  controller: StopController, events: JsonLines, redactor: Redactor, timing: Timing | None = None,
-                 before_submit=None):
+                 before_submit=None, correlations: correlation.CorrelationStore | None = None):
         self.plan = plan
+        self.correlations = correlations
         self.before_submit = before_submit  # e.g. reserve the transaction budget once preconditions pass
         self.t = thresholds
         self.relay = relay
@@ -601,7 +668,8 @@ class LevelRun:
         self.purchases = self.plan.purchases()
         workers = [Worker(p, relay=self.relay, controller=self.controller, thresholds=self.t, events=self.events,
                           redactor=self.redactor, queue_position=i, wait_durability=self.plan.wait_durability,
-                          poll=self.plan.poll_s, timing=self.timing) for i, p in enumerate(self.purchases)]
+                          poll=self.plan.poll_s, timing=self.timing, correlations=self.correlations)
+                   for i, p in enumerate(self.purchases)]
         self.workers = workers
         threads = [threading.Thread(target=w.run, daemon=True, name=f"purchase-{w.p.label}") for w in workers]
         self.phase("purchasesStarted")

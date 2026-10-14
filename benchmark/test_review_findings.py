@@ -17,6 +17,8 @@ import tempfile
 import unittest
 
 from benchmark import analysis
+from benchmark.correlation import CorrelationError, CorrelationStore, recover
+from benchmark.engine import PortalRefused
 from benchmark.test_workload import Harness
 
 
@@ -118,6 +120,118 @@ class Durability(Case):
         self.assertEqual(summary["result"], "PASS", summary["stopReasons"])
         self.assertFalse(summary["transactions"][0]["durabilityRequired"])
         self.assertFalse(summary["acceptance"]["durabilityRequired"])
+
+
+class LostBuyResponse(Case):
+    """Finding 4: an accepted buy whose response is lost is recovered with the same key, never a new one."""
+
+    def test_lost_response_after_server_acceptance(self):
+        harness, summary = self.run_level(1, lose_buy_responses=1)
+        self.assertEqual(summary["result"], "PASS", summary["stopReasons"])
+        self.assertEqual(len(harness.exchange.orders), 1, "no second purchase")
+        self.assertEqual(len(set(harness.exchange.buy_keys)), 1, "one key for the logical buy")
+        self.assertEqual(summary["transactions"][0]["orderId"], next(iter(harness.exchange.orders)))
+
+    def test_correlation_material_never_reaches_evidence(self):
+        harness, summary = self.run_level(1, lose_buy_responses=1)
+        key = harness.exchange.buy_keys[0]
+        self.assertNotIn(key, json.dumps(summary))
+        events = Path(harness.run.events.path).read_text()
+        record = json.loads(next(harness.correlation_dir.glob("*.json")).read_text())
+        for secret in (record["sessionHash"], record["idempotencyKey"]):
+            self.assertNotIn(secret, events)
+            self.assertNotIn(secret, json.dumps(summary))
+        self.assertNotIn(key, events)
+
+    def test_record_is_written_before_the_buy_and_kept_private(self):
+        harness, summary = self.run_level(1)
+        (path,) = harness.correlation_dir.glob("*.json")
+        record = json.loads(path.read_text())
+        self.assertEqual(record["status"], "ACCEPTED")
+        self.assertEqual(record["orderId"], summary["transactions"][0]["orderId"])
+        self.assertEqual(record["idempotencyKey"], harness.exchange.buy_keys[0])
+        self.assertEqual(oct(path.stat().st_mode & 0o777), "0o600")
+        self.assertEqual(oct(harness.correlation_dir.stat().st_mode & 0o777), "0o700")
+        self.assertEqual([h["to"] for h in record["history"]], ["ACCEPTED"])
+
+    def test_repeated_submissions_use_one_identical_key(self):
+        harness, _ = self.run_level(2, lose_buy_responses=2)
+        by_buyer: dict[str, set] = {}
+        for order in harness.exchange.orders.values():
+            by_buyer.setdefault(order["buyer"], set()).add(order["key"])
+        self.assertEqual(len(harness.exchange.orders), 2)
+        self.assertTrue(all(len(keys) == 1 for keys in by_buyer.values()))
+        self.assertEqual(len(set(harness.exchange.buy_keys)), 2, "one key per logical buy, never a replacement")
+
+    def test_unresolvable_result_fails_closed_without_another_purchase(self):
+        harness, summary = self.run_level(1, buy_transport_down=True, orders_down=True)
+        self.assertEqual(summary["result"], "PARTIAL")
+        self.assertEqual(summary["stopReason"]["code"], "PURCHASE_AMBIGUOUS")
+        self.assertEqual(summary["transactions"][0]["outcome"], "PURCHASE_AMBIGUOUS")
+        self.assertEqual(len(harness.exchange.orders), 1)
+        self.assertEqual(len(set(harness.exchange.buy_keys)), 1)
+        self.assertLessEqual(len(harness.exchange.buy_keys), 3)
+        self.assertNotIn("confirm", harness.exchange.calls)
+        (record,) = CorrelationStore.all_records(harness.correlation_dir)
+        self.assertEqual(record["status"], "AMBIGUOUS")
+
+    def test_lookup_recovers_an_accepted_buy_after_transport_loss(self):
+        harness, summary = self.run_level(1, buy_transport_down=True)
+        self.assertEqual(summary["transactions"][0]["orderId"], next(iter(harness.exchange.orders)))
+        self.assertIn("purchaseRecoveredByLookup", summary["transactions"][0]["timeline"])
+        (record,) = CorrelationStore.all_records(harness.correlation_dir)
+        self.assertEqual((record["status"], record["orderId"]), ("ACCEPTED", next(iter(harness.exchange.orders))))
+
+    def test_crash_then_reconcile_recovers_by_lookup_only(self):
+        harness, summary = self.run_level(1, buy_transport_down=True, orders_down=True)
+        # The harness has gone (crash or PARTIAL exit); later, with the portal reachable again:
+        harness.exchange.faults.pop("orders_down")
+        calls = len(harness.exchange.calls)
+        results = recover(harness.correlation_dir, "run-test", harness.exchange, sleep=lambda s: None)
+        self.assertEqual([(r["status"], r["orderId"]) for r in results],
+                         [("ACCEPTED", next(iter(harness.exchange.orders)))])
+        self.assertEqual(harness.exchange.calls[calls:], ["orders"], "recovery never submits a purchase")
+        self.assertNotIn("sessionHash", json.dumps(results))
+        self.assertNotIn(harness.exchange.buy_keys[0], json.dumps(results))
+
+    def test_crash_before_any_answer_with_no_server_order(self):
+        harness, _ = self.run_level(1)
+        store = CorrelationStore(harness.correlation_dir, "run-crash")
+        store.begin("P1", account="judge-00000000000000000000", session="s" * 64, key="bench-" + "0" * 24,
+                    offer_id="o" * 32, instrument="zwa-gold-reference", quantity=1)
+        harness.exchange.wallets["judge-00000000000000000000"] = {"session": "s" * 64, "state": "READY"}
+        (result,) = recover(harness.correlation_dir, "run-crash", harness.exchange, sleep=lambda s: None)
+        self.assertEqual(result["status"], "NOT_ACCEPTED")
+
+    def test_refusal_after_acceptance_keeps_the_order_and_never_confirms(self):
+        harness = Harness(1, Path(tempfile.mkdtemp(dir=self.path)), lose_buy_responses=1)
+        original = harness.exchange._portal
+        seen = []
+
+        def portal(action, actor, role, session, payload):
+            if action == "buy":
+                seen.append(1)
+                if len(seen) == 2:
+                    raise PortalRefused("injected refusal of the resend")
+            return original(action, actor, role, session, payload)
+        harness.exchange._portal = portal
+        summary = harness.execute()
+        self.assertNotEqual(summary["result"], "PASS")
+        self.assertEqual(len(harness.exchange.orders), 1)
+        self.assertNotIn("confirm", harness.exchange.calls)
+        (record,) = CorrelationStore.all_records(harness.correlation_dir)
+        self.assertEqual((record["status"], record["orderId"]), ("ACCEPTED", next(iter(harness.exchange.orders))))
+        self.assertEqual(next(iter(harness.exchange.orders.values()))["state"], "CANCELLED")
+
+    def test_records_survive_and_cannot_be_downgraded_or_reassigned(self):
+        harness, summary = self.run_level(1)
+        store = CorrelationStore(harness.correlation_dir, "run-test")
+        with self.assertRaises(CorrelationError):
+            store.update("P1", status="AMBIGUOUS")
+        with self.assertRaises(CorrelationError):
+            store.update("P1", status="ACCEPTED", order_id="f" * 32)
+        with self.assertRaises(FileExistsError):
+            store.begin("P1", account="a", session="s" * 64, key="k" * 20, offer_id="o", instrument="i", quantity=1)
 
 
 if __name__ == "__main__":

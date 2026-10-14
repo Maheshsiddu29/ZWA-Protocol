@@ -45,7 +45,7 @@ import time
 from exchange.config import TX_TOOL_REVISION
 from exchange.persistent_chain import PINNED_ZEBRA_IMAGES
 
-from . import analysis, engine, evidence as ev, metrics, report, safety
+from . import analysis, correlation, engine, evidence as ev, metrics, report, safety
 from .docker import Compose, Docker
 from .watchdog import GIB, MIB, StopController, Thresholds, Watchdog
 from .workload import LevelPlan, LevelRun, ResourceMonitor
@@ -428,7 +428,8 @@ class Bench:
         # The budget is reserved only once the level's preconditions pass, immediately before any submission.
         run = LevelRun(plan, thresholds=thresholds, relay=relay, probe=lambda ids: engine.probe(self.compose, ids),
                        monitor=monitor, controller=controller, events=events, redactor=self.redactor,
-                       before_submit=lambda: self.workdir.reserve_budget(run_id, level, wanted))
+                       before_submit=lambda: self.workdir.reserve_budget(run_id, level, wanted),
+                       correlations=correlation.CorrelationStore(self.workdir.correlations, run_id))
         error = None
         try:
             engine.wait_ready(relay, controller, 120)
@@ -519,15 +520,34 @@ class Bench:
             safety.check_container_mounts(service, mounts, self.project)
         return states
 
+    def correlation_records(self) -> list[dict]:
+        """All protected correlation records; their session hashes and keys are registered as secrets."""
+        records = correlation.CorrelationStore.all_records(self.workdir.correlations)
+        for record in records:
+            for key in ("sessionHash", "idempotencyKey"):
+                if isinstance(record.get(key), str) and len(record[key]) >= 8:
+                    self.redactor.register(record[key])
+        return records
+
     def reconcile(self) -> dict:
         run_dir = self.workdir.run_dir(self.args.run)
         self.read_env()
+        self.correlation_records()
+        # Resolve purchases whose acceptance is unknown by reading the buyer's orders; never by submitting.
+        relay = engine.PortalRelay(self.compose)
+        try:
+            purchases = correlation.recover(self.workdir.correlations, self.args.run, relay)
+        finally:
+            relay.close()
         ids = run_order_ids(run_dir)
+        ids += [p["orderId"] for p in purchases if p["orderId"] and p["orderId"] not in ids]
         snapshot = engine.probe(self.compose, ids)
         index = {o["id"]: o["state"] for o in snapshot.get("orderIndex", [])}
         result = {"reconcile": 1, "runId": self.args.run, "at": now_iso(),
                   "chainProblems": analysis.chain_problems(snapshot),
                   "inventoryProblems": analysis.inventory_problems(snapshot),
+                  "purchases": purchases,
+                  "unresolvedPurchases": [p["label"] for p in purchases if p["status"] in correlation.UNRESOLVED],
                   "orders": {oid: {"state": index.get(oid),
                                    **analysis.reconcile((snapshot.get("orders") or {}).get(oid), index.get(oid))}
                              for oid in ids}}

@@ -23,6 +23,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import shutil
 import subprocess
 import sys
 import threading
@@ -30,7 +31,8 @@ import unittest
 from unittest.mock import patch
 
 from benchmark import analysis, engine, evidence as ev, safety
-from benchmark.engine import PortalRelay
+from benchmark.correlation import CorrelationStore
+from benchmark.engine import EngineError, PortalRelay
 from benchmark.test_workload import FakeMonitor
 from benchmark.watchdog import StopController, Thresholds
 from benchmark.workload import LevelPlan, LevelRun, Timing
@@ -226,15 +228,20 @@ class Integration(DemoBase):
         self.assertEqual(done.returncode, 0, done.stderr)
         return json.loads(done.stdout)
 
-    def level(self, level: int, controller: StopController | None = None) -> tuple[dict, ev.Redactor, Path]:
+    def level(self, level: int, controller: StopController | None = None,
+              wrap=None) -> tuple[dict, ev.Redactor, Path]:
         controller = controller or StopController()
+        self.correlation_dir = self.root.parent / f"{self.root.name}-correlations"
+        self.addCleanup(shutil.rmtree, self.correlation_dir, True)
+        relay = self.relay()
         redactor = ev.Redactor()
         events_path = self.root.parent / f"{self.root.name}-events.jsonl"
         self.addCleanup(lambda: events_path.unlink(missing_ok=True))
         events = ev.JsonLines(events_path, redactor)
         run = LevelRun(LevelPlan(level=level, idle_before_s=0, idle_after_s=0, poll_s=0.05),
-                       thresholds=Thresholds(), relay=self.relay(), probe=self.probe, monitor=FakeMonitor(Timing()),
-                       controller=controller, events=events, redactor=redactor, timing=Timing())
+                       thresholds=Thresholds(), relay=wrap(relay) if wrap else relay, probe=self.probe,
+                       monitor=FakeMonitor(Timing()), controller=controller, events=events, redactor=redactor,
+                       timing=Timing(), correlations=CorrelationStore(self.correlation_dir, "run-int"))
         try:
             summary = run.execute()
         finally:
@@ -324,6 +331,48 @@ class Integration(DemoBase):
         self.assertEqual(tx["reconciliation"]["class"], "NOT_EXECUTED")
         self.assertEqual(summary["result"], "STOPPED")
         self.assertEqual(summary["consistencyProblems"], [])
+        self.assertNoLoopErrors()
+
+    def test_lost_buy_response_is_recovered_against_the_real_portal_and_ledger(self):
+        keys: list[str] = []
+
+        class LosesFirstBuyAnswer:
+            """The real portal accepts the first buy; its answer is lost on the way back."""
+
+            def __init__(self, relay):
+                self.relay, self.lost = relay, False
+
+            def portal(self, action, **kwargs):
+                result = self.relay.portal(action, **kwargs)
+                if action == "buy":
+                    keys.append(kwargs["payload"]["idempotencyKey"])
+                    if not self.lost:
+                        self.lost = True
+                        raise EngineError("portal relay did not answer in time")
+                return result
+
+            def __getattr__(self, name):
+                return getattr(self.relay, name)
+        summary, _, _ = self.level(1, wrap=LosesFirstBuyAnswer)
+        self.assertEqual(summary["result"], "PASS", summary["stopReasons"])
+        self.assertEqual(len(set(keys)), 1, "every submission reused the one key")
+        self.assertGreaterEqual(len(keys), 3, "lost answer, same-key resend, duplicate check")
+        with self.ledger._connection() as db:
+            self.assertEqual(db.execute("SELECT count(*) FROM orders").fetchone()[0], 1)
+        (record,) = CorrelationStore.all_records(self.correlation_dir)
+        self.assertEqual((record["status"], record["orderId"]), ("ACCEPTED", summary["transactions"][0]["orderId"]))
+        self.assertNoLoopErrors()
+
+    def test_real_orders_lookup_resolves_a_crashed_submission(self):
+        from benchmark.correlation import recover
+        summary, _, _ = self.level(1)
+        order_id = summary["transactions"][0]["orderId"]
+        path = next(self.correlation_dir.glob("*.json"))
+        record = json.loads(path.read_text())
+        record.update(status="SUBMITTING", orderId=None)  # as if the harness died before recording the answer
+        path.write_text(json.dumps(record))
+        (result,) = recover(self.correlation_dir, "run-int", self.relay(), sleep=lambda s: None)
+        self.assertEqual((result["status"], result["orderId"]), ("ACCEPTED", order_id))
         self.assertNoLoopErrors()
 
     def test_probe_reads_the_real_schema_without_writing_or_leaking(self):

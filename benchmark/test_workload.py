@@ -18,6 +18,7 @@ import time
 import unittest
 
 from benchmark import analysis, evidence as ev, safety
+from benchmark.correlation import CorrelationStore
 from benchmark.engine import EngineError, PortalRefused
 from benchmark.watchdog import GIB, StopController, Thresholds
 from benchmark.workload import INSTRUMENTS, LevelPlan, LevelRun, Timing
@@ -216,8 +217,10 @@ class FakeExchange:
                        "durability": "RESTART_DURABLE" if order["durable"] else None}
         reconciled = STEPS.index(state) >= STEPS.index("RECONCILED") if state in STEPS else False
         verdict = "REJECTED" if self.faults.get("proof_not_verified") else "VERIFIED"
-        return {"id": order["id"], "state": state, "quote": {"digest": order["digest"], "quantity": order["quantity"],
-                                                             "paymentZat": order["payment"], "network": "regtest"}
+        instrument = self.offers[order["offer"]]["instrument"]
+        return {"id": order["id"], "state": state, "quantity": order["quantity"], "instrumentId": instrument,
+                "quote": {"digest": order["digest"], "quantity": order["quantity"],
+                          "paymentZat": order["payment"], "network": "regtest"}
                 if state != "BUYER_REQUESTED" else None,
                 "proofVerified": True, "proof": {k: verdict for k in analysis.VERDICT_KEYS},
                 "buyerApprovalMode": "CUSTODIAL_DEMO_POLICY", "sellerApprovalMode": "CUSTODIAL_DEMO_POLICY",
@@ -305,10 +308,14 @@ class Harness:
                                    errors=faults.get("sample_errors", 0))
         plan = LevelPlan(level=level, idle_before_s=1, idle_after_s=1, baseline_s=5, poll_s=1.0,
                          wait_durability=faults.get("wait_durability", True))
+        (tmp / "private").mkdir(mode=0o700, exist_ok=True)  # as in a workdir: private/ is never evidence
+        self.correlation_dir = tmp / "private" / "correlations"
+        self.correlations = CorrelationStore(self.correlation_dir, "run-test")
         self.run = LevelRun(plan, thresholds=Thresholds(), relay=self.exchange, probe=self.exchange.probe,
                             monitor=self.monitor, controller=self.controller, events=self.events,
                             redactor=self.redactor,
-                            timing=Timing(self.clock.now, self.clock.sleep, interruptible=False))
+                            timing=Timing(self.clock.now, self.clock.sleep, interruptible=False),
+                            correlations=self.correlations)
 
     def execute(self) -> dict:
         try:
@@ -538,7 +545,9 @@ class Levels(unittest.TestCase):
         for secret in h.exchange.sessions_seen | h.exchange.client_hashes:
             self.assertNotIn(secret, text)
             self.assertNotIn(secret, json.dumps(summary))
-        self.assertEqual(ev.scan(self.path, h.redactor.values), [])
+        # Evidence is clean; the protected correlation records in private/ hold the session and key by design.
+        self.assertEqual([f for f in ev.scan(self.path, h.redactor.values) if "/private/" not in f], [])
+        self.assertTrue(any("/private/correlations/" in f for f in ev.scan(self.path, h.redactor.values)))
 
 
 class Reconciliation(unittest.TestCase):
