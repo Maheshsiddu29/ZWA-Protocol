@@ -1,0 +1,16 @@
+# Benchmark override for deploy/compose.yaml (see docs/benchmark-architecture.md).
+#
+# Used only together with an explicit `-p zwa-bench-*` project name, which
+# replaces the base file's `name: zwa-demo`. It leaves every engine and Zebra
+# service exactly as the base file defines it (images, users, memory and CPU
+# limits, read-only roots), and removes what a benchmark must not run: the
+# public web edge. web and caddy are moved to a profile the harness never
+# enables, lose their env file and published ports, so no service of a
+# benchmark project publishes a port or reads the live deployment's secrets.
+services:
+  web:
+    profiles: [zwa-bench-never-start]
+    env_file: !reset []
+  caddy:
+    profiles: [zwa-bench-never-start]
+    ports: !reset []

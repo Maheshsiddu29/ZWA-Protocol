@@ -1,0 +1,414 @@
+{
+ "name": "zwa-bench-render",
+ "networks": {
+  "internal": {
+   "internal": true,
+   "ipam": {},
+   "name": "zwa-bench-render_internal"
+  }
+ },
+ "services": {
+  "bootstrap": {
+   "cap_drop": [
+    "ALL"
+   ],
+   "command": [
+    "python3",
+    "-m",
+    "exchange.demo_bootstrap",
+    "--root",
+    "/var/lib/zwa/zwa4e-demo",
+    "--rpc-host",
+    "zebra",
+    "--rpc-port",
+    "18232",
+    "--params-data-home",
+    "/opt/zwa/params",
+    "--tx-tool-dir",
+    "/opt/zwa/tx-tool",
+    "--node-bin",
+    "/usr/local/bin/node"
+   ],
+   "depends_on": {
+    "zebra": {
+     "condition": "service_started",
+     "required": true
+    }
+   },
+   "entrypoint": null,
+   "environment": {
+    "ZWA_PRIVATE_EXCHANGE_ROOT": "/var/lib/zwa/zwa4e-demo"
+   },
+   "image": "zwa-engine:local",
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "5",
+     "max-size": "10m"
+    }
+   },
+   "networks": {
+    "internal": null
+   },
+   "profiles": [
+    "setup"
+   ],
+   "read_only": true,
+   "restart": "no",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "tmpfs": [
+    "/tmp:size=64m,mode=1777"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    {
+     "source": "zwa-root",
+     "target": "/var/lib/zwa",
+     "type": "volume",
+     "volume": {}
+    },
+    {
+     "read_only": true,
+     "source": "zwa-params",
+     "target": "/opt/zwa/params/ZcashParams",
+     "type": "volume",
+     "volume": {}
+    }
+   ]
+  },
+  "demo-signer": {
+   "cap_drop": [
+    "ALL"
+   ],
+   "command": [
+    "python3",
+    "-m",
+    "exchange.demo_signer",
+    "serve",
+    "--root",
+    "/var/lib/zwa/zwa4e-demo"
+   ],
+   "cpus": 1,
+   "depends_on": {
+    "zebra": {
+     "condition": "service_started",
+     "required": true
+    }
+   },
+   "entrypoint": null,
+   "environment": {
+    "ZWA_PRIVATE_EXCHANGE_ROOT": "/var/lib/zwa/zwa4e-demo"
+   },
+   "image": "zwa-engine:local",
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "5",
+     "max-size": "10m"
+    }
+   },
+   "mem_limit": "1073741824",
+   "networks": {
+    "internal": null
+   },
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "tmpfs": [
+    "/tmp:size=64m,mode=1777"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    {
+     "source": "zwa-root",
+     "target": "/var/lib/zwa",
+     "type": "volume",
+     "volume": {}
+    },
+    {
+     "read_only": true,
+     "source": "zwa-params",
+     "target": "/opt/zwa/params/ZcashParams",
+     "type": "volume",
+     "volume": {}
+    }
+   ]
+  },
+  "order-service": {
+   "cap_drop": [
+    "ALL"
+   ],
+   "command": [
+    "python3",
+    "-m",
+    "exchange.order_service",
+    "serve",
+    "--root",
+    "/var/lib/zwa/zwa4e-demo"
+   ],
+   "cpus": 2,
+   "depends_on": {
+    "zebra": {
+     "condition": "service_started",
+     "required": true
+    }
+   },
+   "entrypoint": null,
+   "environment": {
+    "ZWA_PRIVATE_EXCHANGE_ROOT": "/var/lib/zwa/zwa4e-demo"
+   },
+   "image": "zwa-engine:local",
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "5",
+     "max-size": "10m"
+    }
+   },
+   "mem_limit": "3221225472",
+   "networks": {
+    "internal": null
+   },
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "tmpfs": [
+    "/tmp:size=64m,mode=1777"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    {
+     "source": "zwa-root",
+     "target": "/var/lib/zwa",
+     "type": "volume",
+     "volume": {}
+    },
+    {
+     "read_only": true,
+     "source": "zwa-params",
+     "target": "/opt/zwa/params/ZcashParams",
+     "type": "volume",
+     "volume": {}
+    }
+   ]
+  },
+  "params": {
+   "cap_drop": [
+    "ALL"
+   ],
+   "command": [
+    "cp /src/sapling-spend.params /src/sapling-output.params /opt/zwa/params/ZcashParams/ && cd /opt/zwa/params/ZcashParams && printf '%s  %s\\n%s  %s\\n' 8e48ffd23abb3a5fd9c5589204f32d9c31285a04b78096ba40a79b75677efc13 sapling-spend.params 2f0ebbcbb9bb0bcffe95a397e7eba89c29eb4dde6191c339db88570e3f3fb0e4 sapling-output.params | sha256sum -c -"
+   ],
+   "entrypoint": [
+    "sh",
+    "-c"
+   ],
+   "environment": {
+    "ZWA_PRIVATE_EXCHANGE_ROOT": "/var/lib/zwa/zwa4e-demo"
+   },
+   "image": "zwa-engine:local",
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "5",
+     "max-size": "10m"
+    }
+   },
+   "networks": {
+    "internal": null
+   },
+   "profiles": [
+    "setup"
+   ],
+   "read_only": true,
+   "restart": "no",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "tmpfs": [
+    "/tmp:size=64m,mode=1777"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    {
+     "bind": {},
+     "read_only": true,
+     "source": "/srv/zwa/params/ZcashParams",
+     "target": "/src",
+     "type": "bind"
+    },
+    {
+     "source": "zwa-params",
+     "target": "/opt/zwa/params/ZcashParams",
+     "type": "volume",
+     "volume": {}
+    }
+   ]
+  },
+  "portal": {
+   "cap_drop": [
+    "ALL"
+   ],
+   "command": [
+    "python3",
+    "-m",
+    "exchange.portal_server",
+    "--root",
+    "/var/lib/zwa/zwa4e-demo",
+    "--port",
+    "8790"
+   ],
+   "cpus": 1,
+   "depends_on": {
+    "zebra": {
+     "condition": "service_started",
+     "required": true
+    }
+   },
+   "entrypoint": null,
+   "environment": {
+    "ZWA_PORTAL_TOKEN": "__TOKEN__",
+    "ZWA_PRIVATE_EXCHANGE_ROOT": "/var/lib/zwa/zwa4e-demo"
+   },
+   "healthcheck": {
+    "interval": "15s",
+    "retries": 3,
+    "test": [
+     "CMD",
+     "python3",
+     "-c",
+     "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8790/healthz', timeout=3)"
+    ],
+    "timeout": "5s"
+   },
+   "image": "zwa-engine:local",
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "5",
+     "max-size": "10m"
+    }
+   },
+   "mem_limit": "536870912",
+   "networks": {
+    "internal": null
+   },
+   "read_only": true,
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "tmpfs": [
+    "/tmp:size=64m,mode=1777"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    {
+     "source": "zwa-root",
+     "target": "/var/lib/zwa",
+     "type": "volume",
+     "volume": {}
+    },
+    {
+     "read_only": true,
+     "source": "zwa-params",
+     "target": "/opt/zwa/params/ZcashParams",
+     "type": "volume",
+     "volume": {}
+    }
+   ]
+  },
+  "zebra": {
+   "cap_drop": [
+    "ALL"
+   ],
+   "command": null,
+   "cpus": 2,
+   "entrypoint": [
+    "target/release/zebrad",
+    "-c",
+    "/config/regtest-config.toml"
+   ],
+   "image": "qedit/zebra-zsa-swap-pinned:latest",
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "5",
+     "max-size": "10m"
+    }
+   },
+   "mem_limit": "4294967296",
+   "networks": {
+    "internal": null
+   },
+   "restart": "unless-stopped",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "volumes": [
+    {
+     "source": "zebra-state",
+     "target": "/data",
+     "type": "volume",
+     "volume": {}
+    },
+    {
+     "bind": {},
+     "read_only": true,
+     "source": "__DEPLOY__/zebra/regtest-config.toml",
+     "target": "/config/regtest-config.toml",
+     "type": "bind"
+    }
+   ]
+  }
+ },
+ "volumes": {
+  "zebra-state": {
+   "name": "zwa-bench-render_zebra-state"
+  },
+  "zwa-params": {
+   "name": "zwa-bench-render_zwa-params"
+  },
+  "zwa-root": {
+   "name": "zwa-bench-render_zwa-root"
+  }
+ },
+ "x-engine": {
+  "cap_drop": [
+   "ALL"
+  ],
+  "environment": {
+   "ZWA_PRIVATE_EXCHANGE_ROOT": "/var/lib/zwa/zwa4e-demo"
+  },
+  "image": "zwa-engine:local",
+  "logging": {
+   "driver": "json-file",
+   "options": {
+    "max-file": "5",
+    "max-size": "10m"
+   }
+  },
+  "networks": [
+   "internal"
+  ],
+  "read_only": true,
+  "restart": "unless-stopped",
+  "security_opt": [
+   "no-new-privileges:true"
+  ],
+  "tmpfs": [
+   "/tmp:size=64m,mode=1777"
+  ],
+  "user": "10001:10001",
+  "volumes": [
+   "zwa-root:/var/lib/zwa",
+   "zwa-params:/opt/zwa/params/ZcashParams:ro"
+  ]
+ }
+}
