@@ -18,7 +18,7 @@ import unittest
 
 from benchmark import analysis
 from benchmark.correlation import CorrelationError, CorrelationStore, recover
-from benchmark.engine import PortalRefused
+from benchmark.engine import PORTAL_INTERNAL_ERROR, PortalInternalError, PortalRefused, PortalRelay
 from benchmark.test_workload import Harness
 
 
@@ -92,6 +92,76 @@ class FalsePass(Case):
         _, summary = self.run_level(1)
         summary["transactions"][0]["problems"] = [{"code": "CANCEL_REFUSED", "detail": "x"}]
         self.assertTrue(any("CANCEL_REFUSED" in p for p in analysis.acceptance_problems(summary)))
+
+
+class PortalInternalErrors(Case):
+    """Found by the stress run: the real portal's generic internal error is transient, not a refusal."""
+
+    def relay_answering(self, body):
+        class Answering(PortalRelay):
+            def _request(self, message):
+                return {"status": 200, "body": body}
+        return Answering(None, spawn=lambda: None)
+
+    def test_generic_internal_error_is_transient_and_a_real_refusal_is_not(self):
+        with self.assertRaises(PortalInternalError):
+            self.relay_answering({"ok": False, "error": PORTAL_INTERNAL_ERROR}).portal("order", session="s" * 64)
+        with self.assertRaises(PortalRefused):
+            self.relay_answering({"ok": False, "error": "demo session expired"}).portal("order", session="s" * 64)
+        self.assertFalse(issubclass(PortalInternalError, PortalRefused))
+
+    def test_transient_internal_errors_on_reads_are_retried(self):
+        harness = Harness(1, Path(tempfile.mkdtemp(dir=self.path)))
+        original, failures = harness.exchange._portal, []
+
+        def portal(action, actor, role, session, payload):
+            if action in ("order", "wallet", "orders") and len(failures) < 4:
+                failures.append(action)
+                raise PortalInternalError("portal order: internal error")
+            return original(action, actor, role, session, payload)
+        setattr(harness.exchange, "_portal", portal)  # inject a fault into the fake portal
+        summary = harness.execute()
+        self.assertEqual(summary["result"], "PASS", summary["stopReasons"])
+        self.assertEqual(len(failures), 4)
+
+    def confirm_failing(self, *, applied: bool):
+        harness = Harness(1, Path(tempfile.mkdtemp(dir=self.path)))
+        original = harness.exchange._portal
+
+        def portal(action, actor, role, session, payload):
+            if action == "confirm":
+                if applied:
+                    original(action, actor, role, session, payload)
+                raise PortalInternalError("portal confirm: internal error")
+            return original(action, actor, role, session, payload)
+        setattr(harness.exchange, "_portal", portal)  # inject a fault into the fake portal
+        return harness, harness.execute()
+
+    def test_confirmation_that_applied_despite_an_internal_error_is_observed(self):
+        harness, summary = self.confirm_failing(applied=True)
+        self.assertEqual(summary["result"], "PASS", summary["stopReasons"])
+        self.assertEqual(harness.exchange.calls.count("confirm"), 1, "never re-sent")
+
+    def test_confirmation_that_did_not_apply_is_cancelled_before_signing(self):
+        harness, summary = self.confirm_failing(applied=False)
+        self.assertNotEqual(summary["result"], "PASS")
+        self.assertEqual(summary["transactions"][0]["outcome"], "CONFIRM_REFUSED")
+        self.assertEqual(next(iter(harness.exchange.orders.values()))["state"], "CANCELLED")
+        self.assertEqual(harness.exchange.calls.count("confirm"), 1, "never re-sent")
+
+    def test_persistent_internal_errors_never_pass(self):
+        harness = Harness(1, Path(tempfile.mkdtemp(dir=self.path)))
+        original = harness.exchange._portal
+
+        def portal(action, actor, role, session, payload):
+            if action == "order" and harness.exchange.calls.count("confirm"):
+                raise PortalInternalError("portal order: internal error")
+            return original(action, actor, role, session, payload)
+        setattr(harness.exchange, "_portal", portal)  # inject a fault into the fake portal
+        summary = harness.execute()
+        self.assertNotEqual(summary["result"], "PASS")
+        self.assertIn("SETTLEMENT_TIMEOUT", self.codes(summary))
+        self.assertNotIn("cancel", harness.exchange.calls, "a confirmed order is only observed")
 
 
 class Durability(Case):
@@ -214,7 +284,7 @@ class LostBuyResponse(Case):
                 if len(seen) == 2:
                     raise PortalRefused("injected refusal of the resend")
             return original(action, actor, role, session, payload)
-        harness.exchange._portal = portal
+        setattr(harness.exchange, "_portal", portal)  # inject a fault into the fake portal
         summary = harness.execute()
         self.assertNotEqual(summary["result"], "PASS")
         self.assertEqual(len(harness.exchange.orders), 1)

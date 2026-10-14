@@ -452,10 +452,36 @@ class Worker:
             self.fail("ORDER_FAILED", f"confirmation refused: {exc}")
             self.p.outcome = "CONFIRM_REFUSED"
             return False
+        except EngineError as exc:
+            return self.confirmation_unknown(exc)
         self.mark("confirmed")
         self.p.view = view
         self.note_state(view.get("state"))
         return True
+
+    def confirmation_unknown(self, error: Exception) -> bool:
+        """The confirmation's answer was lost or the portal failed internally: read the order to learn whether it
+        applied. Applied: observe it like any confirmed order. Not applied: stop and cancel before signing.
+        Unreadable: stop and leave it to reconcile. Never re-sends the confirmation."""
+        view = None
+        for _ in range(5):
+            view = self.poll_call("order", {"orderId": self.p.order_id})
+            if view:
+                break
+            self.timing.sleep(self.poll)
+        if view and view.get("state") not in ("BUYER_REQUESTED", "QUOTE_READY"):
+            self.mark("confirmed", recovered=True)
+            self.p.view = view
+            self.note_state(view.get("state"))
+            return True
+        if view:
+            self.fail("ORDER_FAILED", f"the confirmation did not apply: {error}")
+            self.p.outcome = "CONFIRM_REFUSED"
+            self.cancel_unconfirmed("confirmation did not apply")
+            return False
+        self.fail("HARNESS_ERROR", f"whether the confirmation applied is unknown: {error}")
+        self.p.outcome = "UNCONFIRMED_NEEDS_RECONCILE"
+        return False
 
     def settle(self) -> None:
         start = self.p.timeline["confirmed"]

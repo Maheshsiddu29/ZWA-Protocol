@@ -185,6 +185,16 @@ class PortalRefused(EngineError):
     """The portal answered {"ok": false}: an application refusal, not a transport error."""
 
 
+# exchange/portal.py and exchange/portal_server.py answer every unexpected internal exception (for example a
+# read racing a concurrent write under load) with exactly this message. It says nothing about the request
+# itself, so it is a transient failure, never a refusal.
+PORTAL_INTERNAL_ERROR = "request could not be completed"
+
+
+class PortalInternalError(EngineError):
+    """The portal's generic internal-error answer: retried like a transport failure, never treated as success."""
+
+
 class PortalRelay:
     """One relay process in the benchmark portal container, shared by all workers."""
 
@@ -256,6 +266,8 @@ class PortalRelay:
         if reply.get("status") != 200 or not isinstance(body, dict):
             raise EngineError(f"portal {action}: HTTP {reply.get('status')}")
         if not body.get("ok"):
+            if body.get("error") == PORTAL_INTERNAL_ERROR:
+                raise PortalInternalError(f"portal {action}: internal error ({PORTAL_INTERNAL_ERROR})")
             raise PortalRefused(f"portal {action} refused: {str(body.get('error'))[:200]}")
         return body["data"]
 
