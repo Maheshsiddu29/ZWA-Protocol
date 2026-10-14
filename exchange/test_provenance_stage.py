@@ -1521,6 +1521,15 @@ class ZebraConfigAccessTests(StageFixture):
         self.assertFalse(any("up" in c for c in self.host.calls))  # zebra never started
         self.assertEqual(self.mode(), 0o600)
 
+    def test_a_still_readable_config_change_after_plan_halts_stage(self):
+        code, planned, err = self.main("plan")
+        self.assertEqual(code, 0, err)
+        self.config_file.chmod(0o444)
+        code, _, err = self.main("stage", "--rendered-sha256", planned["renderedSha256"])
+        self.assertEqual(code, 2)
+        self.assertIn("zebraConfig changed since plan", err)
+        self.assertFalse(self.host.volumes)
+
     def test_any_config_change_between_plan_and_start_halts(self):
         def chmod_during_restore(volume, _directory):
             if volume == "zwa-params":
@@ -1589,6 +1598,7 @@ class ZebraConfigAccessTests(StageFixture):
         cases = {
             "not readable inside the container": lambda r: r["files"][target].__setitem__(3, None),  # e.g. LSM/ACL
             "not the checkout's pinned configuration": lambda r: r["files"][target].__setitem__(3, "0" * 64),
+            "pinned configuration": lambda r: r["files"][target].__setitem__(0, 0o444),   # daemon sees another file
             "is not a regular file": lambda r: r.update(files={}, errors={target: "No such file or directory"}),
             "not as uid 10001": lambda r: r["identity"].update(uid=0, euid=0),
             "groups": lambda r: r["identity"].update(groups=[0]),
@@ -1692,9 +1702,13 @@ class ZebraConfigAccessTests(StageFixture):
         self.assertEqual(planned["zebraConfig"]["groupVariants"], [[primary], sorted({primary, self.group})])
         self.assertEqual(len([c for c in self.host.probes if "--mount" in c]), 2)   # one probe per variant
         self.config_file.chmod(0o604)    # without the membership other bits allow; with it the group class denies
-        self.assert_refused("mode 0604")
+        err = self.assert_refused("mode 0604")
+        self.assertIn(f"groups {sorted({primary, self.group})}", err)   # refused by the host check, per variant
+        self.assertIn("Prepare the staging checkout under umask 022", err)
         self.config_file.chmod(0o640)    # with the membership the group class allows; without it other denies
-        self.assert_refused("mode 0640")
+        err = self.assert_refused("mode 0640")
+        self.assertIn(f"groups [{primary}]", err)
+        self.assertIn("Prepare the staging checkout under umask 022", err)
         self.config_file.chmod(0o644)
 
     def test_image_account_files(self):
@@ -1823,6 +1837,19 @@ class EngineImageAccessTests(StageFixture):
                     repairs()
         self.assertEqual(self.plan()[0], 0)
 
+    def test_both_the_real_listing_and_the_bits_must_allow_a_directory(self):
+        exchange = f"{stage_module.ENGINE_CODE}/exchange"
+        for message, change in (
+                ("exchange/ is not listable and searchable (mode 0755", lambda r: r["dirs"][exchange].__setitem__(
+                    3, False)),                                           # e.g. an LSM denial despite 0755
+                ("exchange/ is not listable and searchable (mode 0744", lambda r: r["dirs"][exchange].__setitem__(
+                    0, 0o744))):                                          # bits deny search; listing looked fine
+            with self.subTest(message):
+                self.host.probe_hook = lambda report, change=change: (
+                    change(report) if exchange in report["dirs"] else None)
+                self.assert_refused(message)
+        self.host.probe_hook = None
+
     def test_engine_probe_runs_as_10001_with_the_portal_hardening(self):
         code, _, err = self.plan()
         self.assertEqual(code, 0, err)
@@ -1857,6 +1884,41 @@ class EngineImageAccessTests(StageFixture):
         self.assertIn("cp target/release/zcash_tx_tool /out/target/release/", dockerfile)
         self.assertEqual(stage_module.ENGINE_EXECUTABLES[0], "/opt/zwa/tx-tool/target/release/zcash_tx_tool")
         self.assertIn('"--node-bin", "/usr/local/bin/node"', compose)
+
+
+class AccessProbeProgramTests(unittest.TestCase):
+    """ACCESS_PROBE run directly (as this test user) on a real tree: what it reports, without the fake host."""
+
+    def run_probe(self, *paths: str) -> dict:
+        out = io.StringIO()
+        with patch.object(sys, "argv", ["-c", *paths]), redirect_stdout(out):
+            exec(compile(stage_module.ACCESS_PROBE, "<access probe>", "exec"), {"__name__": "__main__"})
+        return stage_module.probe_report(out.getvalue(), "probe")
+
+    def test_reports_real_reads_listings_links_special_files_and_errors(self):
+        root = Path(f"/private/tmp/zwa-probe-test-{secrets.token_hex(6)}")
+        root.mkdir(mode=0o700)
+        self.addCleanup(shutil.rmtree, root, True)
+        (root / "ok.py").write_bytes(b"print(1)\n")
+        (root / "secret").write_bytes(b"x")
+        (root / "secret").chmod(0o000)
+        (root / "closed").mkdir()
+        (root / "closed/inside").write_bytes(b"y")
+        (root / "closed").chmod(0o300)                       # searchable, not listable
+        self.addCleanup(os.chmod, root / "closed", 0o700)
+        (root / "link").symlink_to("ok.py")
+        os.mkfifo(root / "fifo")
+        report = self.run_probe(str(root), str(root / "missing"))
+        self.assertEqual(report["identity"]["uid"], os.getuid())
+        self.assertEqual(report["files"][str(root / "ok.py")][3], hashlib.sha256(b"print(1)\n").hexdigest())
+        self.assertIsNone(report["files"][str(root / "secret")][3])          # open() really failed
+        self.assertEqual(report["files"][str(root / "secret")][0], 0)
+        self.assertIs(report["dirs"][str(root / "closed")][3], False)       # listdir really failed
+        self.assertNotIn(str(root / "closed/inside"), report["files"])
+        self.assertIs(report["dirs"][str(root)][3], True)
+        self.assertEqual(report["links"], {str(root / "link"): "ok.py"})   # not followed
+        self.assertIn(str(root / "fifo"), report["other"])
+        self.assertIn(str(root / "missing"), report["errors"])
 
 
 if __name__ == "__main__":
