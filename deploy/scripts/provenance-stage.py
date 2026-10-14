@@ -281,6 +281,13 @@ def _member_path(name: str) -> str:
     return path
 
 
+def _member_bytes(archive: tarfile.TarFile, member: tarfile.TarInfo) -> bytes:
+    handle = archive.extractfile(member)
+    if handle is None:
+        raise StageError(f"archive member could not be read: {member.name!r}")
+    return handle.read()
+
+
 def inspect_archive(path: Path, volume: str, cfg: Config) -> tuple[dict, bytes | None]:
     """Manifest {path: [type, uid, gid, mode, size]} of a safe .tar.gz, read without extracting."""
     manifest: dict[str, list] = {}
@@ -316,13 +323,9 @@ def inspect_archive(path: Path, volume: str, cfg: Config) -> tuple[dict, bytes |
                 if volume == "zwa-root" and name == IDENTITY_MEMBER and kind == "f":
                     if member.size > 8192:
                         raise StageError("archived chain identity is too large")
-                    identity = archive.extractfile(member).read()
+                    identity = _member_bytes(archive, member)
                 if volume == "zwa-params" and name in PARAMS_SHA256 and kind == "f":
-                    digest = hashlib.sha256()
-                    handle = archive.extractfile(member)
-                    for chunk in iter(lambda: handle.read(1 << 20), b""):
-                        digest.update(chunk)
-                    params[name] = digest.hexdigest()
+                    params[name] = hashlib.sha256(_member_bytes(archive, member)).hexdigest()
     except (tarfile.TarError, EOFError, OSError) as exc:
         raise StageError(f"{path.name} is not a readable .tar.gz archive: {exc}") from exc
     if volume == "zwa-root":
@@ -465,8 +468,9 @@ class Stage:
         mounts = {(m.get("source"), m.get("target")) for m in zebra.get("volumes") or []}
         if ("zebra-state", "/data") not in mounts:
             raise StageError("the rendered zebra service does not use the zebra-state volume at /data")
-        mounts = {(m.get("source"), m.get("target"), bool(m.get("read_only"))) for m in portal.get("volumes") or []}
-        if ("zwa-root", "/var/lib/zwa", False) not in mounts:
+        portal_mounts = {(m.get("source"), m.get("target"), bool(m.get("read_only")))
+                         for m in portal.get("volumes") or []}
+        if ("zwa-root", "/var/lib/zwa", False) not in portal_mounts:
             raise StageError("the rendered portal service does not mount zwa-root at /var/lib/zwa")
         return {"zebraImage": image, "zebraImageId": image_id, "zebraEntrypoint": entrypoint}
 
@@ -520,6 +524,8 @@ class Stage:
         for volume in VOLUMES:
             manifests[volume], found = inspect_archive(cfg.backup_dir / cfg.archive(volume), volume, cfg)
             identity = found if volume == "zwa-root" else identity
+        if identity is None:
+            raise StageError("no chain identity found in the zwa-root archive")
         host = self.tool.host_platform()
         if host != PLATFORM:
             raise StageError(f"this Docker host is {host}, not {PLATFORM}")
@@ -568,7 +574,7 @@ class Stage:
             if (got is None or got[0] != want_kind or got[1:3] != [uid, gid]
                     or (kind in ("f", "d") and got[3] != mode) or (kind == "f" and got[4] != size)):
                 raise StageError(f"restored {volume} differs from the archive at {path or '/'}: "
-                                 f"archive {[kind, uid, gid, oct(mode), size]} restored {got}")
+                                 f"archive {[kind, uid, gid, oct(int(mode)), size]} restored {got}")
         extra = set(restored) - set(manifest) - {""}
         if extra:
             raise StageError(f"restored {volume} has entries not in the archive: {sorted(extra)[:5]}")
@@ -800,7 +806,7 @@ def main(argv: list[str] | None = None, docker: Docker | None = None) -> None:
             stage.save("plan.json", output)
             stage.save("rendered-config.json", stage.rendered_raw)
         elif action == "stage":
-            output = stage.stage(rendered)
+            output = stage.stage(rendered or "")
         else:
             validate_config(cfg)
             if not cfg.stage_env.is_file():
