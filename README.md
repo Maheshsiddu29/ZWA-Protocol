@@ -155,7 +155,7 @@ npm ci && npm test
 # Checkout and exchange (unit tests; no chain needed)
 python3 -m unittest checkout.test_checkout exchange.test_demo exchange.test_deploy \
   exchange.test_exchange exchange.test_order_ledger exchange.test_persistent_chain \
-  exchange.test_phase4e_c exchange.test_wallet_companion_tty
+  exchange.test_phase4e_c exchange.test_wallet_companion_tty exchange.test_zebra_provenance
 
 # Lineage verifier (needs a prepared offline cargo cache)
 lineage/scripts/check.sh

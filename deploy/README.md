@@ -20,7 +20,7 @@ internet ──443──▶ caddy ──▶ web (Next.js) ──▶ portal API �
 | `portal` | `zwa-engine` | Fixed-action bridge (`exchange.portal_server`), bearer-token protected | internal | ledger |
 | `order-service` | `zwa-engine` | Quotes, Groth16 proof, coordinator, settlement, wallet provisioning, durability | internal | ledger, evidence, wallets |
 | `demo-signer` | `zwa-engine` | Restricted policy signer for judge wallets and the dealer | internal | approval attestations |
-| `zebra` | pinned `sha256:540a3429…5185` | Experimental regtest chain | internal, never published | chain state |
+| `zebra` | pinned per platform: arm64 `sha256:540a3429…5185`, amd64 `sha256:2c3f3dde…32b9` | Experimental regtest chain | internal, never published | chain state |
 | `params` | `zwa-engine` | One-shot: copy and checksum the Sapling parameters into a volume | internal | parameters, once |
 | `bootstrap` | `zwa-engine` | One-shot: adopt a fresh chain, create dealer and sponsor, issue, list | internal | everything, once |
 
@@ -56,12 +56,18 @@ deleted when a session retires.
 
 ## Resource estimate
 
-The pinned Zebra image is a local **linux/arm64** build. Use an arm64 VM, or
-rebuild Zebra from its pinned source for amd64.
+Two Zebra images are pinned, both from QED-it/zebra
+`0aef55cea41b83f17610e6ea708e59995f9e739f`: the local **linux/arm64** build
+`sha256:540a3429ef14ff3c575258255e4310951606d16c86ec5e1c37e285ea95178185` and
+the **linux/amd64** build used on the AWS EC2 host,
+`sha256:2c3f3dde0230f572911d70b7f74cc8f4587c1a139b0756d904e3b09eba2e32b9`.
+`scripts/preflight.sh` refuses a tag that does not resolve to the pin for the
+host's own platform (no emulation). See
+[`docs/zebra-provenance-migration.md`](../docs/zebra-provenance-migration.md).
 
 | Item | Size |
 |---|---|
-| VM | 4 vCPU, 8 GiB RAM, arm64 (e.g. AWS c7g.xlarge, Hetzner CAX31) |
+| VM | 4 vCPU, 8 GiB RAM, arm64 (e.g. AWS c7g.xlarge, Hetzner CAX31) or amd64 with the amd64 pin |
 | Disk | 60 GiB encrypted SSD: images ≈ 10 GiB (Zebra 8.5 GiB), chain grows ≈ 110 blocks per settled purchase |
 | Throughput | One settlement at a time (single dealer wallet). About 35 s per purchase; wallet provisioning about 6 s |
 | Rough cost | US$ 30–130 per month depending on provider |
@@ -92,9 +98,18 @@ python3 ../website/scripts/provision-local-roles.py env/web.env dealer:seller
 ./scripts/preflight.sh
 docker compose --profile setup run --rm params   # copies and checksums the parameters into a volume
 docker compose up -d zebra
+python3 -I scripts/zebra-runtime-attest.py attest --image "$ZWA_ZEBRA_IMAGE" --project zwa-demo > /dev/null
 docker compose --profile setup run --rm bootstrap
 docker compose up -d
 ```
+
+The `attest` step runs on the host (no container has the Docker socket). It
+checks that the running `zebra` container uses exactly the pinned image ID for
+this platform. Repeat it after any Zebra restart or image change.
+`bootstrap` records only the version-1 `image` label. To record the verified
+runtime image in `chain-identity.json`, run the explicit
+`exchange.zebra_provenance record` step from the provenance runbook. Status
+reports `provenance.evidence` as `UNVERIFIED` until then.
 
 The domain's DNS A/AAAA record must point at the VM before Caddy can obtain
 a certificate. The Compose example binds Caddy to loopback for safe local
@@ -200,7 +215,8 @@ does not confirm a purchase.
 
 ## Cloud runbook prepared for owner review
 
-Use a **fresh** arm64 host and fresh named volumes. Never transfer the
+Use a **fresh** host whose platform matches a pinned Zebra image (arm64 or
+amd64) and fresh named volumes. Never transfer the
 protected Phase 4E chain or any existing wallet to that host. Before executing
 the commands above, the owner chooses the provider, encrypted disk, budget,
 domain, DNS records, firewall rules, TLS method, backup destination, and access

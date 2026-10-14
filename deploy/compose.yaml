@@ -29,7 +29,9 @@ x-engine: &engine
 
 services:
   zebra:
-    # Must be the pinned image ID sha256:540a3429…5185 (checked by deploy/scripts/preflight.sh).
+    # Must resolve to the image pinned for the host platform: linux/arm64 sha256:540a3429…5185 or
+    # linux/amd64 sha256:2c3f3dde…32b9 (deploy/scripts/preflight.sh; running container checked by
+    # deploy/scripts/zebra-runtime-attest.py). No service mounts the Docker socket.
     image: ${ZWA_ZEBRA_IMAGE:-qedit/zebra-zsa-swap-pinned:latest}
     entrypoint: ["target/release/zebrad", "-c", "/config/regtest-config.toml"]
     volumes:

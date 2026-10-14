@@ -4,9 +4,12 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 set -a; . ./.env; set +a
-test "$(docker image inspect --format '{{.Id}}' "$ZWA_ZEBRA_IMAGE")" = \
-    sha256:540a3429ef14ff3c575258255e4310951606d16c86ec5e1c37e285ea95178185 \
-    || { echo "Zebra image is not the pinned build" >&2; exit 2; }
+# The tag must resolve to the Zebra image pinned for this host's platform:
+#   linux/arm64 sha256:540a3429ef14ff3c575258255e4310951606d16c86ec5e1c37e285ea95178185
+#   linux/amd64 sha256:2c3f3dde0230f572911d70b7f74cc8f4587c1a139b0756d904e3b09eba2e32b9
+# (exchange/persistent_chain.py PINNED_ZEBRA_IMAGES). Emulated images are refused.
+python3 -I scripts/zebra-runtime-attest.py check-image --image "$ZWA_ZEBRA_IMAGE" > /dev/null \
+    || { echo "Zebra image is not the pinned build for this host platform" >&2; exit 2; }
 if command -v sha256sum > /dev/null; then SHA="sha256sum"; else SHA="shasum -a 256"; fi
 (cd "$ZWA_PARAMS_DIR" && $SHA -c - > /dev/null <<'CHECKSUMS'
 8e48ffd23abb3a5fd9c5589204f32d9c31285a04b78096ba40a79b75677efc13  sapling-spend.params

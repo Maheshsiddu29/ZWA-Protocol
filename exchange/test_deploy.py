@@ -4,17 +4,19 @@ from __future__ import annotations
 
 from dataclasses import replace
 from http.server import ThreadingHTTPServer
+import importlib.util
 import json
 from pathlib import Path
 import secrets
 import shutil
+import subprocess
 import threading
 import unittest
 from unittest.mock import patch
 import urllib.error
 import urllib.request
 
-from exchange import isolation, landlock_exec, persistent_chain, portal_server
+from exchange import isolation, landlock_exec, persistent_chain, portal_server, zebra_provenance
 from exchange.config import ConfigError, ExchangeConfig, TX_TOOL_REVISION
 
 REPOSITORY = Path(__file__).resolve().parents[1]
@@ -134,6 +136,100 @@ class PortalServerTests(unittest.TestCase):
     def test_health_endpoint(self):
         with urllib.request.urlopen(self.url + "/healthz", timeout=5) as response:
             self.assertEqual(json.load(response), {"status": "ok"})
+
+
+def load_attest_tool():
+    spec = importlib.util.spec_from_file_location("zebra_runtime_attest",
+                                                  REPOSITORY / "deploy/scripts/zebra-runtime-attest.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class FakeDocker:
+    """Answers the few read-only Docker CLI calls the host attestation makes."""
+
+    def __init__(self, image_id: str, platform: str, host: str = "x86_64", container_image: str | None = None,
+                 running: bool = True, containers: int = 1, project_label: str = "zwa-prov-stage"):
+        self.image = {"Id": image_id, "Os": platform.split("/")[0], "Architecture": platform.split("/")[1]}
+        self.host, self.running, self.containers = host, running, containers
+        self.container_image = image_id if container_image is None else container_image
+        self.project_label = project_label
+        self.calls = []
+
+    def __call__(self, *args: str) -> str:
+        self.calls.append(args)
+        if args[:2] == ("image", "inspect"):
+            return json.dumps([self.image])
+        if args[0] == "info":
+            return json.dumps({"OSType": "linux", "Architecture": self.host})
+        if args[0] == "ps":
+            return "\n".join(f"{i:064x}" for i in range(1, self.containers + 1))
+        if args[0] == "inspect":
+            return json.dumps([{"Id": args[-1], "Image": self.container_image, "State": {"Running": self.running},
+                                "Config": {"Labels": {"com.docker.compose.project": self.project_label,
+                                                      "com.docker.compose.service": "zebra"}}}])
+        raise AssertionError(args)
+
+
+class ZebraHostAttestationTests(unittest.TestCase):
+    AMD64 = persistent_chain.PINNED_ZEBRA_IMAGES["linux/amd64"]
+    ARM64 = persistent_chain.PINNED_ZEBRA_IMAGES["linux/arm64"]
+
+    def setUp(self):
+        self.tool = load_attest_tool()
+
+    def attest(self, docker: FakeDocker, project: str = "zwa-prov-stage") -> dict:
+        with patch.object(self.tool, "_docker", side_effect=docker):
+            return self.tool.attest("qedit/zebra-zsa-swap-pinned:latest", project, now=1_760_000_000)
+
+    def test_amd64_and_arm64_hosts_attest_their_own_pin(self):
+        for image, platform, host in ((self.AMD64, "linux/amd64", "x86_64"), (self.ARM64, "linux/arm64", "aarch64")):
+            result = self.attest(FakeDocker(image, platform, host))
+            self.assertEqual((result["imageId"], result["platform"], result["containerImageId"]),
+                             (image, platform, image))
+            # The engine-side migration accepts exactly what the host produced.
+            zebra_provenance.validate_attestation(result, now=1_760_000_000, machine=platform)
+
+    def test_wrong_image_architecture_or_container_is_refused(self):
+        cases = {
+            "unpinned tag": FakeDocker("sha256:" + "e" * 64, "linux/amd64"),
+            "amd64 pin reporting arm64": FakeDocker(self.AMD64, "linux/arm64", "aarch64"),
+            "arm64 image on amd64 host": FakeDocker(self.ARM64, "linux/arm64", "x86_64"),
+            "amd64 image on arm64 host": FakeDocker(self.AMD64, "linux/amd64", "aarch64"),
+            "unknown host": FakeDocker(self.AMD64, "linux/amd64", "riscv64"),
+            "container runs legacy image": FakeDocker(self.AMD64, "linux/amd64", container_image=self.ARM64),
+            "container stopped": FakeDocker(self.AMD64, "linux/amd64", running=False),
+            "no container": FakeDocker(self.AMD64, "linux/amd64", containers=0),
+            "two containers": FakeDocker(self.AMD64, "linux/amd64", containers=2),
+            "other project": FakeDocker(self.AMD64, "linux/amd64", project_label="zwa-demo"),
+        }
+        for name, docker in cases.items():
+            with self.subTest(name), self.assertRaises(self.tool.AttestError):
+                self.attest(docker)
+        with self.assertRaises(self.tool.AttestError):
+            self.attest(FakeDocker(self.AMD64, "linux/amd64"), project="../zwa")
+        with self.assertRaises(self.tool.AttestError):
+            self.tool.check_image("--help")
+
+    def test_docker_calls_are_read_only(self):
+        docker = FakeDocker(self.AMD64, "linux/amd64")
+        self.attest(docker)
+        self.assertEqual({call[0] for call in docker.calls}, {"image", "info", "ps", "inspect"})
+        self.assertTrue(all(call[:2] == ("image", "inspect") for call in docker.calls if call[0] == "image"))
+
+    def test_preflight_checks_both_pins_through_the_host_tool(self):
+        script = (REPOSITORY / "deploy/scripts/preflight.sh").read_text()
+        subprocess.run(["bash", "-n", str(REPOSITORY / "deploy/scripts/preflight.sh")], check=True)
+        self.assertIn("scripts/zebra-runtime-attest.py check-image", script)
+        for image in persistent_chain.PINNED_ZEBRA_IMAGES.values():
+            self.assertIn(image, script)
+        self.assertNotIn("test \"$(docker image inspect", script)
+
+    def test_no_container_receives_the_docker_socket(self):
+        compose = (REPOSITORY / "deploy/compose.yaml").read_text()
+        self.assertNotIn("docker.sock", compose)
+        self.assertNotIn("/var/run/docker", compose)
 
 
 if __name__ == "__main__":
