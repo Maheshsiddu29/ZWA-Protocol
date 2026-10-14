@@ -286,6 +286,48 @@ class Prepared(CliCase):
         self.assertIn("inside this workdir", err)
         self.assertEqual(host.calls, [])
 
+    def level2_summary(self, mutate=None, **faults) -> Path:
+        with tempfile.TemporaryDirectory() as tmp:
+            summary = complete(Harness(2, Path(tmp), **faults).execute(), fixture=False)
+        summary["run"]["project"] = PROJECT
+        if mutate:
+            mutate(summary)
+        index = len(list((self.work.evidence / "runs").iterdir()))
+        run_dir = self.work.evidence / "runs" / f"20261014T00000{index}Z-L2-abcdef"
+        run_dir.mkdir()
+        path = run_dir / "summary.json"
+        path.write_text(json.dumps(summary))
+        return path
+
+    def level3(self, path: Path):
+        with patch.object(cli.Bench, "host_checks", lambda self, t: ["sentinel: past the Level 2 gate"]):
+            return run_cli(self.run_args(3, "--level2-summary", str(path), "--level2-summary-sha256",
+                                         ev.sha256_file(path)), self.docker(FakeDockerHost(str(self.params))))
+
+    def test_a_failed_level2_never_unlocks_level3(self):
+        failed = self.level2_summary(fail_at="BUYER_APPROVED")
+        code, _, err = self.level3(failed)
+        self.assertEqual(code, cli.EXIT_REFUSED)
+        self.assertIn("passing Level 2", err)
+        self.assertIn("outcome", err)
+
+    def test_a_summary_that_claims_pass_is_rechecked(self):
+        def forge(summary):  # e.g. a summary written by the earlier, lenient harness
+            summary["transactions"][1]["outcome"] = "PORTAL_REFUSED"
+            summary["result"], summary["acceptance"]["passed"] = "PASS", True
+        code, _, err = self.level3(self.level2_summary(forge))
+        self.assertIn("P2: outcome PORTAL_REFUSED", err)
+        legacy = self.level2_summary(lambda s: [s.pop(k) for k in ("monitoring", "finalProbePresent", "acceptance")])
+        code, _, err = self.level3(legacy)
+        self.assertIn("passing Level 2", err)
+        fixture = self.level2_summary(lambda s: s.update(fixture=True))
+        self.assertIn("passing Level 2", self.level3(fixture)[2])
+
+    def test_a_verified_level2_reaches_the_next_gate(self):
+        code, _, err = self.level3(self.level2_summary())
+        self.assertEqual(code, cli.EXIT_REFUSED)
+        self.assertIn("sentinel: past the Level 2 gate", err)
+
     def test_budget_counts_every_reserved_run(self):
         for i, (level, count) in enumerate(((1, 1), (2, 2), (2, 2))):
             self.work.reserve_budget(f"20261014T00000{i}Z-L{level}-abcdef", level, count)

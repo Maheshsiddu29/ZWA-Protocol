@@ -61,6 +61,18 @@ def render(summary: dict) -> str:
     lines += ["## Result", "", f"**{summary.get('result')}**" +
               (f": stopped by `{reason['code']}`: {reason['detail']}" if reason else ": no stop condition triggered"),
               ""]
+    acceptance = summary.get("acceptance") or {}
+    durability = ("required for PASS" if acceptance.get("durabilityRequired", summary.get("waitDurability"))
+                  else "**not waited for** (`--no-wait-durability`); this PASS does not cover durability")
+    lines += [f"- Acceptance: {'passed' if acceptance.get('passed') else 'NOT passed'}",
+              f"- Durability: {durability}"]
+    monitoring = summary.get("monitoring") or {}
+    lines.append(f"- Monitoring: {'valid' if monitoring.get('valid') else 'NOT valid'} "
+                 f"({monitoring.get('validSamples')} valid samples, {monitoring.get('sampleErrors')} errors, "
+                 f"largest gap {monitoring.get('maxGapSeconds')} s)")
+    for problem in acceptance.get("problems") or []:
+        lines.append(f"- acceptance: {problem}")
+    lines.append("")
     for problem in summary.get("consistencyProblems") or []:
         lines.append(f"- consistency: {problem}")
     if summary.get("consistencyProblems"):

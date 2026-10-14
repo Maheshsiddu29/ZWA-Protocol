@@ -4,136 +4,628 @@
   "title": "ZWA benchmark run summary (evidence/runs/<run>/summary.json)",
   "description": "One benchmark level run. Times are Unix seconds (host clock); sizes are bytes. Written once by benchmark/cli.py and never modified. Numbers are real measurements only when fixture is false.",
   "type": "object",
-  "required": ["schema", "fixture", "result", "level", "concurrency", "stopReason", "stopReasons", "phases",
-               "transactions", "consistencyProblems", "resources", "run", "provenance", "thresholds", "workload"],
+  "required": [
+    "schema",
+    "fixture",
+    "result",
+    "level",
+    "concurrency",
+    "stopReason",
+    "stopReasons",
+    "phases",
+    "transactions",
+    "consistencyProblems",
+    "resources",
+    "run",
+    "provenance",
+    "thresholds",
+    "workload",
+    "waitDurability",
+    "finalProbePresent",
+    "monitoring",
+    "acceptance"
+  ],
   "additionalProperties": false,
   "properties": {
-    "schema": {"const": "zwa-bench-summary/1"},
-    "fixture": {"type": "boolean", "description": "true only for synthetic test fixtures; never for a measured run"},
-    "result": {"enum": ["PASS", "STOPPED", "PARTIAL"],
-               "description": "PASS: no stop condition. STOPPED: a stop condition triggered and every order is terminal. PARTIAL: an order was still in progress, unconfirmed or UNCERTAIN at the end (run reconcile)."},
-    "level": {"type": "integer", "minimum": 0, "maximum": 3},
-    "concurrency": {"type": "integer", "minimum": 0, "maximum": 3},
-    "stopReason": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/reason"}], "description": "the first stop condition"},
-    "stopReasons": {"type": "array", "items": {"$ref": "#/$defs/reason"}},
-    "phases": {"type": "object", "additionalProperties": {"type": "number"}},
-    "transactions": {"type": "array", "maxItems": 3, "items": {"$ref": "#/$defs/transaction"}},
-    "consistencyProblems": {"type": "array", "items": {"type": "string"}},
-    "resources": {"$ref": "#/$defs/resources"},
-    "relay": {"type": "object"},
+    "schema": {
+      "const": "zwa-bench-summary/1"
+    },
+    "fixture": {
+      "type": "boolean",
+      "description": "true only for synthetic test fixtures; never for a measured run"
+    },
+    "result": {
+      "enum": [
+        "PASS",
+        "STOPPED",
+        "PARTIAL"
+      ],
+      "description": "PASS only when acceptance.passed: every expected purchase settled, verified, reconciled and (if required) durable, monitoring was valid, the final probe exists and no stop condition was recorded. STOPPED: otherwise, with every order terminal. PARTIAL: an order was in progress, unconfirmed, UNCERTAIN or ambiguous at the end (run reconcile)."
+    },
+    "level": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 3
+    },
+    "concurrency": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 3
+    },
+    "stopReason": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/reason"
+        }
+      ],
+      "description": "the first stop condition"
+    },
+    "stopReasons": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/reason"
+      }
+    },
+    "phases": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "number"
+      }
+    },
+    "transactions": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "$ref": "#/$defs/transaction"
+      }
+    },
+    "consistencyProblems": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "resources": {
+      "$ref": "#/$defs/resources"
+    },
+    "relay": {
+      "type": "object"
+    },
     "run": {
       "type": "object",
-      "required": ["runId", "project", "startedAt", "endedAt", "sampleInterval", "samplesFile", "eventsFile"],
+      "required": [
+        "runId",
+        "project",
+        "startedAt",
+        "endedAt",
+        "sampleInterval",
+        "samplesFile",
+        "eventsFile"
+      ],
       "properties": {
-        "runId": {"type": "string", "pattern": "^[0-9]{8}T[0-9]{6}Z-L[0-3]-[0-9a-f]{6}$"},
-        "project": {"type": "string", "pattern": "^zwa-bench-[a-z0-9][a-z0-9-]{0,39}$"},
-        "startedAt": {"type": "string"}, "endedAt": {"type": "string"},
-        "sampleInterval": {"type": "number", "minimum": 0.25, "maximum": 1.0},
-        "samplesFile": {"const": "samples.jsonl"}, "eventsFile": {"const": "events.jsonl"}
+        "runId": {
+          "type": "string",
+          "pattern": "^[0-9]{8}T[0-9]{6}Z-L[0-3]-[0-9a-f]{6}$"
+        },
+        "project": {
+          "type": "string",
+          "pattern": "^zwa-bench-[a-z0-9][a-z0-9-]{0,39}$"
+        },
+        "startedAt": {
+          "type": "string"
+        },
+        "endedAt": {
+          "type": "string"
+        },
+        "sampleInterval": {
+          "type": "number",
+          "minimum": 0.25,
+          "maximum": 1.0
+        },
+        "samplesFile": {
+          "const": "samples.jsonl"
+        },
+        "eventsFile": {
+          "const": "events.jsonl"
+        }
       }
     },
     "provenance": {
       "type": "object",
-      "required": ["sourceRevision", "sourceDirty", "txToolRevision", "engineImageId", "zebraImageId", "zebraPinned",
-                   "platform", "renderedSha256"],
+      "required": [
+        "sourceRevision",
+        "sourceDirty",
+        "txToolRevision",
+        "engineImageId",
+        "zebraImageId",
+        "zebraPinned",
+        "platform",
+        "renderedSha256"
+      ],
       "properties": {
-        "sourceRevision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
-        "sourceDirty": {"type": "boolean"},
-        "txToolRevision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
-        "engineImageId": {"type": "string"}, "zebraImageId": {"type": "string"}, "zebraPinned": {"type": "string"},
-        "platform": {"enum": ["linux/amd64", "linux/arm64"]},
-        "renderedSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-        "zebraAttestation": {"type": "object"}
+        "sourceRevision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "sourceDirty": {
+          "type": "boolean"
+        },
+        "txToolRevision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "engineImageId": {
+          "type": "string"
+        },
+        "zebraImageId": {
+          "type": "string"
+        },
+        "zebraPinned": {
+          "type": "string"
+        },
+        "platform": {
+          "enum": [
+            "linux/amd64",
+            "linux/arm64"
+          ]
+        },
+        "renderedSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "zebraAttestation": {
+          "type": "object"
+        }
       }
     },
     "thresholds": {
       "type": "object",
-      "required": ["min_mem_available_bytes", "max_swap_growth_bytes", "min_disk_free_bytes", "wallet_ready_timeout_s",
-                   "quote_timeout_s", "settlement_timeout_s", "drain_timeout_s", "level_timeout_s",
-                   "sampler_failure_limit"],
-      "additionalProperties": {"type": "integer"}
+      "required": [
+        "min_mem_available_bytes",
+        "max_swap_growth_bytes",
+        "min_disk_free_bytes",
+        "wallet_ready_timeout_s",
+        "quote_timeout_s",
+        "settlement_timeout_s",
+        "drain_timeout_s",
+        "level_timeout_s",
+        "sampler_failure_limit"
+      ],
+      "additionalProperties": {
+        "type": "integer"
+      }
     },
     "workload": {
       "type": "object",
-      "required": ["level", "concurrency", "purchases", "waitDurability"],
+      "required": [
+        "level",
+        "concurrency",
+        "purchases",
+        "waitDurability"
+      ],
       "properties": {
-        "level": {"type": "integer"}, "concurrency": {"type": "integer"}, "waitDurability": {"type": "boolean"},
-        "purchases": {"type": "array", "items": {"type": "object", "required": ["instrument", "quantity"]}}
+        "level": {
+          "type": "integer"
+        },
+        "concurrency": {
+          "type": "integer"
+        },
+        "waitDurability": {
+          "type": "boolean"
+        },
+        "purchases": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "instrument",
+              "quantity"
+            ]
+          }
+        }
+      }
+    },
+    "waitDurability": {
+      "type": "boolean",
+      "description": "whether durability was required for PASS"
+    },
+    "finalProbePresent": {
+      "type": "boolean"
+    },
+    "monitoring": {
+      "type": "object",
+      "required": [
+        "valid",
+        "validSamples",
+        "sampleErrors",
+        "maxGapSeconds",
+        "intervalSeconds",
+        "coverage",
+        "problems"
+      ],
+      "properties": {
+        "valid": {
+          "type": "boolean"
+        },
+        "validSamples": {
+          "type": "integer"
+        },
+        "sampleErrors": {
+          "type": "integer"
+        },
+        "maxGapSeconds": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "intervalSeconds": {
+          "type": "number"
+        },
+        "coverage": {
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "problems": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "acceptance": {
+      "type": "object",
+      "required": [
+        "passed",
+        "problems",
+        "durabilityRequired"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "passed": {
+          "type": "boolean"
+        },
+        "problems": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "durabilityRequired": {
+          "type": "boolean"
+        }
       }
     }
   },
   "$defs": {
     "reason": {
       "type": "object",
-      "required": ["code", "detail", "at", "first"],
+      "required": [
+        "code",
+        "detail",
+        "at",
+        "first"
+      ],
       "properties": {
-        "code": {"enum": ["MEM_AVAILABLE_LOW", "SWAP_GROWTH", "HOST_OOM_KILL", "CONTAINER_OOM_KILL",
-                          "CONTAINER_RESTARTED", "CONTAINER_NOT_RUNNING", "DISK_FREE_LOW", "SAMPLER_FAILED",
-                          "WALLET_READY_TIMEOUT", "QUOTE_TIMEOUT", "SETTLEMENT_TIMEOUT", "LEVEL_TIMEOUT",
-                          "ORDER_FAILED", "RECEIPT_MISSING", "RECEIPT_INCONSISTENT", "INVENTORY_INCONSISTENT",
-                          "TX_VERIFICATION_FAILED", "DUPLICATE_SUBMISSION_MISMATCH", "PORTAL_REFUSED",
-                          "CHAIN_NOT_REGTEST", "OPERATOR_INTERRUPT", "HARNESS_ERROR"]},
-        "detail": {"type": "string", "maxLength": 500},
-        "at": {"type": "number"},
-        "first": {"type": "boolean"},
-        "sample": {"type": ["integer", "null"]}, "service": {"type": "string"}, "purchase": {"type": "string"},
-        "orderId": {"type": ["string", "null"]}
+        "code": {
+          "enum": [
+            "MEM_AVAILABLE_LOW",
+            "SWAP_GROWTH",
+            "HOST_OOM_KILL",
+            "CONTAINER_OOM_KILL",
+            "CONTAINER_RESTARTED",
+            "CONTAINER_NOT_RUNNING",
+            "DISK_FREE_LOW",
+            "SAMPLER_FAILED",
+            "WALLET_READY_TIMEOUT",
+            "QUOTE_TIMEOUT",
+            "SETTLEMENT_TIMEOUT",
+            "LEVEL_TIMEOUT",
+            "ORDER_FAILED",
+            "RECEIPT_MISSING",
+            "RECEIPT_INCONSISTENT",
+            "INVENTORY_INCONSISTENT",
+            "TX_VERIFICATION_FAILED",
+            "DUPLICATE_SUBMISSION_MISMATCH",
+            "PORTAL_REFUSED",
+            "CHAIN_NOT_REGTEST",
+            "OPERATOR_INTERRUPT",
+            "HARNESS_ERROR",
+            "DURABILITY_NOT_OBSERVED",
+            "DURABILITY_LOST",
+            "PURCHASE_AMBIGUOUS",
+            "ACCEPTANCE_FAILED"
+          ]
+        },
+        "detail": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "at": {
+          "type": "number"
+        },
+        "first": {
+          "type": "boolean"
+        },
+        "sample": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "service": {
+          "type": "string"
+        },
+        "purchase": {
+          "type": "string"
+        },
+        "orderId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       }
     },
     "stage": {
       "oneOf": [
-        {"type": "null", "description": "a boundary was not observed"},
-        {"type": "object", "required": ["seconds", "method"],
-         "properties": {"seconds": {"type": ["number", "null"]}, "method": {"type": "string"},
-                        "note": {"type": "string"}}}
+        {
+          "type": "null",
+          "description": "a boundary was not observed"
+        },
+        {
+          "type": "object",
+          "required": [
+            "seconds",
+            "method"
+          ],
+          "properties": {
+            "seconds": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "method": {
+              "type": "string"
+            },
+            "note": {
+              "type": "string"
+            }
+          }
+        }
       ]
     },
     "transaction": {
       "type": "object",
-      "required": ["label", "instrument", "quantity", "orderId", "outcome", "timeline", "observedStates", "problems",
-                   "stages", "operations", "reconciliation"],
+      "required": [
+        "label",
+        "instrument",
+        "quantity",
+        "orderId",
+        "outcome",
+        "timeline",
+        "observedStates",
+        "problems",
+        "stages",
+        "operations",
+        "reconciliation",
+        "finalEvidence",
+        "durabilityRequired",
+        "durabilityObserved",
+        "finalCheck"
+      ],
       "properties": {
-        "label": {"type": "string", "pattern": "^P[1-3]$"},
-        "instrument": {"enum": ["zwa-gold-reference", "zwa-treasury-style", "zwa-credit-participation"]},
-        "quantity": {"type": "integer", "minimum": 1},
-        "orderId": {"type": ["string", "null"]},
-        "account": {"type": ["string", "null"]},
-        "offerId": {"type": ["string", "null"]},
-        "paymentZat": {"type": ["integer", "null"]},
-        "txid": {"type": ["string", "null"]},
-        "height": {"type": ["integer", "null"]},
-        "blockHash": {"type": ["string", "null"]},
-        "confirmations": {"type": ["integer", "null"]},
-        "durability": {"type": ["string", "null"]},
-        "outcome": {"enum": ["NOT_STARTED", "ABANDONED_BEFORE_PURCHASE", "WALLET_FAILED", "WALLET_TIMEOUT",
-                             "NO_INVENTORY", "DUPLICATE_MISMATCH", "FAILED_BEFORE_QUOTE", "QUOTE_TIMEOUT",
-                             "QUOTE_MISMATCH", "CANCELLED_BEFORE_SIGNING", "UNCONFIRMED_NEEDS_RECONCILE",
-                             "CONFIRM_REFUSED", "FAILED_AFTER_CONFIRM", "UNCERTAIN", "SETTLED_VERIFIED",
-                             "SETTLED_WITH_PROBLEMS", "IN_PROGRESS_AT_DRAIN_END", "PORTAL_REFUSED",
-                             "HARNESS_ERROR"]},
-        "finalState": {"type": ["string", "null"]},
-        "timeline": {"type": "object", "additionalProperties": {"type": "number"}},
-        "observedStates": {"type": "array", "items": {"type": "array"}},
-        "problems": {"type": "array", "items": {"type": "object", "required": ["code", "detail"]}},
-        "verifyTx": {"type": ["object", "null"]},
-        "stages": {"type": "object", "additionalProperties": {"$ref": "#/$defs/stage"}},
-        "operations": {"type": "object"},
+        "label": {
+          "type": "string",
+          "pattern": "^P[1-3]$"
+        },
+        "instrument": {
+          "enum": [
+            "zwa-gold-reference",
+            "zwa-treasury-style",
+            "zwa-credit-participation"
+          ]
+        },
+        "quantity": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "orderId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "account": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "offerId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "paymentZat": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "txid": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "height": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "blockHash": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "confirmations": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "durability": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "outcome": {
+          "enum": [
+            "NOT_STARTED",
+            "ABANDONED_BEFORE_PURCHASE",
+            "WALLET_FAILED",
+            "WALLET_TIMEOUT",
+            "NO_INVENTORY",
+            "DUPLICATE_MISMATCH",
+            "FAILED_BEFORE_QUOTE",
+            "QUOTE_TIMEOUT",
+            "QUOTE_MISMATCH",
+            "CANCELLED_BEFORE_SIGNING",
+            "UNCONFIRMED_NEEDS_RECONCILE",
+            "CONFIRM_REFUSED",
+            "FAILED_AFTER_CONFIRM",
+            "UNCERTAIN",
+            "SETTLED_VERIFIED",
+            "SETTLED_WITH_PROBLEMS",
+            "IN_PROGRESS_AT_DRAIN_END",
+            "PORTAL_REFUSED",
+            "HARNESS_ERROR",
+            "SETTLED_NOT_DURABLE",
+            "PURCHASE_AMBIGUOUS"
+          ]
+        },
+        "finalState": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timeline": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "observedStates": {
+          "type": "array",
+          "items": {
+            "type": "array"
+          }
+        },
+        "problems": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "code",
+              "detail"
+            ]
+          }
+        },
+        "verifyTx": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "stages": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/stage"
+          }
+        },
+        "operations": {
+          "type": "object"
+        },
         "reconciliation": {
-          "type": "object", "required": ["class"],
-          "properties": {"class": {"enum": ["NOT_CREATED", "SETTLED", "SETTLED_UNVERIFIED", "NOT_EXECUTED",
-                                            "UNEXPECTED", "UNCERTAIN", "UNCONFIRMED", "IN_PROGRESS"]},
-                         "action": {"type": "string"}}
+          "type": "object",
+          "required": [
+            "class"
+          ],
+          "properties": {
+            "class": {
+              "enum": [
+                "NOT_CREATED",
+                "SETTLED",
+                "SETTLED_UNVERIFIED",
+                "NOT_EXECUTED",
+                "UNEXPECTED",
+                "UNCERTAIN",
+                "UNCONFIRMED",
+                "IN_PROGRESS"
+              ]
+            },
+            "action": {
+              "type": "string"
+            }
+          }
+        },
+        "finalEvidence": {
+          "type": "boolean",
+          "description": "the final probe returned this order"
+        },
+        "durabilityRequired": {
+          "type": "boolean"
+        },
+        "durabilityObserved": {
+          "type": "boolean"
+        },
+        "finalCheck": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "read-only re-check of the receipt after the idle-after window"
         }
       }
     },
     "resources": {
       "type": "object",
-      "required": ["samples", "sampleErrors"],
+      "required": [
+        "samples",
+        "sampleErrors"
+      ],
       "properties": {
-        "samples": {"type": "integer"}, "sampleErrors": {"type": "integer"},
-        "host": {"type": "object", "description": "host memory from /proc/meminfo; never container or process memory"},
-        "containers": {"type": "object", "description": "per-service cgroup v2 memory and CPU; includes page cache"},
-        "processes": {"type": "object", "description": "per service/label peak RSS from /proc/<pid>/status"}
+        "samples": {
+          "type": "integer"
+        },
+        "sampleErrors": {
+          "type": "integer"
+        },
+        "host": {
+          "type": "object",
+          "description": "host memory from /proc/meminfo; never container or process memory"
+        },
+        "containers": {
+          "type": "object",
+          "description": "per-service cgroup v2 memory and CPU; includes page cache"
+        },
+        "processes": {
+          "type": "object",
+          "description": "per service/label peak RSS from /proc/<pid>/status"
+        }
       }
     }
   }

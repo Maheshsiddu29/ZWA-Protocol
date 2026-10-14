@@ -12,6 +12,10 @@
 
 **PASS**: no stop condition triggered
 
+- Acceptance: passed
+- Durability: required for PASS
+- Monitoring: valid (30 valid samples, 0 errors, largest gap 1.0 s)
+
 ## Host
 
 | Measure | Value |
@@ -23,7 +27,7 @@
 | Load average (1 min) max | 0.5 |
 | Kernel OOM kills during run | 0 |
 
-3 samples, 0 sampling errors.
+30 samples, 0 sampling errors.
 
 ## Transactions
 
@@ -32,14 +36,14 @@
 | Outcome | SETTLED_VERIFIED | SETTLED_VERIFIED |
 | Final state | RECEIPT_AVAILABLE | RECEIPT_AVAILABLE |
 | walletSetup | 4.0 s | 4.0 s |
-| walletFunding | 2.0 s | 1.0 s |
+| walletFunding | 2.0 s | 2.0 s |
 | reservationRequest | 0.0 s | 0.0 s |
 | quoteReadyIncludingQueue | 0.0 s | 15.0 s |
 | quotePreparation | n/a | n/a |
 | groth16ProofGeneration | 0.0 s | 0.0 s |
 | groth16Verification | 0.0 s | 0.0 s |
-| walletReview | 2.0 s | 1.0 s |
-| buyerActionGroupProveAndSign | 2.0 s | 1.0 s |
+| walletReview | 1.0 s | 1.0 s |
+| buyerActionGroupProveAndSign | 3.0 s | 1.0 s |
 | sellerActionGroupProveAndSign | 2.0 s | 1.0 s |
 | coordinatorExecuteLive | n/a | n/a |
 | assembleBroadcastInclude | 2.0 s | 1.0 s |
@@ -48,10 +52,10 @@
 | confirmToReceipt | 14.0 s | 7.0 s |
 | endToEnd | 15.0 s | 22.0 s |
 | endToEndClientObserved | 15.0 s | 22.0 s |
-| durability | n/a | n/a |
+| durability | 0.0 s | 0.0 s |
 
-- P1: txid `71a2120bfadf768a64669faf02e0a442875a21a93aa5fcd4245bdc2301d7189f` at height 401 (block `84996859fe552a7b…`), verify-tx included=True, reconciliation SETTLED
-- P2: txid `dde9bd8ba8cae7d5294447a5007cbbbfd77b9d18a2c4900e9a2b86af46c5df69` at height 402 (block `39049f86d81e4f56…`), verify-tx included=True, reconciliation SETTLED
+- P1: txid `5db70e16f90e73afad6b982d58b699c40466efc945b4ce17d0e3e3a9cebc9f3a` at height 401 (block `21cf5f58acd5a487…`), verify-tx included=True, reconciliation SETTLED
+- P2: txid `b0bb96bfa457612de70929fd12eb7a00575f133c48f5db53e71f59b00dc53de9` at height 402 (block `0eb6dd3bee81fe23…`), verify-tx included=True, reconciliation SETTLED
 
 ## Not measured or approximate
 

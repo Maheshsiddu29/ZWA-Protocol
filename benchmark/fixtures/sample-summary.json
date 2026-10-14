@@ -1,10 +1,29 @@
 {
+  "acceptance": {
+    "durabilityRequired": true,
+    "passed": true,
+    "problems": []
+  },
   "concurrency": 2,
   "consistencyProblems": [],
+  "finalProbePresent": true,
   "fixture": true,
   "level": 2,
+  "monitoring": {
+    "coverage": [
+      1760000000.0,
+      1760000029.0
+    ],
+    "intervalSeconds": 1.0,
+    "maxGapSeconds": 1.0,
+    "problems": [],
+    "sampleErrors": 0,
+    "valid": true,
+    "validSamples": 30
+  },
   "phases": {
     "end": 1760000028.0,
+    "finalCheck": 1760000028.0,
     "finalProbe": 1760000028.0,
     "idleAfter": 1760000027.0,
     "idleBefore": 1760000000.0,
@@ -38,9 +57,9 @@
       "buy",
       "buy",
       "buy",
+      "order",
       "buy",
       "order",
-      "order",
       "confirm",
       "order",
       "order",
@@ -70,6 +89,8 @@
       "order",
       "order",
       "verify-tx",
+      "order",
+      "order",
       "order"
     ],
     "restarts": null
@@ -91,7 +112,7 @@
     },
     "processes": {},
     "sampleErrors": 0,
-    "samples": 3
+    "samples": 30
   },
   "result": "PASS",
   "run": {
@@ -119,10 +140,20 @@
   },
   "transactions": [
     {
-      "account": "judge-f04b7b1b2e235240fa5e",
-      "blockHash": "84996859fe552a7b1f6df188a4c8aa6a3c58ca83457350e4883a6bd8d3933b90",
+      "account": "judge-e9141ffbd9190a3a9363",
+      "blockHash": "21cf5f58acd5a487cd56fb440c73855f3f7cb0d6ecd5210eecaa98b20e4c804e",
       "confirmations": 1,
       "durability": "RESTART_DURABLE",
+      "durabilityObserved": true,
+      "durabilityRequired": true,
+      "finalCheck": {
+        "at": 1760000028.0,
+        "durability": "RESTART_DURABLE",
+        "ok": true,
+        "settlementDropped": false,
+        "state": "RECEIPT_AVAILABLE"
+      },
+      "finalEvidence": true,
       "finalState": "RECEIPT_AVAILABLE",
       "height": 401,
       "instrument": "zwa-gold-reference",
@@ -146,7 +177,7 @@
         ],
         [
           "TRADE_AUTHORIZED",
-          1760000008.0
+          1760000007.0
         ],
         [
           "BUYER_APPROVED",
@@ -173,9 +204,9 @@
           1760000020.0
         ]
       ],
-      "offerId": "bf9fbee46cd4c6c1a1a109b7afdeb577",
+      "offerId": "31f2164958e1373057a433b58ac938a3",
       "operations": {},
-      "orderId": "bed65f6e0d1bc12c96a7eb2095d15cd7",
+      "orderId": "0ac32be4c702da4539d45d361bf81001",
       "outcome": "SETTLED_VERIFIED",
       "paymentZat": 1000,
       "problems": [],
@@ -191,14 +222,17 @@
         },
         "buyerActionGroupProveAndSign": {
           "method": "upper bound: seller-review.log -> buyer-signer.log (includes service and signer polling); buyer Action Group: Halo2 proving and spend-auth signing (one tool call, not separable)",
-          "seconds": 2.0
+          "seconds": 3.0
         },
         "confirmToReceipt": {
           "method": "client confirm -> order-receipt.json",
           "seconds": 14.0
         },
         "coordinatorExecuteLive": null,
-        "durability": null,
+        "durability": {
+          "method": "order-receipt.json -> stabilization.json (110 empty blocks, checkpoint, rescans)",
+          "seconds": 0.0
+        },
         "endToEnd": {
           "method": "client submit -> order-receipt.json (includes queueing)",
           "seconds": 15.0
@@ -242,7 +276,7 @@
         },
         "walletReview": {
           "method": "preflight-authorization.json -> seller-review.log (both wallet reviews)",
-          "seconds": 2.0
+          "seconds": 1.0
         },
         "walletSetup": {
           "method": "client poll (\u00b1poll interval)",
@@ -255,16 +289,16 @@
         "durableSeen": 1760000020.0,
         "purchaseAccepted": 1760000005.0,
         "purchaseSubmitted": 1760000005.0,
-        "quoteReadySeen": 1760000006.0,
+        "quoteReadySeen": 1760000005.0,
         "receiptSeen": 1760000020.0,
         "walletCreated": 1760000001.0,
         "walletFunding": 1760000003.0,
         "walletReady": 1760000005.0,
         "walletRequested": 1760000001.0
       },
-      "txid": "71a2120bfadf768a64669faf02e0a442875a21a93aa5fcd4245bdc2301d7189f",
+      "txid": "5db70e16f90e73afad6b982d58b699c40466efc945b4ce17d0e3e3a9cebc9f3a",
       "verifyTx": {
-        "blockHash": "84996859fe552a7b1f6df188a4c8aa6a3c58ca83457350e4883a6bd8d3933b90",
+        "blockHash": "21cf5f58acd5a487cd56fb440c73855f3f7cb0d6ecd5210eecaa98b20e4c804e",
         "chainActive": true,
         "found": true,
         "genesisHash": "029f11d80ef9765602235e1bc9727e3eb6ba20839319f761fee920d63401e327",
@@ -273,10 +307,20 @@
       }
     },
     {
-      "account": "judge-a220cfe746d348485e34",
-      "blockHash": "39049f86d81e4f567093dab855798a7a5a08758b0a1626547d776ce497a1d6a0",
+      "account": "judge-8c02e81f5bd06ced1861",
+      "blockHash": "0eb6dd3bee81fe23970a924e39f16b882167b86e036aaa1fd140ac97651075ef",
       "confirmations": 1,
       "durability": "RESTART_DURABLE",
+      "durabilityObserved": true,
+      "durabilityRequired": true,
+      "finalCheck": {
+        "at": 1760000028.0,
+        "durability": "RESTART_DURABLE",
+        "ok": true,
+        "settlementDropped": false,
+        "state": "RECEIPT_AVAILABLE"
+      },
+      "finalEvidence": true,
       "finalState": "RECEIPT_AVAILABLE",
       "height": 402,
       "instrument": "zwa-treasury-style",
@@ -327,9 +371,9 @@
           1760000027.0
         ]
       ],
-      "offerId": "174dce679d2beb6fe53d47e22ebd1a41",
+      "offerId": "d6e89981bacbd3e4719892e9454d87d7",
       "operations": {},
-      "orderId": "a1da4a526f6111616fd78c9a9e5c2e0f",
+      "orderId": "6fc1b1b91278954cd5904191c4f5e4bb",
       "outcome": "SETTLED_VERIFIED",
       "paymentZat": 1250,
       "problems": [],
@@ -352,7 +396,10 @@
           "seconds": 7.0
         },
         "coordinatorExecuteLive": null,
-        "durability": null,
+        "durability": {
+          "method": "order-receipt.json -> stabilization.json (110 empty blocks, checkpoint, rescans)",
+          "seconds": 0.0
+        },
         "endToEnd": {
           "method": "client submit -> order-receipt.json (includes queueing)",
           "seconds": 22.0
@@ -392,7 +439,7 @@
         },
         "walletFunding": {
           "method": "client poll: FUNDING first seen -> READY (fund tx, 110 durability blocks, scans)",
-          "seconds": 1.0
+          "seconds": 2.0
         },
         "walletReview": {
           "method": "preflight-authorization.json -> seller-review.log (both wallet reviews)",
@@ -411,14 +458,14 @@
         "purchaseSubmitted": 1760000005.0,
         "quoteReadySeen": 1760000020.0,
         "receiptSeen": 1760000027.0,
-        "walletCreated": 1760000002.0,
-        "walletFunding": 1760000004.0,
+        "walletCreated": 1760000001.0,
+        "walletFunding": 1760000003.0,
         "walletReady": 1760000005.0,
         "walletRequested": 1760000001.0
       },
-      "txid": "dde9bd8ba8cae7d5294447a5007cbbbfd77b9d18a2c4900e9a2b86af46c5df69",
+      "txid": "b0bb96bfa457612de70929fd12eb7a00575f133c48f5db53e71f59b00dc53de9",
       "verifyTx": {
-        "blockHash": "39049f86d81e4f567093dab855798a7a5a08758b0a1626547d776ce497a1d6a0",
+        "blockHash": "0eb6dd3bee81fe23970a924e39f16b882167b86e036aaa1fd140ac97651075ef",
         "chainActive": true,
         "found": true,
         "genesisHash": "029f11d80ef9765602235e1bc9727e3eb6ba20839319f761fee920d63401e327",
@@ -427,6 +474,7 @@
       }
     }
   ],
+  "waitDurability": true,
   "workload": {
     "concurrency": 2,
     "level": 2,

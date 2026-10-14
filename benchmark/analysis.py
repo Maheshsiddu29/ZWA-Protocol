@@ -15,7 +15,7 @@ exact tool runtime from a polled, queue-inclusive upper bound.
 from __future__ import annotations
 
 from .engine import PRE_CONFIRM, SETTLED, VERDICT_KEYS
-from .safety import REGTEST_GENESIS
+from .safety import LEVELS, REGTEST_GENESIS
 
 RELEASED = ("CANCELLED", "EXPIRED", "REJECTED", "EXECUTION_FAILED")  # reservation returned
 DEMO_MODE = "CUSTODIAL_DEMO_POLICY"
@@ -303,4 +303,89 @@ def summarize_resources(samples: list[dict]) -> dict:
         item["peakRssBytes"] = max(item["peakRssBytes"], proc["peakRssBytes"])
         item["maxCpuSeconds"] = max(item["maxCpuSeconds"], proc["cpuSeconds"])
     out["processes"] = dict(sorted(peaks.items()))
+    return out
+
+
+# ---------------------------------------------------------------- acceptance
+
+MAX_SAMPLE_ERROR_FRACTION = 0.01
+COVERAGE_TOLERANCE_S = 5.0
+
+
+def monitoring_validity(samples: list[dict], phases: dict, interval: float = 1.0) -> dict:
+    """Whether resource sampling covered the run densely enough to support a PASS.
+
+    Valid means: at least two good samples; sampling failures at most 1% of all samples; no gap between good
+    samples longer than max(5 s, 5 intervals); and the good samples cover the run from the idle-before phase to
+    the final probe (within 5 s).
+    """
+    good = [s for s in samples if "host" in s and "error" not in s]
+    errors = len(samples) - len(good)
+    problems = []
+    if len(good) < 2:
+        problems.append(f"only {len(good)} valid sample(s)")
+    if samples and errors > MAX_SAMPLE_ERROR_FRACTION * len(samples):
+        problems.append(f"{errors} of {len(samples)} samples failed")
+    times = sorted(s["t"] for s in good)
+    gap = max((b - a for a, b in zip(times, times[1:])), default=None)
+    gap_limit = max(5.0, 5 * interval)
+    if gap is not None and gap > gap_limit:
+        problems.append(f"sampling gap of {gap:.1f} s exceeds {gap_limit:.1f} s")
+    start, end = phases.get("idleBefore"), phases.get("finalProbe")
+    if times and start is not None and times[0] > start + COVERAGE_TOLERANCE_S:
+        problems.append("sampling started after the run began")
+    if times and end is not None and times[-1] < end - COVERAGE_TOLERANCE_S:
+        problems.append("sampling ended before the final probe")
+    if start is None or end is None:
+        problems.append("run phases are incomplete")
+    return {"valid": not problems, "validSamples": len(good), "sampleErrors": errors,
+            "maxGapSeconds": round(gap, 3) if gap is not None else None, "intervalSeconds": interval,
+            "coverage": [times[0], times[-1]] if times else None, "problems": problems}
+
+
+def acceptance_problems(summary: dict, *, include_stops: bool = True) -> list[str]:
+    """Every reason a level run is not a PASS. Computed from the summary alone, so a saved Level 2 summary is
+    re-checked independently of the result it records. Missing evidence is a problem, never a default."""
+    out: list[str] = []
+    level = summary.get("level")
+    if type(level) is not int or level not in LEVELS:
+        return [f"unknown level {level!r}"]
+    if include_stops and summary.get("stopReasons"):
+        out.append("stop conditions were recorded: " + ", ".join(r.get("code", "?") for r in summary["stopReasons"]))
+    if summary.get("consistencyProblems"):
+        out.append(f"{len(summary['consistencyProblems'])} consistency problem(s)")
+    if summary.get("finalProbePresent") is not True:
+        out.append("final probe evidence is missing")
+    monitoring = summary.get("monitoring") or {}
+    if monitoring.get("valid") is not True:
+        out.append("monitoring is not valid: " + "; ".join(monitoring.get("problems") or ["no monitoring record"]))
+    durability_required = summary.get("waitDurability") is not False  # absent means required
+    transactions = summary.get("transactions") or []
+    expected = LEVELS[level]
+    if len(transactions) != expected:
+        out.append(f"expected {expected} purchase(s), found {len(transactions)}")
+    for t in transactions:
+        label = t.get("label", "?")
+        if t.get("outcome") != "SETTLED_VERIFIED":
+            out.append(f"{label}: outcome {t.get('outcome')}")
+        if t.get("problems"):
+            out.append(f"{label}: recorded problems " + ", ".join(p.get("code", "?") for p in t["problems"]))
+        if not t.get("orderId"):
+            out.append(f"{label}: no order ID")
+        if t.get("finalState") != SETTLED:
+            out.append(f"{label}: final state {t.get('finalState')}")
+        if not (t.get("txid") and t.get("blockHash") and type(t.get("height")) is int):
+            out.append(f"{label}: no transaction, block hash or height")
+        if t.get("finalEvidence") is not True:
+            out.append(f"{label}: no final order evidence from the probe")
+        elif (t.get("reconciliation") or {}).get("class") != "SETTLED":
+            out.append(f"{label}: reconciliation {(t.get('reconciliation') or {}).get('class')}")
+        verify = t.get("verifyTx") or {}
+        if not (verify.get("included") is True and verify.get("height") == t.get("height")
+                and verify.get("blockHash") == t.get("blockHash") and verify.get("genesisHash") == REGTEST_GENESIS):
+            out.append(f"{label}: transaction inclusion not verified on regtest")
+        if (t.get("finalCheck") or {}).get("ok") is not True:
+            out.append(f"{label}: final receipt check did not pass")
+        if durability_required and not (t.get("durabilityObserved") is True and t.get("durability")):
+            out.append(f"{label}: durability not observed")
     return out

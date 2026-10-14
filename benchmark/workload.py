@@ -40,7 +40,7 @@ OUTCOMES = ("NOT_STARTED", "ABANDONED_BEFORE_PURCHASE", "WALLET_FAILED", "WALLET
             "DUPLICATE_MISMATCH", "FAILED_BEFORE_QUOTE", "QUOTE_TIMEOUT", "QUOTE_MISMATCH",
             "CANCELLED_BEFORE_SIGNING", "UNCONFIRMED_NEEDS_RECONCILE", "CONFIRM_REFUSED", "FAILED_AFTER_CONFIRM",
             "UNCERTAIN", "SETTLED_VERIFIED", "SETTLED_WITH_PROBLEMS", "IN_PROGRESS_AT_DRAIN_END", "PORTAL_REFUSED",
-            "HARNESS_ERROR")
+            "HARNESS_ERROR", "SETTLED_NOT_DURABLE", "PURCHASE_AMBIGUOUS")
 RESULTS = ("PASS", "STOPPED", "PARTIAL")
 
 
@@ -165,6 +165,9 @@ class Purchase:
     problems: list = field(default_factory=list)
     view: dict | None = None
     verify: dict | None = None
+    durability_required: bool = True
+    durability_observed: bool = False
+    final_check: dict | None = None
 
     def public(self) -> dict:
         receipt = (self.view or {}).get("receipt") or {}
@@ -175,7 +178,8 @@ class Purchase:
                 "durability": receipt.get("durability"), "outcome": self.outcome,
                 "finalState": (self.view or {}).get("state"), "timeline": self.timeline,
                 "observedStates": self.states, "problems": self.problems,
-                "verifyTx": self.verify}
+                "verifyTx": self.verify, "durabilityRequired": self.durability_required,
+                "durabilityObserved": self.durability_observed, "finalCheck": self.final_check}
 
 
 class Worker:
@@ -199,6 +203,7 @@ class Worker:
         self.client = redactor.register(secrets.token_hex(32))
         self.drain_until: float | None = None
         self.refusals = 0
+        self.p.durability_required = wait_durability
 
     # ------------------------------------------------------------ helpers
 
@@ -214,15 +219,17 @@ class Worker:
         return self.relay.portal(action, actor=self.p.account, role="buyer", session=self.session, payload=payload)
 
     def poll_call(self, action: str, payload: dict | None = None) -> dict | None:
-        """A read; transient failures return None, repeated refusals stop the run."""
+        """A read; transient transport failures return None. Any refusal is recorded and stops the run (the
+        portal refuses only definite errors); observation continues until repeated refusals end it."""
         try:
             data = self.call(action, payload)
             self.refusals = 0
             return data
         except PortalRefused as exc:
             self.refusals += 1
+            if self.refusals == 1:
+                self.fail("PORTAL_REFUSED", f"{action}: {exc}")
             if self.refusals >= PORTAL_REFUSAL_LIMIT:
-                self.controller.trigger("PORTAL_REFUSED", f"{self.p.label}: {exc}", purchase=self.p.label)
                 raise
             return None
         except EngineError:
@@ -262,11 +269,18 @@ class Worker:
         try:
             if self.start_wallet() and self.place() and self.quote() and self.confirm():
                 self.settle()
-        except PortalRefused:
-            self.p.outcome = self.p.outcome if self.p.outcome != "NOT_STARTED" else "PORTAL_REFUSED"
+        except PortalRefused as exc:
+            if not any(item["code"] == "PORTAL_REFUSED" for item in self.p.problems):
+                self.fail("PORTAL_REFUSED", str(exc))
+            if self.p.outcome == "NOT_STARTED":
+                self.p.outcome = "PORTAL_REFUSED"
         except Exception as exc:  # noqa: BLE001 - recorded, and the run stops
             self.fail("HARNESS_ERROR", f"{type(exc).__name__}: {exc}")
             self.p.outcome = "HARNESS_ERROR"
+        finally:
+            # A purchase that did not settle and verify always stops the level; nothing ends silently.
+            if self.p.outcome != "SETTLED_VERIFIED" and not self.controller.stopped:
+                self.fail("ORDER_FAILED", f"purchase ended {self.p.outcome}")
 
     def start_wallet(self) -> bool:
         if not self.controller.may_submit():
@@ -435,17 +449,64 @@ class Worker:
         deadline = self.clock() + self.t.drain_timeout_s
         while self.clock() < deadline:
             view = self.poll_call("order", {"orderId": self.p.order_id})
-            if view and (view.get("receipt") or {}).get("durability"):
+            if view and view.get("settlementDropped"):
                 self.p.view = view
-                self.mark("durableSeen")
+                self.fail("DURABILITY_LOST", "the settlement block left the chain before durability")
+                self.p.outcome = "SETTLED_NOT_DURABLE"
                 return
-            if view and view.get("state") != SETTLED or (view and view.get("settlementDropped")):
+            if view and view.get("state") != SETTLED:
                 self.p.view = view
-                self.fail("RECEIPT_INCONSISTENT", "receipt disappeared or settlement dropped before durability")
+                self.fail("RECEIPT_INCONSISTENT", f"receipt disappeared before durability (state {view.get('state')})")
                 self.p.outcome = "SETTLED_WITH_PROBLEMS"
                 return
+            if view and (view.get("receipt") or {}).get("durability"):
+                self.p.view = view
+                self.p.durability_observed = True
+                self.mark("durableSeen")
+                return
             self.timing.sleep(self.poll)
-        self.p.problems.append({"code": "DURABILITY_NOT_OBSERVED", "detail": "no durability within drain window"})
+        self.fail("DURABILITY_NOT_OBSERVED", f"no durability within {self.t.drain_timeout_s}s of the receipt")
+        self.p.outcome = "SETTLED_NOT_DURABLE"
+
+    def final_check(self) -> None:
+        """Read the settled order once more at the end of the run (read-only). Its receipt must still be live,
+        unchanged, and durable when durability is required; a durability seen earlier must not have been lost."""
+        view = None
+        for _ in range(5):
+            try:
+                view = self.call("order", {"orderId": self.p.order_id})
+                break
+            except PortalRefused as exc:
+                self.fail("PORTAL_REFUSED", f"final order lookup: {exc}")
+                break
+            except EngineError:
+                self.timing.sleep(self.poll)
+        now = round(self.clock(), 3)
+        if view is None:
+            self.fail("RECEIPT_MISSING", "the final order view is unavailable")
+            self.p.final_check = {"ok": False, "at": now, "reason": "unavailable"}
+            self.p.outcome = "SETTLED_WITH_PROBLEMS"
+            return
+        self.p.view = view
+        receipt = view.get("receipt") or {}
+        problems = []
+        if view.get("state") != SETTLED or not receipt:
+            problems.append(("RECEIPT_MISSING", f"the receipt is no longer available (state {view.get('state')})"))
+        elif receipt.get("txid") != self.p.txid:
+            problems.append(("RECEIPT_INCONSISTENT", "the receipt's transaction changed"))
+        if view.get("settlementDropped"):
+            problems.append(("DURABILITY_LOST", "the settlement block is no longer in the chain"))
+        elif self.wait_durability and not receipt.get("durability"):
+            problems.append(("DURABILITY_LOST" if self.p.durability_observed else "DURABILITY_NOT_OBSERVED",
+                             "durability is not present at the final check"))
+        for code, detail in problems:
+            self.fail(code, detail)
+        if problems:
+            durability_only = all(code.startswith("DURABILITY") for code, _ in problems)
+            self.p.outcome = "SETTLED_NOT_DURABLE" if durability_only else "SETTLED_WITH_PROBLEMS"
+        self.p.final_check = {"ok": not problems, "at": now, "state": view.get("state"),
+                              "durability": receipt.get("durability"),
+                              "settlementDropped": bool(view.get("settlementDropped"))}
 
 
 # ---------------------------------------------------------------- level
@@ -480,6 +541,7 @@ class LevelRun:
         self.timing = timing or Timing()
         self.clock = self.timing.now
         self.purchases: list[Purchase] = []
+        self.workers: list[Worker] = []
         self.before: dict | None = None
         self.after: dict | None = None
         self.phases: dict[str, float] = {}
@@ -519,6 +581,10 @@ class LevelRun:
             self.phase("idleAfter")
             if not self.controller.stopped:
                 self.timing.wait(self.controller, self.plan.idle_after_s)
+            self.phase("finalCheck")
+            for worker in self.workers:  # read-only; settled receipts must still hold
+                if worker.p.outcome == "SETTLED_VERIFIED":
+                    worker.final_check()
             self.phase("finalProbe")
             order_ids = [p.order_id for p in self.purchases if p.order_id]
             try:
@@ -536,6 +602,7 @@ class LevelRun:
         workers = [Worker(p, relay=self.relay, controller=self.controller, thresholds=self.t, events=self.events,
                           redactor=self.redactor, queue_position=i, wait_durability=self.plan.wait_durability,
                           poll=self.plan.poll_s, timing=self.timing) for i, p in enumerate(self.purchases)]
+        self.workers = workers
         threads = [threading.Thread(target=w.run, daemon=True, name=f"purchase-{w.p.label}") for w in workers]
         self.phase("purchasesStarted")
         for thread in threads:  # submitted together: this is the concurrency under test
@@ -553,6 +620,11 @@ class LevelRun:
                 worker.p.outcome = "IN_PROGRESS_AT_DRAIN_END"
         self.phase("purchasesFinished")
 
+    def _probe_problem(self, p: Purchase, code: str, text: str) -> None:
+        if not any(item["code"] == code for item in p.problems):
+            p.problems.append({"code": code, "detail": text})
+            self.controller.trigger(code, f"{p.label}: {text}", purchase=p.label)
+
     def finish(self) -> dict:
         problems: list[str] = []
         after = self.after
@@ -562,7 +634,7 @@ class LevelRun:
             inventory = analysis.inventory_problems(after)
             settled_by_offer: dict[str, int] = {}
             for p in self.purchases:
-                if p.outcome in ("SETTLED_VERIFIED", "SETTLED_WITH_PROBLEMS") and p.offer_id:
+                if p.outcome in ("SETTLED_VERIFIED", "SETTLED_WITH_PROBLEMS", "SETTLED_NOT_DURABLE") and p.offer_id:
                     settled_by_offer[p.offer_id] = settled_by_offer.get(p.offer_id, 0) + p.quantity
             inventory += analysis.sold_delta_problems(self.before or {}, after, settled_by_offer)
             if inventory:
@@ -576,6 +648,11 @@ class LevelRun:
                         if not any(item["detail"] == text for item in p.problems):
                             p.problems.append({"code": code, "detail": text})
                             self.controller.trigger(code, f"{p.label}: {text}", purchase=p.label)
+                    artifacts = detail.get("artifactMtimeNs") or {}
+                    if "dropped.json" in artifacts:
+                        self._probe_problem(p, "DURABILITY_LOST", "the exchange recorded the settlement as dropped")
+                    elif p.durability_required and "stabilization.json" not in artifacts:
+                        self._probe_problem(p, "DURABILITY_NOT_OBSERVED", "no stabilization record for the order")
         samples = self.monitor.samples
         processes = analysis.processes_from_samples(samples)
         transactions = []
@@ -583,20 +660,26 @@ class LevelRun:
             detail = ((after or {}).get("orders") or {}).get(p.order_id) if p.order_id else None
             latency = analysis.stage_latencies(detail or {}, p.timeline, processes)
             state = (detail or {}).get("state") or (p.view or {}).get("state")
-            transactions.append({**p.public(), **latency,
+            transactions.append({**p.public(), **latency, "finalEvidence": detail is not None,
                                  "reconciliation": analysis.reconcile(detail, state) if p.order_id else
                                  analysis.reconcile(None, None)})
-        stopped = self.controller.stopped
+        summary = {"level": self.plan.level, "concurrency": LEVELS[self.plan.level],
+                   "phases": self.phases, "transactions": transactions, "consistencyProblems": problems,
+                   "waitDurability": self.plan.wait_durability, "finalProbePresent": after is not None,
+                   "monitoring": analysis.monitoring_validity(samples, self.phases,
+                                                              getattr(self.monitor, "interval", 1.0)),
+                   "resources": analysis.summarize_resources(samples), "relay": {
+                       "calls": getattr(self.relay, "calls", None), "restarts": getattr(self.relay, "restarts", None)}}
+        # Anything short of the acceptance rules is itself a stop condition, so no failure is silent.
+        unmet = analysis.acceptance_problems(summary, include_stops=False)
+        if unmet:
+            self.controller.trigger("ACCEPTANCE_FAILED", "; ".join(unmet)[:480])
+        summary["stopReason"], summary["stopReasons"] = self.controller.first, self.controller.reasons
+        acceptance = analysis.acceptance_problems(summary)
+        summary["acceptance"] = {"passed": not acceptance, "problems": acceptance,
+                                 "durabilityRequired": self.plan.wait_durability}
         partial = any(t["reconciliation"]["class"] in ("IN_PROGRESS", "UNCERTAIN", "UNCONFIRMED")
-                      for t in transactions)
-        if not stopped:
-            result = "PASS"
-        elif partial:
-            result = "PARTIAL"
-        else:
-            result = "STOPPED"
-        return {"result": result, "level": self.plan.level, "concurrency": LEVELS[self.plan.level],
-                "stopReason": self.controller.first, "stopReasons": self.controller.reasons,
-                "phases": self.phases, "transactions": transactions, "consistencyProblems": problems,
-                "resources": analysis.summarize_resources(samples), "relay": {
-                    "calls": getattr(self.relay, "calls", None), "restarts": getattr(self.relay, "restarts", None)}}
+                      or t["outcome"] in ("IN_PROGRESS_AT_DRAIN_END", "PURCHASE_AMBIGUOUS",
+                                          "UNCONFIRMED_NEEDS_RECONCILE") for t in transactions)
+        summary["result"] = "PASS" if not acceptance else ("PARTIAL" if partial else "STOPPED")
+        return summary

@@ -67,6 +67,9 @@ class FakeExchange:
         self.calls: list[str] = []
         self.stop_after_calls = faults.get("stop_after_calls")
         self.controller: StopController | None = None
+        self.buy_keys: list[str] = []  # every idempotency key the harness submitted, in order
+        self.refusals = dict(faults.get("refuse", {}))  # action -> how many times to refuse it
+        self.lost_buy_responses = faults.get("lose_buy_responses", 0)
 
     # ------------------------------------------------------------ portal
 
@@ -77,7 +80,19 @@ class FakeExchange:
                 self.controller.trigger("MEM_AVAILABLE_LOW", "injected memory pressure")
             if self.faults.get("relay_down") and action == "order" and len(self.calls) % 2:
                 raise EngineError("relay hiccup")
-            return self._portal(action, actor, role, session, payload or {})
+            if self.refusals.get(action, 0) > 0:
+                self.refusals[action] -= 1
+                raise PortalRefused(f"portal {action} refused: injected refusal")
+            if action == "orders" and self.faults.get("orders_down"):
+                raise EngineError("relay timeout")
+            if action == "buy":
+                self.buy_keys.append((payload or {}).get("idempotencyKey"))
+            result = self._portal(action, actor, role, session, payload or {})
+            if action == "buy" and (self.lost_buy_responses > 0 or self.faults.get("buy_transport_down")):
+                # The server accepted the purchase; the response never reached the harness.
+                self.lost_buy_responses -= 1
+                raise EngineError("portal relay did not answer in time")
+            return result
 
     def _wallet_for(self, actor, session):
         wallet = self.wallets.get(actor)
@@ -126,6 +141,8 @@ class FakeExchange:
                                 "payment": payload["quantity"] * PRICES[offer["instrument"]], "artifacts": {},
                                 "digest": secrets.token_hex(32), "polls": 0, "durable": False}
             return self.view(self.orders[oid])
+        if action == "orders":
+            return {"orders": [self.view(o) for o in self.orders.values() if o["buyer"] == actor]}
         if action == "order":
             order = self.orders[payload["orderId"]]
             assert order["buyer"] == actor
@@ -153,7 +170,9 @@ class FakeExchange:
     def advance(self, order):
         state = order["state"]
         if state == "RECEIPT_AVAILABLE":
-            order["durable"] = True
+            if not self.faults.get("never_durable") and not order["durable"]:
+                order["durable"] = True
+                order["artifacts"]["stabilization.json"] = int(self.clock.now() * 1e9)
             return
         if state in RELEASED or state in ("UNCERTAIN", "QUOTE_READY") or state == self.faults.get("stall_at"):
             return
@@ -183,6 +202,13 @@ class FakeExchange:
 
     def view(self, order):
         state = order["state"]
+        dropped = False
+        if order.get("durable") and self.faults.get("durability_lost_after_seen"):
+            # Durable once; afterwards the settlement block is gone (e.g. a node restart before the anchor).
+            order["durable_views"] = order.get("durable_views", 0) + 1
+            if order["durable_views"] > 1:
+                order["durable"], dropped = False, True
+                order["artifacts"]["dropped.json"] = int(self.clock.now() * 1e9)
         receipt = None
         if state == "RECEIPT_AVAILABLE" and not self.faults.get("missing_receipt"):
             receipt = {"txid": order["txid"], "height": order["height"], "blockHash": order["blockHash"],
@@ -196,7 +222,8 @@ class FakeExchange:
                 "proofVerified": True, "proof": {k: verdict for k in analysis.VERDICT_KEYS},
                 "buyerApprovalMode": "CUSTODIAL_DEMO_POLICY", "sellerApprovalMode": "CUSTODIAL_DEMO_POLICY",
                 "effects": {"assetUnits": order["quantity"], "nativeZat": -order["payment"]} if reconciled else None,
-                "receipt": receipt, "failure": order.get("failure"), "settlementDropped": False}
+                "receipt": receipt, "failure": order.get("failure"),
+                "settlementDropped": dropped or "dropped.json" in order["artifacts"]}
 
     # ------------------------------------------------------------ probe
 
@@ -208,6 +235,8 @@ class FakeExchange:
                        "state": "OFFER_CREATED"} for oid, o in self.offers.items()]
             orders = {}
             for oid in order_ids:
+                if self.faults.get("probe_drops_order"):
+                    continue  # the final evidence for this order is missing
                 order = self.orders[oid]
                 evidence = {}
                 if order.get("txid") and order["state"] in ("INCLUDED", "RECONCILED", "RECEIPT_AVAILABLE", "UNCERTAIN"):
@@ -235,21 +264,33 @@ class FakeExchange:
 
 
 class FakeMonitor:
-    def __init__(self, clock):
+    """Synthetic 1 s samples covering start() to stop() on the test clock (or none, to test monitoring loss)."""
+
+    def __init__(self, clock, produce: bool = True, errors: int = 0):
         self.clock = clock
-        self.samples = []
+        self.produce = produce
+        self.errors = errors
+        self.samples: list[dict] = []
         self.started = self.stopped = False
+        self.t0 = None
 
     def start(self):
         self.started = True
-        t = self.clock.now()
-        self.samples = [{"t": t + i, "index": i, "host": {"memTotal": 8 * GIB, "memAvailable": 5 * GIB, "swapUsed": 0,
-                                                          "cpuPercent": 20.0, "loadAvg": [0.5, 0.4, 0.3],
-                                                          "oomKillCount": 0, "disk": {}},
-                         "containers": []} for i in range(3)]
+        self.t0 = self.clock.now()
 
     def stop(self):
         self.stopped = True
+        if not self.produce or self.t0 is None:
+            return
+        end, t, i = self.clock.now(), self.t0, 0
+        while t <= end + 1 and i < 20000:
+            self.samples.append({"t": t, "index": i, "host": {"memTotal": 8 * GIB, "memAvailable": 5 * GIB,
+                                                              "swapUsed": 0, "cpuPercent": 20.0,
+                                                              "loadAvg": [0.5, 0.4, 0.3], "oomKillCount": 0,
+                                                              "disk": {}}, "containers": []})
+            t, i = t + 1.0, i + 1
+        for k in range(self.errors):
+            self.samples.append({"t": end, "index": i + k, "error": "injected sampling failure"})
 
 
 class Harness:
@@ -260,7 +301,8 @@ class Harness:
         self.exchange.controller = self.controller
         self.redactor = ev.Redactor()
         self.events = ev.JsonLines(tmp / "events.jsonl", self.redactor)
-        self.monitor = FakeMonitor(self.clock)
+        self.monitor = FakeMonitor(self.clock, produce=not faults.get("no_samples"),
+                                   errors=faults.get("sample_errors", 0))
         plan = LevelPlan(level=level, idle_before_s=1, idle_after_s=1, baseline_s=5, poll_s=1.0,
                          wait_durability=faults.get("wait_durability", True))
         self.run = LevelRun(plan, thresholds=Thresholds(), relay=self.exchange, probe=self.exchange.probe,

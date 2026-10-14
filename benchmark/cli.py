@@ -497,9 +497,14 @@ class Bench:
         if ev.sha256_file(summary_path) != digest:
             raise Refused("--level2-summary-sha256 does not match the reviewed summary")
         summary = json.loads(summary_path.read_text())
-        if summary.get("level") != 2 or summary.get("result") != "PASS" or \
-                (summary.get("run") or {}).get("project") != self.project:
-            raise Refused("level 3 is permitted only after a passing Level 2 run of this project")
+        # The recorded result is not trusted on its own: acceptance is re-derived from the summary's evidence.
+        problems = analysis.acceptance_problems(summary) if isinstance(summary, dict) else ["not a summary"]
+        if (not isinstance(summary, dict) or summary.get("schema") != "zwa-bench-summary/1"
+                or summary.get("fixture") is not False or summary.get("level") != 2
+                or summary.get("result") != "PASS" or (summary.get("acceptance") or {}).get("passed") is not True
+                or (summary.get("run") or {}).get("project") != self.project or problems):
+            raise Refused("level 3 is permitted only after a passing Level 2 run of this project"
+                          + (": " + "; ".join(problems[:6]) if problems else ""))
 
     def container_sampler(self, service: str, state: dict) -> metrics.ContainerSampler:
         pid = state["pid"]
