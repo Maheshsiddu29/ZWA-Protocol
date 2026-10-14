@@ -33,6 +33,7 @@ SETTLED = "c02b4e6da7e5deee80eeafa56d2334d5bc31a2f074f06f88ffa1966110da99c6"
 AMD64 = chain.PINNED_ZEBRA_IMAGES["linux/amd64"]
 ARM64 = chain.PINNED_ZEBRA_IMAGES["linux/arm64"]
 AMD64_ENTRYPOINT = ["/usr/local/bin/zebrad", "-c", "/config/regtest-config.toml"]
+PARAMS_DIR = "/srv/zwa/params/ZcashParams"  # the AWS host's parameter directory
 CONTAINER = "e" * 64
 
 
@@ -81,6 +82,14 @@ def rendering(deploy: Path, zebra_tag: str) -> dict:
             "demo-signer": dict(engine, command=["python3", "-m", "exchange.demo_signer", "serve"]),
             "web": dict(hardened, image="zwa-web:local", user="10001:10001", read_only=True,
                         networks={"internal": None, "edge": None}, environment={"ZWA_DEMO_MODE": "1"}),
+            # Setup-profile services: present because the driver always renders with --profile setup.
+            "params": dict(engine, profiles=["setup"], restart="no", entrypoint=["sh", "-c"],
+                           command=[stage_module.PARAMS_COMMAND],
+                           volumes=[{"type": "bind", "source": PARAMS_DIR, "target": "/src", "read_only": True,
+                                     "bind": {}},
+                                    {"type": "volume", "source": "zwa-params",
+                                     "target": "/opt/zwa/params/ZcashParams", "volume": {}}]),
+            "bootstrap": dict(engine, profiles=["setup"], restart="no", command=stage_module.BOOTSTRAP_COMMAND),
             "caddy": dict(hardened, image="caddy:2.8.4-alpine", networks={"edge": None},
                           ports=[{"mode": "ingress", "host_ip": "127.0.0.1", "target": 80, "published": "80",
                                   "protocol": "tcp"},
@@ -317,7 +326,7 @@ class StageFixture(unittest.TestCase):
         self.zebra_tag = "qedit/zebra-zsa-swap-pinned:amd64"
         self.env_file = self.work / "live.env"
         self.env_file.write_text(f"ZWA_PORTAL_TOKEN={'t' * 40}\nZWA_ENGINE_TAG=live\n"
-                                 f"ZWA_ZEBRA_IMAGE={self.zebra_tag}\n")
+                                 f"ZWA_ZEBRA_IMAGE={self.zebra_tag}\nZWA_PARAMS_DIR={PARAMS_DIR}\n")
         self.recovery = self.work / "zwa-recovery"
         self.backup = self.recovery / "paired-20261012T1448Z"
         self.backup.mkdir(parents=True)
@@ -495,6 +504,7 @@ class StagingHappyPathTests(StageFixture):
             self.assertEqual(files, [str(self.deploy / "compose.yaml"), str(self.deploy / "compose.amd64.yaml")])
             self.assertEqual(call[call.index("-p") + 1], "zwa-prov-stage")
             self.assertEqual(call[call.index("--env-file") + 1], str(self.work / "evidence/stage.env"))
+            self.assertEqual(call[call.index("--profile") + 1], "setup")
 
     def test_isolation_read_only_backup_and_no_docker_socket(self):
         self.assertEqual(self.plan_and_stage()[0], 0)
@@ -827,6 +837,115 @@ class ComposeAllowlistTests(StageFixture):
             with self.subTest(message):
                 self.host.executable, self.host.executable_mode = executable, mode
                 self.refused(message, lambda r: None)
+
+
+class SetupProfileTests(StageFixture):
+    """params/bootstrap (setup profile): rendered, never started, held to exactly compose.yaml."""
+
+    refused = ComposeAllowlistTests.refused
+
+    def test_legitimate_params_service_is_accepted(self):
+        code, planned, err = self.main("plan", "--expect-params-dir", PARAMS_DIR)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(planned["paramsDir"], PARAMS_DIR)
+        rendered = json.loads((self.work / "evidence/rendered-config.json").read_text())
+        self.assertEqual(sorted(rendered["services"]), sorted(stage_module.KNOWN_SERVICES))
+
+    def test_wrong_params_source_is_refused(self):
+        params = lambda r: r["services"]["params"]["volumes"][0]  # noqa: E731
+        for source in ("/srv/zwa/params/Other", "/srv/zwa", "/opt/zwa/repo/deploy", "/"):
+            with self.subTest(source):
+                self.refused("service params has an unapproved mount", lambda r: params(r).update(source=source))
+
+    def test_writable_params_bind_is_refused(self):
+        self.refused("service params has an unapproved mount",
+                     lambda r: r["services"]["params"]["volumes"][0].pop("read_only"))
+
+    def test_extra_binds_are_refused(self):
+        cases = [
+            ("service params has an unapproved mount", lambda r: r["services"]["params"]["volumes"].append(
+                {"type": "bind", "source": "/etc", "target": "/etc-host", "read_only": True, "bind": {}})),
+            ("params mounts are not exactly", lambda r: r["services"]["params"]["volumes"].append(
+                {"type": "volume", "source": "zebra-state", "target": "/state", "volume": {}})),
+            # The parameter bind is allowed on params only, never on another service.
+            ("service bootstrap has an unapproved mount", lambda r: r["services"]["bootstrap"]["volumes"].append(
+                {"type": "bind", "source": PARAMS_DIR, "target": "/src", "read_only": True, "bind": {}})),
+            ("service portal has an unapproved mount", lambda r: r["services"]["portal"]["volumes"].append(
+                {"type": "bind", "source": PARAMS_DIR, "target": "/src", "read_only": True, "bind": {}})),
+            ("repeats a mount", lambda r: r["services"]["params"]["volumes"].append(
+                dict(r["services"]["params"]["volumes"][0]))),
+        ]
+        for message, change in cases:
+            with self.subTest(message):
+                self.refused(message, change)
+
+    def test_unexpected_setup_service_overrides_are_refused(self):
+        params = lambda r: r["services"]["params"]  # noqa: E731
+        bootstrap = lambda r: r["services"]["bootstrap"]  # noqa: E731
+        cases = [
+            ("must stay a one-shot in the setup profile", lambda r: params(r).pop("profiles")),
+            ("must stay a one-shot in the setup profile", lambda r: bootstrap(r).update(restart="unless-stopped")),
+            ("privileged", lambda r: params(r).update(privileged=True)),
+            ("network_mode", lambda r: bootstrap(r).update(network_mode="host")),
+            ("unprivileged read-only engine", lambda r: params(r).update(user="0:0")),
+            ("must join only the internal network", lambda r: params(r)["networks"].update(edge=None)),
+            ("command or environment is not the reviewed one", lambda r: params(r).update(
+                command=["cp -r /src /opt/zwa/params/ZcashParams/"])),
+            ("command or environment is not the reviewed one", lambda r: bootstrap(r).update(
+                command=["python3", "-m", "exchange.demo_bootstrap", "--root", "/var/lib/zwa/zwa4e-phase4e-b"])),
+            ("command or environment is not the reviewed one", lambda r: params(r)["environment"].update(X="1")),
+            ("bootstrap mounts are not exactly", lambda r: bootstrap(r)["volumes"].append(
+                {"type": "volume", "source": "zebra-state", "target": "/data", "volume": {}})),
+            ("image is not zwa-engine:provenance-test", lambda r: bootstrap(r).update(image="zwa-engine:live")),
+            ("unreviewed settings", lambda r: params(r).update(stdin_open=True)),
+            ("drop all capabilities", lambda r: bootstrap(r).update(cap_drop=[])),
+            ("missing ['bootstrap', 'params']", lambda r: [r["services"].pop(n) for n in ("params", "bootstrap")]),
+        ]
+        for message, change in cases:
+            with self.subTest(message):
+                self.refused(message, change)
+
+    def test_params_dir_is_validated_from_the_env_file(self):
+        base = self.env_file.read_text().replace(f"ZWA_PARAMS_DIR={PARAMS_DIR}\n", "")
+        cases = [("", "exactly once"),
+                 (f"ZWA_PARAMS_DIR={PARAMS_DIR}\nZWA_PARAMS_DIR=/srv/other/ZcashParams\n", "exactly once"),
+                 ("ZWA_PARAMS_DIR=srv/zwa/params\n", "not a safe"),
+                 ("ZWA_PARAMS_DIR=/srv/zwa/../../etc\n", "not a safe"),
+                 ("ZWA_PARAMS_DIR=/\n", "not a safe"),
+                 ("ZWA_PARAMS_DIR=/srv\n", "not a safe"),
+                 ("ZWA_PARAMS_DIR=/var/lib/docker/volumes/x\n", "not a safe"),
+                 ("ZWA_PARAMS_DIR=/etc/zwa/params\n", "not a safe"),
+                 ("ZWA_PARAMS_DIR=/srv/zwa/params $(id)\n", "not a safe")]
+        for line, message in cases:
+            with self.subTest(line):
+                self.env_file.write_text(base + line)
+                self.refused(message, lambda r: None)
+        self.env_file.write_text(base + f'export ZWA_PARAMS_DIR="{PARAMS_DIR}"\n')
+        code, planned, err = self.main("plan")
+        self.assertEqual((code, planned["paramsDir"]), (0, PARAMS_DIR), err)
+        shutil.rmtree(self.work / "evidence")
+        code, _, err = self.main("plan", "--expect-params-dir", "/srv/zwa/params/Other")
+        self.assertEqual(code, 2)
+        self.assertIn("differs from --expect-params-dir", err)
+
+    def test_compose_settings_in_the_live_env_cannot_steer_staging(self):
+        self.env_file.write_text(self.env_file.read_text() + "COMPOSE_PROFILES=other\nexport COMPOSE_FILE=/tmp/x.yml\n"
+                                 "COMPOSE_PROJECT_NAME=zwa-demo\n")
+        code, _, err = self.main("plan")
+        self.assertEqual(code, 0, err)
+        stage_env = (self.work / "evidence/stage.env").read_text()
+        self.assertNotIn("COMPOSE_", stage_env)
+        self.assertIn(f"ZWA_PARAMS_DIR={PARAMS_DIR}", stage_env)
+
+    def test_setup_constants_are_exactly_compose_yaml(self):
+        compose = (REPOSITORY / "deploy/compose.yaml").read_text()
+        block = compose.split("      - >-\n", 1)[1].split("\n\n", 1)[0]
+        folded = " ".join(line.strip() for line in block.splitlines())  # YAML folded scalar
+        self.assertEqual(folded, stage_module.PARAMS_COMMAND)
+        flow = compose.split("  bootstrap:", 1)[1].split("command: ", 1)[1].split("]", 1)[0] + "]"
+        self.assertEqual(json.loads(" ".join(flow.split())), stage_module.BOOTSTRAP_COMMAND)
+        self.assertIn('- ${ZWA_PARAMS_DIR:?set to the host directory holding the checksummed ZcashParams}:/src:ro',
+                      compose)
 
 
 class StageGateTests(StageFixture):

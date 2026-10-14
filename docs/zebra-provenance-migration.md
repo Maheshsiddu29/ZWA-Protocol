@@ -315,7 +315,8 @@ STAGE_ARGS=(--backup-dir "$BACKUP" --engine-tag "$STAGE_TAG" --env-file "$INPUTS
   --evidence-dir "$EVIDENCE"
   --expect-genesis 029f11d80ef9765602235e1bc9727e3eb6ba20839319f761fee920d63401e327
   --expect-anchor-height 335
-  --expect-settled-tx c02b4e6da7e5deee80eeafa56d2334d5bc31a2f074f06f88ffa1966110da99c6:325)
+  --expect-settled-tx c02b4e6da7e5deee80eeafa56d2334d5bc31a2f074f06f88ffa1966110da99c6:325
+  --expect-params-dir /srv/zwa/params/ZcashParams)
 python3 -I deploy/scripts/provenance-stage.py plan "${SUDO_FLAG[@]}" "${STAGE_ARGS[@]}"
 ```
 
@@ -330,10 +331,11 @@ out, removed again with `rm -v`. It checks:
   - a streamed SHA-256 of every regular file.
 - **Archived identity:** the expected unmigrated external identity.
 - **Proving parameters:** match their checksums.
-- **Rendered Compose configuration** (an exact allowlist):
+- **Rendered Compose configuration** (an exact allowlist). It is always rendered with `--profile setup`, so all eight services, including the never-started setup services, are checked. `COMPOSE_*` lines in the live `.env` are dropped from `stage.env`:
   - **`zebra`:** only its reviewed keys; exactly `zebra-state:/data` plus the read-only pinned config bind; only the project's `internal: true` network; `cap_drop: ALL` and `no-new-privileges`; `<zebrad> -c /config/regtest-config.toml`, which is not the ARM64 entrypoint; the pinned native AMD64 image.
   - **`portal`:** exactly `zwa-root` read-write and `zwa-params` read-only; user 10001 with a read-only root; the reviewed environment; the staging engine image.
-  - **Every service:** no privileged mode, host namespaces, `cap_add` or devices; no undeclared networks or volumes; no external, driver or `driver_opts` volumes; only read-only binds inside the reviewed `deploy/`; ports only on caddy 80/443; no Docker socket; no `zwa-demo_*` names.
+  - **`params` / `bootstrap`** (setup profile): the reviewed commands, the staging engine image, user 10001, internal network only, exact mounts. `params` alone may bind the validated `ZWA_PARAMS_DIR` (pinned with `--expect-params-dir`) read-only at `/src`.
+  - **Every service:** no privileged mode, host namespaces, `cap_add` or devices; no undeclared networks or volumes; no external, driver or `driver_opts` volumes; otherwise only read-only binds inside the reviewed `deploy/`; ports only on caddy 80/443; no Docker socket; no `zwa-demo_*` names.
 - **Zebra executable:** the entrypoint inside the pinned image is an executable **x86-64 ELF** (sha256 recorded).
 - **Engine code:** matches the checkout.
 - **Isolation:** no staging volume or container exists yet.

@@ -37,7 +37,7 @@ import importlib.util
 import io
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import posixpath
 import re
 import stat
@@ -145,6 +145,20 @@ ZEBRA_KEYS = frozenset({"image", "entrypoint", "command", "volumes", "networks",
 PORTAL_KEYS = frozenset({"image", "entrypoint", "command", "volumes", "networks", "cap_drop", "security_opt",
                          "restart", "mem_limit", "cpus", "logging", "environment", "healthcheck", "depends_on",
                          "read_only", "tmpfs", "user", "platform"})
+SETUP_KEYS = frozenset({"image", "entrypoint", "command", "volumes", "networks", "cap_drop", "security_opt",
+                        "restart", "mem_limit", "cpus", "logging", "environment", "depends_on", "read_only", "tmpfs",
+                        "user", "profiles", "platform"})
+# The setup-profile services exactly as deploy/compose.yaml defines them (pinned by a test against that file).
+PARAMS_COMMAND = ("cp /src/sapling-spend.params /src/sapling-output.params /opt/zwa/params/ZcashParams/ && "
+                  "cd /opt/zwa/params/ZcashParams && printf '%s  %s\\n%s  %s\\n' "
+                  "8e48ffd23abb3a5fd9c5589204f32d9c31285a04b78096ba40a79b75677efc13 sapling-spend.params "
+                  "2f0ebbcbb9bb0bcffe95a397e7eba89c29eb4dde6191c339db88570e3f3fb0e4 sapling-output.params "
+                  "| sha256sum -c -")
+BOOTSTRAP_COMMAND = ["python3", "-m", "exchange.demo_bootstrap", "--root", "/var/lib/zwa/zwa4e-demo",
+                     "--rpc-host", "zebra", "--rpc-port", "18232", "--params-data-home", "/opt/zwa/params",
+                     "--tx-tool-dir", "/opt/zwa/tx-tool", "--node-bin", "/usr/local/bin/node"]
+PARAMS_DIR = re.compile(r"/[A-Za-z0-9._/-]{1,250}\Z")
+SYSTEM_PATHS = ("/var/lib/docker", "/var/run", "/run", "/proc", "/sys", "/dev", "/etc", "/boot", "/root")
 HOST_ACCESS_KEYS = ("privileged", "network_mode", "pid", "ipc", "uts", "userns_mode", "cgroup", "cgroup_parent",
                     "cap_add", "devices", "device_cgroup_rules", "volumes_from", "sysctls", "extra_hosts", "runtime",
                     "isolation", "gpus", "storage_opt")
@@ -234,6 +248,7 @@ class Config:
     settled_txid: str
     settled_height: int
     docker_sudo: bool = False
+    expect_params_dir: str | None = None
     deploy_dir: Path = field(default_factory=lambda: Path(__file__).resolve().parents[1])
     repo_root: Path = REPOSITORY
 
@@ -420,10 +435,36 @@ def check_archived_identity(raw: bytes, cfg: Config) -> dict:
 
 
 def stage_env_bytes(cfg: Config) -> bytes:
-    """The operator's .env with only ZWA_ENGINE_TAG pointed at the reviewed staging engine image."""
+    """The operator's .env with ZWA_ENGINE_TAG pointed at the reviewed staging engine image.
+
+    COMPOSE_* lines (COMPOSE_PROFILES, COMPOSE_FILE, COMPOSE_PROJECT_NAME, ...) are dropped: the driver
+    alone chooses the profiles, files and project, so the rendering does not depend on the live .env.
+    """
     lines = [line for line in cfg.env_file.read_text().splitlines()
-             if not re.match(r"\s*(export\s+)?ZWA_ENGINE_TAG\s*=", line)]
+             if not re.match(r"\s*(export\s+)?(ZWA_ENGINE_TAG|COMPOSE_[A-Z0-9_]*)\s*=", line)]
     return ("\n".join(lines + [f"ZWA_ENGINE_TAG={cfg.engine_tag}"]) + "\n").encode()
+
+
+def params_dir(cfg: Config) -> str:
+    """The host parameter directory params binds read-only at /src, validated from the env file."""
+    values = []
+    for line in cfg.env_file.read_text().splitlines():
+        match = re.match(r"\s*(?:export\s+)?ZWA_PARAMS_DIR\s*=\s*(.*?)\s*\Z", line)
+        if match:
+            value = match.group(1)
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+                value = value[1:-1]
+            values.append(value)
+    if len(values) != 1:
+        raise StageError("--env-file must define ZWA_PARAMS_DIR exactly once")
+    value = values[0]
+    if (not PARAMS_DIR.fullmatch(value) or posixpath.normpath(value) != value or value == "/"
+            or len(PurePosixPath(value).parts) < 3
+            or any(value == p or value.startswith(p + "/") for p in SYSTEM_PATHS)):
+        raise StageError(f"ZWA_PARAMS_DIR is not a safe absolute parameter directory: {value!r}")
+    if cfg.expect_params_dir is not None and value != cfg.expect_params_dir:
+        raise StageError(f"ZWA_PARAMS_DIR {value!r} differs from --expect-params-dir {cfg.expect_params_dir!r}")
+    return value
 
 
 def _write_private(path: Path, data: bytes) -> None:
@@ -462,8 +503,11 @@ class Stage:
 
     def compose(self, *args: str, input: bytes | None = None) -> Result:
         cfg = self.cfg
+        # --profile setup: the rendering always includes the setup services, so all eight are checked.
+        # It starts nothing by itself: `up` and `run` name their single service.
         return self.docker("compose", "--project-directory", str(cfg.deploy_dir), "--env-file", str(cfg.stage_env),
-                           "-p", cfg.project, "-f", str(cfg.base), "-f", str(cfg.override), *args, input=input)
+                           "--profile", "setup", "-p", cfg.project, "-f", str(cfg.base), "-f", str(cfg.override),
+                           *args, input=input)
 
     def engine(self, *args: str, input: bytes | None = None) -> Result:
         return self.compose("run", "--rm", "--no-deps", "-T", "--entrypoint", "python3", "portal", *args,
@@ -509,12 +553,19 @@ class Stage:
             raise StageError(f"unexpected top-level Compose keys: {sorted(unknown)}")
         self._check_volumes_and_networks(rendered)
         services = rendered.get("services") or {}
-        if not {"zebra", "portal"} <= set(services) <= KNOWN_SERVICES:
-            raise StageError(f"unexpected Compose services: {sorted(set(services) - KNOWN_SERVICES)}")
+        if set(services) != KNOWN_SERVICES:
+            raise StageError(f"unexpected Compose services: extra {sorted(set(services) - KNOWN_SERVICES)}, "
+                             f"missing {sorted(KNOWN_SERVICES - set(services))}")
         for name, service in services.items():
             self._check_any_service(name, service, rendered)
         zebra = self._check_zebra(services["zebra"])
         self._check_portal(services["portal"])
+        self._check_setup("params", services["params"], entrypoint=["sh", "-c"], command=[PARAMS_COMMAND],
+                          mounts={("bind", self.params_dir, "/src", True),
+                                  ("volume", "zwa-params", "/opt/zwa/params/ZcashParams", False)})
+        self._check_setup("bootstrap", services["bootstrap"], entrypoint=None, command=BOOTSTRAP_COMMAND,
+                          mounts={("volume", "zwa-root", "/var/lib/zwa", False),
+                                  ("volume", "zwa-params", "/opt/zwa/params/ZcashParams", True)})
         return zebra
 
     def _check_volumes_and_networks(self, rendered: dict) -> None:
@@ -560,6 +611,8 @@ class Stage:
             if kind == "bind" and read_only and isinstance(source, str) and (
                     Path(source).resolve() == deploy or deploy in Path(source).resolve().parents):
                 continue
+            if name == "params" and mount == ("bind", self.params_dir, "/src", True):
+                continue  # the one external bind: the validated host parameter directory, read-only
             raise StageError(f"service {name} has an unapproved mount {mount}")
 
     def _check_zebra(self, zebra: dict) -> dict:
@@ -598,6 +651,28 @@ class Stage:
         if (platform, image_id) != (PLATFORM, PINNED_ZEBRA_IMAGES[PLATFORM]):
             raise StageError("the rendered zebra image is not the pinned AMD64 image")
         return {"zebraImage": image, "zebraImageId": image_id, "zebraEntrypoint": entrypoint}
+
+    def _check_setup(self, name: str, service: dict, *, entrypoint, command, mounts: set) -> None:
+        """Setup-profile services: never started by staging, but held to exactly what compose.yaml defines."""
+        extra = set(service) - SETUP_KEYS
+        if extra:
+            raise StageError(f"the rendered {name} service has unreviewed settings: {sorted(extra)}")
+        if service.get("profiles") != ["setup"] or service.get("restart") != "no":
+            raise StageError(f"the rendered {name} service must stay a one-shot in the setup profile")
+        if service.get("image") != self.cfg.engine_image or service.get("platform", PLATFORM) != PLATFORM:
+            raise StageError(f"the rendered {name} image is not {self.cfg.engine_image}")
+        _hardened(name, service)
+        if (service.get("user") != "10001:10001" or service.get("read_only") is not True
+                or service.get("tmpfs") != ["/tmp:size=64m,mode=1777"]):
+            raise StageError(f"the rendered {name} is not the unprivileged read-only engine container")
+        if service.get("networks") not in ({"internal": None}, {"internal": {}}):
+            raise StageError(f"the rendered {name} service must join only the internal network")
+        if (service.get("entrypoint") != entrypoint or service.get("command") != command
+                or (service.get("environment") or {}) != {"ZWA_PRIVATE_EXCHANGE_ROOT": ENGINE_ROOT}
+                or set(service.get("depends_on") or {}) - {"zebra"}):
+            raise StageError(f"the rendered {name} command or environment is not the reviewed one")
+        if _mounts(name, service) != mounts:
+            raise StageError(f"the rendered {name} mounts are not exactly {sorted(mounts)}")
 
     def _check_portal(self, portal: dict) -> None:
         cfg = self.cfg
@@ -711,6 +786,7 @@ class Stage:
             identity = found if volume == "zwa-root" else identity
         if identity is None:
             raise StageError("no chain identity found in the zwa-root archive")
+        self.params_dir = params_dir(cfg)
         host = self.tool.host_platform()
         if host != PLATFORM:
             raise StageError(f"this Docker host is {host}, not {PLATFORM}")
@@ -724,7 +800,8 @@ class Stage:
                    "archivedIdentitySha256": hashlib.sha256(identity).hexdigest(),
                    "renderedSha256": hashlib.sha256(raw).hexdigest(),
                    "overrideSha256": _sha256(cfg.override), "stageEnvSha256": _sha256(cfg.stage_env),
-                   "zebra": zebra, "engine": engine, "dockerPrefix": self.docker.prefix}
+                   "zebra": zebra, "engine": engine, "paramsDir": self.params_dir,
+                   "dockerPrefix": self.docker.prefix}
         self.manifests, self.archived_identity, self.rendered_raw = manifests, identity, raw
         return summary
 
@@ -861,7 +938,8 @@ class Stage:
         if not HEX64.fullmatch(rendered_sha256) or rendered_sha256 != summary["renderedSha256"] \
                 or planned.get("renderedSha256") != rendered_sha256:
             raise StageError("--rendered-sha256 does not match the reviewed plan and the current rendering")
-        for key in ("checksums", "archivedIdentitySha256", "overrideSha256", "stageEnvSha256", "zebra", "engine"):
+        for key in ("checksums", "archivedIdentitySha256", "overrideSha256", "stageEnvSha256", "zebra", "engine",
+                    "paramsDir"):
             if planned.get(key) != summary[key]:
                 raise StageError(f"{key} changed since plan")
         log = self.log
@@ -983,6 +1061,7 @@ def parse(argv: list[str] | None) -> tuple[str, Config, str | None]:
     parser.add_argument("--expect-genesis", required=True)
     parser.add_argument("--expect-anchor-height", type=int, required=True)
     parser.add_argument("--expect-settled-tx", required=True, metavar="TXID:HEIGHT")
+    parser.add_argument("--expect-params-dir", help="pin ZWA_PARAMS_DIR, e.g. /srv/zwa/params/ZcashParams")
     parser.add_argument("--docker-sudo", action="store_true", help="run Docker as `sudo -n docker`")
     parser.add_argument("--rendered-sha256", help="stage: the renderedSha256 printed by plan")
     args = parser.parse_args(argv)
@@ -995,7 +1074,7 @@ def parse(argv: list[str] | None) -> tuple[str, Config, str | None]:
                  source_project=args.source_project, project=args.project, engine_tag=args.engine_tag,
                  env_file=args.env_file, evidence=args.evidence_dir, expect_genesis=args.expect_genesis,
                  expect_anchor_height=args.expect_anchor_height, settled_txid=txid, settled_height=int(height),
-                 docker_sudo=args.docker_sudo)
+                 docker_sudo=args.docker_sudo, expect_params_dir=args.expect_params_dir)
     return args.action, cfg, args.rendered_sha256
 
 
