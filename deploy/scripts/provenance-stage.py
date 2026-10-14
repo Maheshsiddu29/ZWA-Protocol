@@ -114,6 +114,21 @@ for base, dirs, files in os.walk(root):
         out[os.path.relpath(path, root)] = entry
 print(json.dumps(out, sort_keys=True))
 """
+RESTORED_DIGESTS = """
+import hashlib, json, os, stat, sys
+root = sys.argv[1]
+out = {}
+for base, dirs, files in os.walk(root):
+    for name in dirs + files:
+        path = os.path.join(base, name)
+        if stat.S_ISREG(os.lstat(path).st_mode):
+            digest = hashlib.sha256()
+            with open(path, "rb") as handle:
+                for chunk in iter(lambda: handle.read(1 << 20), b""):
+                    digest.update(chunk)
+            out[os.path.relpath(path, root)] = digest.hexdigest()
+print(json.dumps(out, sort_keys=True))
+"""
 STATUS_CHECK = """
 import json, sys
 from pathlib import Path
@@ -325,8 +340,19 @@ def _member_bytes(archive: tarfile.TarFile, member: tarfile.TarInfo) -> bytes:
     return handle.read()
 
 
+def _member_sha256(archive: tarfile.TarFile, member: tarfile.TarInfo) -> str:
+    """Streamed in 1 MiB chunks: bounded memory for the ~49 MB proving parameters and the chain state."""
+    handle = archive.extractfile(member)
+    if handle is None:
+        raise StageError(f"archive member could not be read: {member.name!r}")
+    digest = hashlib.sha256()
+    for chunk in iter(lambda: handle.read(1 << 20), b""):
+        digest.update(chunk)
+    return digest.hexdigest()
+
+
 def inspect_archive(path: Path, volume: str, cfg: Config) -> tuple[dict, bytes | None]:
-    """Manifest {path: [type, uid, gid, mode, size]} of a safe .tar.gz, read without extracting."""
+    """Manifest {path: [type, uid, gid, mode, size, sha256]} of a safe .tar.gz, read without extracting."""
     manifest: dict[str, list] = {}
     symlinks: set[str] = set()
     identity = None
@@ -350,19 +376,22 @@ def inspect_archive(path: Path, volume: str, cfg: Config) -> tuple[dict, bytes |
                     kind = "l"
                     symlinks.add(name)
                 elif member.islnk():
-                    if _member_path(member.linkname) not in manifest:
-                        raise StageError(f"hard link to an unknown member: {name!r}")
+                    linked = manifest.get(_member_path(member.linkname))
+                    if linked is None or linked[0] != "f":
+                        raise StageError(f"hard link to an unknown or non-regular member: {name!r}")
                     kind = "h"
                 else:
                     raise StageError(f"device, FIFO or other special archive member: {name!r}")
+                digest = (_member_sha256(archive, member) if kind == "f"
+                          else manifest[_member_path(member.linkname)][5] if kind == "h" else None)
                 manifest[name] = [kind, member.uid, member.gid, member.mode & 0o7777,
-                                  member.size if kind == "f" else None]
+                                  member.size if kind == "f" else None, digest]
                 if volume == "zwa-root" and name == IDENTITY_MEMBER and kind == "f":
                     if member.size > 8192:
                         raise StageError("archived chain identity is too large")
                     identity = _member_bytes(archive, member)
                 if volume == "zwa-params" and name in PARAMS_SHA256 and kind == "f":
-                    params[name] = hashlib.sha256(_member_bytes(archive, member)).hexdigest()
+                    params[name] = digest
     except (tarfile.TarError, EOFError, OSError) as exc:
         raise StageError(f"{path.name} is not a readable .tar.gz archive: {exc}") from exc
     if volume == "zwa-root":
@@ -715,6 +744,10 @@ class Stage:
                                      "-v", f"{name}:/dst:ro", cfg.engine_image, "/dst", "-printf",
                                      "%P\\t%y\\t%U\\t%G\\t%m\\t%s\\n", what=f"list {name}")
             self.compare_restored(volume, listing)
+            digests = self.docker.ok("run", "--rm", "--network", "none", "--user", "0:0", "--entrypoint", "python3",
+                                     "-v", f"{name}:/dst:ro", cfg.engine_image, "-c", RESTORED_DIGESTS, "/dst",
+                                     what=f"hash {name}")
+            self.compare_contents(volume, digests)
 
     def compare_restored(self, volume: str, listing: str) -> None:
         restored = {}
@@ -725,7 +758,7 @@ class Stage:
             path, kind, uid, gid, mode, size = parts
             restored[path] = [kind, int(uid), int(gid), int(mode, 8), int(size)]
         manifest = self.manifests[volume]
-        for path, (kind, uid, gid, mode, size) in manifest.items():
+        for path, (kind, uid, gid, mode, size, _digest) in manifest.items():
             got = restored.get(path)
             want_kind = "f" if kind == "h" else kind
             if (got is None or got[0] != want_kind or got[1:3] != [uid, gid]
@@ -735,6 +768,19 @@ class Stage:
         extra = set(restored) - set(manifest) - {""}
         if extra:
             raise StageError(f"restored {volume} has entries not in the archive: {sorted(extra)[:5]}")
+
+    def compare_contents(self, volume: str, output: str) -> None:
+        try:
+            restored = json.loads(output)
+        except ValueError as exc:
+            raise StageError(f"no content digests from restored {volume}") from exc
+        expected = {path: entry[5] for path, entry in self.manifests[volume].items() if entry[0] in ("f", "h")}
+        if not isinstance(restored, dict) or set(restored) != set(expected):
+            differ = sorted(set(restored if isinstance(restored, dict) else {}) ^ set(expected))[:5]
+            raise StageError(f"restored {volume} regular files differ from the archive: {differ}")
+        for path, digest in expected.items():
+            if restored[path] != digest:
+                raise StageError(f"restored {volume} content differs from the archive at {path}")
 
     def host_attest(self, name: str, zebra: dict) -> dict:
         try:

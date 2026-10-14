@@ -13,6 +13,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import secrets
 import shutil
@@ -115,6 +116,8 @@ def add(archive: tarfile.TarFile, name: str, *, kind: str = "f", data: bytes = b
         info.type, info.linkname = tarfile.SYMTYPE, link
     elif kind == "c":
         info.type = tarfile.CHRTYPE
+    elif kind == "h":
+        info.type, info.linkname = tarfile.LNKTYPE, link
     else:
         info.size = len(data)
     archive.addfile(info, io.BytesIO(data) if kind == "f" else None)
@@ -132,6 +135,8 @@ class FakeHost:
         self.zebra_image = {"Id": AMD64, "Os": "linux", "Architecture": "amd64"}
         self.container_entrypoint = AMD64_ENTRYPOINT
         self.listing_hook = None
+        self.corrupt_hook = None
+        self.volume_root = test.work / f"volumes-{secrets.token_hex(4)}"
         self.record_hook = None
         self.executable: bytes | None = elf()
         self.executable_mode = 0o755
@@ -205,6 +210,7 @@ class FakeHost:
             archive = Path(backup) / args[args.index("-xzf") + 1].removeprefix("/backup/")
             manifest, _ = stage_module.inspect_archive(archive, short, self.t.cfg)
             self.volumes[volume] = manifest
+            self.unpack(archive, self.volume_root / volume)
             if short == "zwa-root":
                 with tarfile.open(archive, "r:gz") as tar:
                     for member in tar:
@@ -219,9 +225,20 @@ class FakeHost:
                             target.write_bytes(tar.extractfile(member).read())
                             target.chmod(member.mode)
             return 0, "", ""
+        if entry == "python3":  # restored-content digests, run for real over the unpacked volume
+            code = args[args.index("-c") + 1]
+            directory = self.volume_root / volume
+            if self.corrupt_hook:
+                self.corrupt_hook(short, directory)
+            out = io.StringIO()
+            with patch.object(sys, "argv", ["-c", str(directory)]), redirect_stdout(out):
+                exec(compile(code, "<digest snippet>", "exec"), {"__name__": "__main__"})
+            return 0, out.getvalue(), ""
         if entry == "find":
             lines = []
-            for path, (kind, uid, gid, mode, size) in self.volumes[volume].items():
+            sizes = {digest: size for kind, _u, _g, _m, size, digest in self.volumes[volume].values() if kind == "f"}
+            for path, (kind, uid, gid, mode, size, digest) in self.volumes[volume].items():
+                size = sizes[digest] if kind == "h" else size  # find reports a hard link's file size
                 kind = "f" if kind == "h" else kind
                 lines.append([path, kind, uid, gid, 0o777 if kind == "l" else mode,
                               size if kind == "f" else 4096])
@@ -230,6 +247,24 @@ class FakeHost:
             return 0, "".join("\t".join([p, k, str(u), str(g), format(m, "o"), str(s)]) + "\n"
                               for p, k, u, g, m, s in lines), ""
         raise AssertionError(args)
+
+    @staticmethod
+    def unpack(archive: Path, directory: Path) -> None:
+        """What `tar -xzf` leaves in the volume (contents and modes; ownership is simulated by `find`)."""
+        directory.mkdir(parents=True)
+        with tarfile.open(archive, "r:gz") as tar:
+            for member in tar:
+                name = stage_module._member_path(member.name)
+                target = directory / name if name else directory
+                if member.isdir():
+                    target.mkdir(parents=True, exist_ok=True)
+                elif member.isreg():
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(tar.extractfile(member).read())
+                elif member.issym():
+                    target.symlink_to(member.linkname)
+                elif member.islnk():
+                    os.link(directory / stage_module._member_path(member.linkname), target)
 
     def compose(self, args, stdin):
         t = self.t
@@ -319,6 +354,7 @@ class StageFixture(unittest.TestCase):
             add(tar, "./state", kind="d", mode=0o755, uid=0)
             add(tar, "./state/v26", kind="d", mode=0o755, uid=0)
             add(tar, "./state/v26/000001.sst", data=b"rocksdb", uid=0, mode=0o644)
+            add(tar, "./state/v26/000001.hardlink", kind="h", link="./state/v26/000001.sst", uid=0, mode=0o644)
         with tarfile.open(self.backup / "zwa-demo_zwa-params.tar.gz", "w:gz") as tar:
             add(tar, ".", kind="d", mode=0o755, uid=0)
             for name, data in self.params.items():
@@ -829,6 +865,36 @@ class StageGateTests(StageFixture):
                 self.assertEqual(code, 2)
                 self.assertRegex(err, "differs from the archive|entries not in the archive")
                 self.assertFalse(any("up" in c for c in self.host.calls))
+
+    def test_same_size_content_corruption_of_a_restored_file_halts_staging(self):
+        def flip_one_byte(volume: str, directory: Path) -> None:
+            if volume == "zwa-params":
+                target = directory / "sapling-spend.params"
+                data = bytearray(target.read_bytes())
+                data[0] ^= 0xFF  # same size, owner and mode; different content
+                target.write_bytes(bytes(data))
+        self.host.corrupt_hook = flip_one_byte
+        code, _, err = self.plan_and_stage()
+        self.assertEqual(code, 2, "a corrupted restored file was accepted")
+        self.assertIn("restored zwa-params content differs from the archive at sapling-spend.params", err)
+        self.assertFalse(any("up" in c for c in self.host.calls))  # zebra never started
+
+    def test_corruption_of_a_hard_linked_or_state_file_is_caught(self):
+        def corrupt_state(volume: str, directory: Path) -> None:
+            if volume == "zebra-state":
+                linked = directory / "state/v26/000001.hardlink"
+                self.assertEqual(linked.stat().st_ino, (directory / "state/v26/000001.sst").stat().st_ino)
+                linked.write_bytes(b"rocksdX")  # same length as b"rocksdb", through the hard link
+        self.host.corrupt_hook = corrupt_state
+        code, _, err = self.plan_and_stage()
+        self.assertEqual(code, 2)
+        self.assertIn("restored zebra-state content differs from the archive at state/v26/000001.", err)
+
+    def test_hard_link_to_a_missing_or_non_regular_member_is_refused(self):
+        self.build_archives(extra=lambda tar: add(tar, "./zwa4e-demo/link", kind="h", link="./zwa4e-demo/missing"))
+        code, _, err = self.main("plan")
+        self.assertEqual(code, 2)
+        self.assertIn("hard link to an unknown or non-regular member", err)
 
     def test_running_zebra_must_use_the_reviewed_amd64_entrypoint(self):
         self.host.container_entrypoint = stage_module.ARM64_ENTRYPOINT
