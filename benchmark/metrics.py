@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 import os
 from pathlib import Path
 import time
+from typing import Any, Callable, NamedTuple
 
 PAGE = 4096
 
@@ -99,14 +100,21 @@ def parse_cgroup_path(text: str) -> str:
     raise MetricsError("process is not in a cgroup v2 hierarchy (cgroup v1 is not supported)")
 
 
-def parse_proc_stat(text: str) -> dict[str, int | str]:
-    """comm, state, utime, stime, starttime (clock ticks) from /proc/<pid>/stat."""
+class ProcStat(NamedTuple):
+    comm: str
+    state: str
+    utime: int  # clock ticks
+    stime: int
+    starttime: int  # clock ticks since boot
+
+
+def parse_proc_stat(text: str) -> ProcStat:
+    """comm, state, utime, stime and starttime from /proc/<pid>/stat (comm may contain spaces and parentheses)."""
     left, right = text.find("("), text.rfind(")")
     if left < 0 or right < left:
         raise MetricsError("unexpected /proc/<pid>/stat")
     fields = text[right + 2:].split()
-    return {"comm": text[left + 1:right][:16], "state": fields[0], "utime": int(fields[11]),
-            "stime": int(fields[12]), "starttime": int(fields[19])}
+    return ProcStat(text[left + 1:right][:16], fields[0], int(fields[11]), int(fields[12]), int(fields[19]))
 
 
 # ---------------------------------------------------------------- classification
@@ -168,7 +176,7 @@ TX_TOOL_ACTIONS = frozenset({"init", "address", "balances", "review", "authorize
 class HostSampler:
     proc: Path = Path("/proc")
     disk_paths: tuple[Path, ...] = ()
-    statvfs: object = os.statvfs
+    statvfs: Callable[[str], os.statvfs_result] = os.statvfs
     _cpu: tuple[int, int] | None = None
 
     def sample(self) -> dict:
@@ -179,10 +187,11 @@ class HostSampler:
             cpu = round(100.0 * (busy - self._cpu[0]) / (total - self._cpu[1]), 2)
         self._cpu = (busy, total)
         vmstat = _kv(_read(self.proc / "vmstat"))
-        out = {"memTotal": mem["MemTotal"], "memAvailable": mem["MemAvailable"], "swapTotal": mem["SwapTotal"],
-               "swapUsed": mem["SwapUsed"], "cpuPercent": cpu, "loadAvg": parse_loadavg(_read(self.proc / "loadavg")),
-               "oomKillCount": vmstat.get("oom_kill"), "swapInPages": vmstat.get("pswpin"),
-               "swapOutPages": vmstat.get("pswpout"), "disk": {}}
+        out: dict[str, Any] = {
+            "memTotal": mem["MemTotal"], "memAvailable": mem["MemAvailable"], "swapTotal": mem["SwapTotal"],
+            "swapUsed": mem["SwapUsed"], "cpuPercent": cpu, "loadAvg": parse_loadavg(_read(self.proc / "loadavg")),
+            "oomKillCount": vmstat.get("oom_kill"), "swapInPages": vmstat.get("pswpin"),
+            "swapOutPages": vmstat.get("pswpout"), "disk": {}}
         try:
             out["memoryPressure"] = parse_pressure(_read(self.proc / "pressure" / "memory"))
         except OSError:
@@ -239,22 +248,24 @@ class ContainerSampler:
 
     def sample(self) -> dict:
         if not (self.cgroup_dir / "memory.current").exists():
-            return {"service": self.service, "present": False, "initPidAlive": (self.proc / str(self.init_pid)).exists()}
+            return {"service": self.service, "present": False,
+                    "initPidAlive": (self.proc / str(self.init_pid)).exists()}
         events = _kv(_read(self.cgroup_dir / "memory.events"))
         stat = _kv(_read(self.cgroup_dir / "memory.stat"))
         cpu = _kv(_read(self.cgroup_dir / "cpu.stat"))
-        out = {"service": self.service, "present": True,
-               "initPidAlive": (self.proc / str(self.init_pid)).exists(),
-               "memoryCurrent": _cg_int(self.cgroup_dir, "memory.current"),
-               "memoryPeak": _cg_int(self.cgroup_dir, "memory.peak"),
-               "memoryMax": _cg_int(self.cgroup_dir, "memory.max"),
-               "swapCurrent": _cg_int(self.cgroup_dir, "memory.swap.current"),
-               "memoryAnon": stat.get("anon"), "memoryFile": stat.get("file"),
-               "oomEvents": events.get("oom", 0), "oomKillEvents": events.get("oom_kill", 0),
-               "memoryMaxEvents": events.get("max", 0),
-               "cpuUsageUsec": cpu.get("usage_usec"), "cpuThrottledUsec": cpu.get("throttled_usec"),
-               "cpuNrThrottled": cpu.get("nr_throttled"),
-               "pidsCurrent": _cg_int(self.cgroup_dir, "pids.current"), "processes": []}
+        out: dict[str, Any] = {
+            "service": self.service, "present": True,
+            "initPidAlive": (self.proc / str(self.init_pid)).exists(),
+            "memoryCurrent": _cg_int(self.cgroup_dir, "memory.current"),
+            "memoryPeak": _cg_int(self.cgroup_dir, "memory.peak"),
+            "memoryMax": _cg_int(self.cgroup_dir, "memory.max"),
+            "swapCurrent": _cg_int(self.cgroup_dir, "memory.swap.current"),
+            "memoryAnon": stat.get("anon"), "memoryFile": stat.get("file"),
+            "oomEvents": events.get("oom", 0), "oomKillEvents": events.get("oom_kill", 0),
+            "memoryMaxEvents": events.get("max", 0),
+            "cpuUsageUsec": cpu.get("usage_usec"), "cpuThrottledUsec": cpu.get("throttled_usec"),
+            "cpuNrThrottled": cpu.get("nr_throttled"),
+            "pidsCurrent": _cg_int(self.cgroup_dir, "pids.current"), "processes": []}
         try:
             pressure = parse_pressure(_read(self.cgroup_dir / "memory.pressure"))
         except OSError:
@@ -271,10 +282,10 @@ class ContainerSampler:
             except (OSError, MetricsError, IndexError, ValueError):
                 continue  # the process exited between listing and reading
             out["processes"].append({
-                "pid": pid, "label": self._label(pid, stat_fields["starttime"]),
+                "pid": pid, "label": self._label(pid, stat_fields.starttime),
                 "rssBytes": status.get("VmRSS"), "peakRssBytes": status.get("VmHWM"),
-                "cpuSeconds": round((stat_fields["utime"] + stat_fields["stime"]) / self.clock_ticks, 2),
-                "startedAt": round(self.boot_time + stat_fields["starttime"] / self.clock_ticks, 2)})
+                "cpuSeconds": round((stat_fields.utime + stat_fields.stime) / self.clock_ticks, 2),
+                "startedAt": round(self.boot_time + stat_fields.starttime / self.clock_ticks, 2)})
         return out
 
 

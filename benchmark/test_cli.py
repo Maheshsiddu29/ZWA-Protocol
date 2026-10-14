@@ -76,7 +76,8 @@ class FakeDockerHost:
         if args[0] in ("ps",) or args[:2] == ["network", "ls"]:
             return Done(0, "")
         if args[:2] == ["volume", "inspect"]:
-            return Done(0, json.dumps([{"Name": args[2], "Labels": {"com.docker.compose.project": self.labelled.get(args[2])}}]))
+            labels = {"com.docker.compose.project": self.labelled.get(args[2])}
+            return Done(0, json.dumps([{"Name": args[2], "Labels": labels}]))
         if args[:2] == ["volume", "rm"]:
             self.volumes.remove(args[2])
             return Done(0, args[2])
@@ -122,7 +123,8 @@ class CliCase(unittest.TestCase):
         return ["--project", project, "--workdir", str(self.workdir)]
 
     def plan_args(self, project=PROJECT):
-        return ["plan", *self.common(project), "--engine-tag", "bench", "--params-dir", str(self.params), "--allow-dirty"]
+        return ["plan", *self.common(project), "--engine-tag", "bench", "--params-dir", str(self.params),
+                "--allow-dirty"]
 
     def docker(self, host: FakeDockerHost) -> Docker:
         return Docker(runner=host)
@@ -265,7 +267,8 @@ class Prepared(CliCase):
         summary = run_dir / "summary.json"
         for content, message in (({"level": 2, "result": "STOPPED", "run": {"project": PROJECT}}, "passing Level 2"),
                                  ({"level": 1, "result": "PASS", "run": {"project": PROJECT}}, "passing Level 2"),
-                                 ({"level": 2, "result": "PASS", "run": {"project": "zwa-bench-x"}}, "passing Level 2")):
+                                 ({"level": 2, "result": "PASS", "run": {"project": "zwa-bench-x"}},
+                                  "passing Level 2")):
             if summary.exists():
                 summary.unlink()
             summary.write_text(json.dumps(content))
@@ -301,7 +304,8 @@ class Prepared(CliCase):
         self.assertEqual(self.work.budget_used(), 0, "a refused run reserves nothing")
 
     def test_sample_interval_must_be_at_least_one_per_second(self):
-        code, _, err = run_cli(self.run_args(0, "--sample-interval", "2"), self.docker(FakeDockerHost(str(self.params))))
+        code, _, err = run_cli(self.run_args(0, "--sample-interval", "2"),
+                               self.docker(FakeDockerHost(str(self.params))))
         self.assertEqual(code, cli.EXIT_REFUSED)
         self.assertIn("one sample per second", err)
 

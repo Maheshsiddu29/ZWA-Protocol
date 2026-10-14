@@ -55,7 +55,7 @@ class Tree:
                  "memory.pressure": "some avg10=1.50 avg60=0.00 avg300=0.00 total=0\n"}
         for key, value in files.items():
             (directory / key).write_text(value)
-        self.process(init_pid, ["python3", "-m", "exchange.order_service", "serve", "--root", "/var/lib/zwa/zwa4e-demo"],
+        self.process(init_pid, ["python3", "-m", "exchange.order_service", "serve", "--root", "/var/lib/zwa/x"],
                      f"0::/system.slice/docker-{name}.scope\n", rss=60_000, hwm=80_000)
         self.process(init_pid + 1, ["/opt/zwa/tx-tool/target/release/zcash_tx_tool", "wallet-signer", "--role",
                                     "buyer", "--home", "/var/lib/zwa/zwa4e-demo/demo-wallets/x", "authorize-live",
@@ -87,7 +87,8 @@ class Parsers(unittest.TestCase):
         self.assertEqual(metrics.parse_loadavg("1.5 1.0 0.5 2/100 1\n"), [1.5, 1.0, 0.5])
 
     def test_cgroup_path(self):
-        self.assertEqual(metrics.parse_cgroup_path("0::/system.slice/docker-ab.scope\n"), "/system.slice/docker-ab.scope")
+        self.assertEqual(metrics.parse_cgroup_path(
+            "0::/system.slice/docker-ab.scope\n"), "/system.slice/docker-ab.scope")
         with self.assertRaisesRegex(MetricsError, "cgroup v1"):
             metrics.parse_cgroup_path("12:memory:/docker/ab\n")
         with self.assertRaises(MetricsError):
@@ -96,7 +97,7 @@ class Parsers(unittest.TestCase):
     def test_proc_stat_with_spaces_and_parentheses_in_comm(self):
         fields = ["R"] + ["0"] * 10 + ["7", "3"] + ["0"] * 6 + ["42"] + ["0"] * 5
         parsed = metrics.parse_proc_stat("9 (a (b) c) " + " ".join(fields))
-        self.assertEqual((parsed["comm"], parsed["utime"], parsed["stime"], parsed["starttime"]), ("a (b) c", 7, 3, 42))
+        self.assertEqual((parsed.comm, parsed.utime, parsed.stime, parsed.starttime), ("a (b) c", 7, 3, 42))
 
 
 class Classification(unittest.TestCase):
@@ -106,14 +107,17 @@ class Classification(unittest.TestCase):
                 "tx-tool:signer:authorize-live:seller",
             ("/opt/zwa/tx-tool/target/release/zcash_tx_tool", "purchase-coordinator", "--home", "/c", "execute-live",
              "--terms", "x"): "tx-tool:coordinator:execute-live",
-            ("zcash_tx_tool", "purchase-coordinator", "--home", "/c", "fund-address"): "tx-tool:coordinator:fund-address",
-            ("/usr/local/bin/node", "/app/checkout/authorization/native_zec_v2.js", "generate", "a", "b"): "groth16:generate",
+            ("zcash_tx_tool", "purchase-coordinator", "--home", "/c", "fund-address"):
+                "tx-tool:coordinator:fund-address",
+            ("/usr/local/bin/node", "/app/checkout/authorization/native_zec_v2.js", "generate", "a", "b"):
+                "groth16:generate",
             ("node", "/x/native_zec_v2.js", "verify"): "groth16:verify",
             ("target/release/zebrad", "-c", "/config/regtest-config.toml"): "zebrad",
             ("python3", "-m", "exchange.demo_signer", "serve"): "engine:demo-signer",
             ("python3", "-c", "import json", "zwa-bench-relay"): "bench:portal-relay",
             ("/usr/bin/python3", "-I", "/app/exchange/landlock_exec.py", "--ro", "/usr", "--", "/t/zcash_tx_tool",
-             "wallet-signer", "--role", "buyer", "--home", "/h", "balances"): "landlock-launch:tx-tool:signer:balances:buyer",
+             "wallet-signer", "--role", "buyer", "--home", "/h", "balances"):
+                "landlock-launch:tx-tool:signer:balances:buyer",
             ("bash",): "util:bash", (): "other", ("mystery",): "other",
         }
         for argv, label in cases.items():
@@ -251,7 +255,7 @@ class StopConditions(unittest.TestCase):
                 "state": {"status": "running", "restartCount": 0, "startedAt": "t0"}}
         self.watchdog.evaluate(sample(0, containers=[base]))
         self.watchdog.evaluate(sample(1, containers=[{**base, "present": False,
-                                                       "state": {"status": "exited", "exitCode": 137}}]))
+                                                      "state": {"status": "exited", "exitCode": 137}}]))
         self.assertIn("CONTAINER_NOT_RUNNING", self.codes())
         self.assertIn("exit 137", next(r["detail"] for r in self.controller.reasons
                                        if r["code"] == "CONTAINER_NOT_RUNNING"))

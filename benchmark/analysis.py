@@ -275,12 +275,11 @@ def summarize_resources(samples: list[dict]) -> dict:
     containers: dict[str, dict] = {}
     for sample in samples:
         for c in sample.get("containers") or []:
-            item = containers.setdefault(c["service"], {"memoryCurrentMaxBytes": 0, "memoryPeakBytes": None,
-                                                         "memoryMaxBytes": c.get("memoryMax"),
-                                                         "oomKillEvents": 0, "cpuUsageUsecStart": c.get("cpuUsageUsec"),
-                                                         "cpuUsageUsecEnd": c.get("cpuUsageUsec"),
-                                                         "throttledUsecEnd": c.get("cpuThrottledUsec"),
-                                                         "restartCountEnd": None, "statusEnd": None})
+            item = containers.setdefault(c["service"], {
+                "memoryCurrentMaxBytes": 0, "memoryPeakBytes": None, "memoryMaxBytes": c.get("memoryMax"),
+                "oomKillEvents": 0, "cpuUsageUsecStart": c.get("cpuUsageUsec"),
+                "cpuUsageUsecEnd": c.get("cpuUsageUsec"), "throttledUsecEnd": c.get("cpuThrottledUsec"),
+                "restartCountEnd": None, "statusEnd": None})
             if not c.get("present"):
                 continue
             item["memoryCurrentMaxBytes"] = max(item["memoryCurrentMaxBytes"], c.get("memoryCurrent") or 0)

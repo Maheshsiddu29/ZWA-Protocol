@@ -220,9 +220,9 @@ class Integration(DemoBase):
 
     def probe(self, order_ids=()):
         done = RUN([sys.executable, "-c", engine.PROBE, engine.PROBE_MARKER, *order_ids],
-                              capture_output=True, text=True, timeout=60, cwd="/",
-                              env={"PATH": "/usr/bin:/bin", "PYTHONPATH": str(REPOSITORY),
-                                   "ZWA_PRIVATE_EXCHANGE_ROOT": str(self.root)})
+                   capture_output=True, text=True, timeout=60, cwd="/",
+                   env={"PATH": "/usr/bin:/bin", "PYTHONPATH": str(REPOSITORY),
+                        "ZWA_PRIVATE_EXCHANGE_ROOT": str(self.root)})
         self.assertEqual(done.returncode, 0, done.stderr)
         return json.loads(done.stdout)
 

@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 import secrets
 import threading
 import time
+from typing import Callable, Protocol
 
 from . import analysis
 from .engine import SETTLED, TERMINAL_FAILURE, EngineError, PortalRefused
@@ -50,8 +51,8 @@ class Timing:
     `wait` returns early when a stop is triggered (used while nothing is
     confirmed); `sleep` always sleeps (used while draining confirmed work).
     """
-    now: object = time.time
-    sleep: object = time.sleep
+    now: Callable[[], float] = time.time
+    sleep: Callable[[float], None] = time.sleep
     interruptible: bool = True
 
     def wait(self, controller: StopController, seconds: float) -> bool:
@@ -62,6 +63,14 @@ class Timing:
 
 
 # ---------------------------------------------------------------- monitor
+
+class Monitor(Protocol):
+    samples: list[dict]
+
+    def start(self) -> None: ...
+
+    def stop(self) -> None: ...
+
 
 class ResourceMonitor:
     """Samples host, container and process resources at a fixed interval in its own thread.
@@ -109,7 +118,8 @@ class ResourceMonitor:
                       "containers": containers}
         except Exception as exc:  # noqa: BLE001 - any sampling failure is recorded and counted
             self.watchdog.sampler_failed(f"{type(exc).__name__}: {exc}")
-            self.sink.write({"t": round(self.clock(), 3), "index": index, "error": f"{type(exc).__name__}: {exc}"[:300]})
+            error = f"{type(exc).__name__}: {exc}"[:300]
+            self.sink.write({"t": round(self.clock(), 3), "index": index, "error": error})
             return None
         self.samples.append(sample)
         self.sink.write(sample)
@@ -222,7 +232,7 @@ class Worker:
         self.p.problems.append({"code": code, "detail": detail[:300]})
         self.controller.trigger(code, f"{self.p.label}: {detail}", purchase=self.p.label, orderId=self.p.order_id)
 
-    def note_state(self, state: str) -> None:
+    def note_state(self, state: str | None) -> None:
         if not self.p.states or self.p.states[-1][0] != state:
             self.p.states.append([state, round(self.clock(), 3)])
             self.events.write({"t": round(self.clock(), 3), "purchase": self.p.label, "event": "STATE",
@@ -272,7 +282,7 @@ class Worker:
             if state in WALLET_STATES:
                 self.mark({"CREATED": "walletCreated", "FUNDING": "walletFunding", "READY": "walletReady",
                            "REQUESTED": "walletQueued"}[state])
-                if state == "READY" and wallet.get("nativeZat"):
+                if state == "READY" and (wallet or {}).get("nativeZat"):
                     return True
             elif state is not None:
                 self.fail("ORDER_FAILED", f"demo wallet reached {state}")
@@ -356,7 +366,8 @@ class Worker:
             self.cancel_unconfirmed("stop condition before confirmation")
             return False
         try:
-            view = self.call("confirm", {"orderId": self.p.order_id, "quoteDigest": self.p.view["quote"]["digest"]})
+            digest = ((self.p.view or {}).get("quote") or {}).get("digest")
+            view = self.call("confirm", {"orderId": self.p.order_id, "quoteDigest": digest})
         except PortalRefused as exc:
             self.fail("ORDER_FAILED", f"confirmation refused: {exc}")
             self.p.outcome = "CONFIRM_REFUSED"
@@ -383,7 +394,8 @@ class Worker:
                     return
                 if view["state"] in TERMINAL_FAILURE:
                     self.mark("terminalSeen", state=view["state"])
-                    self.fail("ORDER_FAILED", f"order ended {view['state']}: {(view.get('failure') or {}).get('reason')}")
+                    reason = (view.get("failure") or {}).get("reason")
+                    self.fail("ORDER_FAILED", f"order ended {view['state']}: {reason}")
                     self.p.outcome = "FAILED_AFTER_CONFIRM" if view["state"] != "UNCERTAIN" else "UNCERTAIN"
                     return
             now = self.clock()
@@ -403,7 +415,8 @@ class Worker:
                 self.timing.wait(self.controller, self.poll)
 
     def verify_settlement(self) -> None:
-        receipt = self.p.view.get("receipt") or {}
+        view = self.p.view or {}
+        receipt = view.get("receipt") or {}
         self.p.txid = receipt.get("txid")
         verify = None
         if self.p.txid:
@@ -412,8 +425,8 @@ class Worker:
             except (PortalRefused, EngineError) as exc:
                 verify = {"error": str(exc)[:200]}
         self.p.verify = verify
-        problems = analysis.receipt_problems(self.p.view, None, verify, quantity=self.p.quantity,
-                                             payment=self.p.payment)
+        problems = analysis.receipt_problems(view, None, verify, quantity=self.p.quantity,
+                                             payment=self.p.payment or 0)
         for code, detail in problems:
             self.fail(code, detail)
         self.p.outcome = "SETTLED_VERIFIED" if not problems else "SETTLED_WITH_PROBLEMS"
@@ -452,7 +465,7 @@ class LevelPlan:
 
 
 class LevelRun:
-    def __init__(self, plan: LevelPlan, *, thresholds: Thresholds, relay, probe, monitor: ResourceMonitor,
+    def __init__(self, plan: LevelPlan, *, thresholds: Thresholds, relay, probe, monitor: Monitor,
                  controller: StopController, events: JsonLines, redactor: Redactor, timing: Timing | None = None,
                  before_submit=None):
         self.plan = plan

@@ -19,6 +19,7 @@ from __future__ import annotations
 import itertools
 import json
 import queue
+import subprocess
 import threading
 import time
 
@@ -52,7 +53,8 @@ for line in sys.stdin:
     try:
         request = json.loads(line)
         rid = request["id"]
-        if request["kind"] == "portal" and set(request["body"]) == {"action", "actor", "role", "sessionHash", "payload"}:
+        if request["kind"] == "portal" and set(request["body"]) == {"action", "actor", "role", "sessionHash",
+                                                                      "payload"}:
             status, body = call("POST", "/v1/portal", request["body"])
         elif request["kind"] == "readyz":
             status, body = call("GET", "/readyz")
@@ -98,7 +100,8 @@ db = sqlite3.connect("file:" + str(EXCHANGE / "exchange.sqlite") + "?mode=ro", u
 db.row_factory = sqlite3.Row
 q = lambda sql, args=(): [dict(row) for row in db.execute(sql, args)]
 wanted = set(sys.argv[2:])
-out = {"probe": 1, "approvalMode": config.get("approvalMode"), "integrity": db.execute("PRAGMA integrity_check").fetchone()[0]}
+out = {"probe": 1, "approvalMode": config.get("approvalMode"),
+       "integrity": db.execute("PRAGMA integrity_check").fetchone()[0]}
 identity = json.loads((ROOT / "chain-identity.json").read_text())
 out["identity"] = {key: identity.get(key) for key in ("genesisHash", "anchorHeight", "anchorHash")}
 try:
@@ -128,7 +131,8 @@ for row in orders:
         continue
     oid = row["id"]
     detail = dict(row)
-    detail["events"] = q("SELECT sequence,from_state,to_state,occurred_at FROM order_events WHERE order_id=? ORDER BY sequence", (oid,))
+    detail["events"] = q("SELECT sequence,from_state,to_state,occurred_at FROM order_events WHERE order_id=? "
+                         "ORDER BY sequence", (oid,))
     evidence = {}
     for item in q("SELECT kind,value_json FROM order_evidence WHERE order_id=? ORDER BY sequence", (oid,)):
         fields = EVIDENCE_FIELDS.get(item["kind"])
@@ -138,7 +142,8 @@ for row in orders:
     detail["evidence"] = evidence
     execution = q("SELECT started_at,finished_at,outcome,approval_mode FROM order_executions WHERE order_id=?", (oid,))
     detail["execution"] = execution[0] if execution else None
-    quote = q("SELECT price_zat_per_unit,payment_zat,target_height,valid_until,created_at FROM order_quotes WHERE order_id=?", (oid,))
+    quote = q("SELECT price_zat_per_unit,payment_zat,target_height,valid_until,created_at FROM order_quotes "
+              "WHERE order_id=?", (oid,))
     detail["quote"] = quote[0] if quote else None
     directory = EXCHANGE / "orders" / oid
     mtimes = {}
@@ -183,39 +188,48 @@ class PortalRefused(EngineError):
 class PortalRelay:
     """One relay process in the benchmark portal container, shared by all workers."""
 
-    def __init__(self, compose: Compose, *, timeout: float = 90.0, spawn=None):
+    def __init__(self, compose: Compose | None, *, timeout: float = 90.0, spawn=None):
         self.compose = compose
         self.timeout = timeout
-        self._spawn = spawn or (lambda: compose.spawn_exec("python3", "-c", RELAY, RELAY_MARKER))
+        if spawn is None:
+            if compose is None:
+                raise EngineError("the relay needs a Compose project or a spawn function")
+            project = compose
+            spawn = lambda: project.spawn_exec("python3", "-c", RELAY, RELAY_MARKER)  # noqa: E731
+        self._spawn = spawn
         self._lock = threading.Lock()
         self._ids = itertools.count(1)
-        self._process = None
+        self._process: subprocess.Popen | None = None
         self._lines: queue.Queue = queue.Queue()
         self.restarts = 0
         self.calls = 0
 
-    def _start(self) -> None:
-        self._process = self._spawn()
+    def _start(self) -> subprocess.Popen:
+        process = self._spawn()
+        self._process = process
         self._lines = queue.Queue()
-        stream = self._process.stdout
+        stream = process.stdout
 
         def pump():
             for raw in iter(stream.readline, b""):
                 self._lines.put(raw)
             self._lines.put(None)
         threading.Thread(target=pump, daemon=True, name="relay-reader").start()
+        return process
 
     def _request(self, message: dict) -> dict:
         with self._lock:
             for attempt in range(2):
-                if self._process is None or self._process.poll() is not None:
-                    if self._process is not None:
+                process = self._process
+                if process is None or process.poll() is not None:
+                    if process is not None:
                         self.restarts += 1
-                    self._start()
+                    process = self._start()
                 rid = next(self._ids)
                 try:
-                    self._process.stdin.write((json.dumps({**message, "id": rid}) + "\n").encode())
-                    self._process.stdin.flush()
+                    assert process.stdin is not None
+                    process.stdin.write((json.dumps({**message, "id": rid}) + "\n").encode())
+                    process.stdin.flush()
                 except (BrokenPipeError, OSError):
                     self._process = None
                     continue
@@ -253,7 +267,8 @@ class PortalRelay:
         with self._lock:
             if self._process is not None and self._process.poll() is None:
                 try:
-                    self._process.stdin.close()  # the relay exits at end of input
+                    if self._process.stdin is not None:
+                        self._process.stdin.close()  # the relay exits at end of input
                     self._process.wait(timeout=10)
                 except Exception:
                     pass  # a stuck relay is left to the container; never killed here

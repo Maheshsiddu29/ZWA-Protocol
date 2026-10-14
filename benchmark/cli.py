@@ -173,7 +173,8 @@ class Bench:
         numbers = tuple(int(n) for n in re.findall(r"\d+", compose_version)[:2])
         if numbers < MIN_COMPOSE:
             raise Refused(f"Docker Compose {compose_version} is too old; {MIN_COMPOSE[0]}.{MIN_COMPOSE[1]}+ needed")
-        arch = {"x86_64": "amd64", "aarch64": "arm64"}.get(server.get("Arch"), server.get("Arch"))
+        raw_arch = str(server.get("Arch"))
+        arch = {"x86_64": "amd64", "aarch64": "arm64"}.get(raw_arch, raw_arch)
         return {"server": server.get("Version"), "os": server.get("Os"), "platform": f"linux/{arch}",
                 "compose": compose_version}
 
@@ -359,7 +360,7 @@ class Bench:
                 if labels.get("com.docker.compose.project") != self.project:
                     raise Refused("inspected container belongs to another project")
                 state = item.get("State") or {}
-                out[labels.get("com.docker.compose.service")] = {
+                out[str(labels.get("com.docker.compose.service"))] = {
                     "id": item.get("Id"), "image": item.get("Image"), "status": state.get("Status"),
                     "pid": state.get("Pid"), "oomKilled": state.get("OOMKilled"), "exitCode": state.get("ExitCode"),
                     "startedAt": state.get("StartedAt"), "restartCount": item.get("RestartCount"),
@@ -416,9 +417,9 @@ class Bench:
                          idle_before_s=self.args.idle_before, idle_after_s=self.args.idle_after,
                          baseline_s=self.args.baseline_seconds)
         config = {"runId": run_id, "project": self.project, "level": level, "concurrency": wanted,
-                  "plan": plan.__dict__, "thresholds": thresholds.as_dict(), "sampleInterval": self.args.sample_interval,
-                  "startedAt": now_iso(), "budget": {"max": manifest["maxTransactions"],
-                                                     "usedBefore": self.workdir.budget_used()},
+                  "plan": plan.__dict__, "thresholds": thresholds.as_dict(),
+                  "sampleInterval": self.args.sample_interval, "startedAt": now_iso(),
+                  "budget": {"max": manifest["maxTransactions"], "usedBefore": self.workdir.budget_used()},
                   "zebraAttestation": attestation, "containers": states}
         ev.write_new(run_dir / "run.json", json.dumps(self.redactor(config), indent=2, sort_keys=True) + "\n")
         relay = engine.PortalRelay(self.compose)
@@ -665,7 +666,8 @@ def parser() -> argparse.ArgumentParser:
         p.add_argument("--zebra-image", default="qedit/zebra-zsa-swap-pinned:latest")
         p.add_argument("--params-dir", required=True, help="host directory holding the checksummed ZcashParams")
         p.add_argument("--allow-dirty", action="store_true", help="benchmark an uncommitted checkout (recorded)")
-        p.add_argument("--expect-engine-image-id", help="refuse unless the engine tag resolves to this verified image ID")
+        p.add_argument("--expect-engine-image-id",
+                       help="refuse unless the engine tag resolves to this verified image ID")
 
     for name in ("plan", "prepare"):
         p = sub.add_parser(name)

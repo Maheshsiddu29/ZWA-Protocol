@@ -57,7 +57,7 @@ class FakeExchange:
         self.faults = faults
         self.lock = threading.Lock()
         self.offers = {secrets.token_hex(16): {"instrument": i, "asset": secrets.token_hex(32), "capacity": 900,
-                                                "reserved": 0, "sold": 0} for i in INSTRUMENTS}
+                                               "reserved": 0, "sold": 0} for i in INSTRUMENTS}
         self.wallets: dict[str, dict] = {}
         self.orders: dict[str, dict] = {}
         self.settlements: dict[str, str] = {}
@@ -113,14 +113,15 @@ class FakeExchange:
                  "availableUnits": o["capacity"] - o["reserved"] - o["sold"], "inventoryVerifiedAtTip": True}
                 for oid, o in self.offers.items()]}
         if action == "buy":
-            prior = next((o for o in self.orders.values() if o["buyer"] == actor and o["key"] == payload["idempotencyKey"]),
+            key = payload["idempotencyKey"]
+            prior = next((o for o in self.orders.values() if o["buyer"] == actor and o["key"] == key),
                          None)
             if prior and not self.faults.get("duplicate_bug"):
                 return self.view(prior)
             offer = self.offers[payload["offerId"]]
             offer["reserved"] += payload["quantity"]
             oid = secrets.token_hex(16)
-            self.orders[oid] = {"id": oid, "offer": payload["offerId"], "buyer": actor, "key": payload["idempotencyKey"],
+            self.orders[oid] = {"id": oid, "offer": payload["offerId"], "buyer": actor, "key": key,
                                 "quantity": payload["quantity"], "state": "BUYER_REQUESTED",
                                 "payment": payload["quantity"] * PRICES[offer["instrument"]], "artifacts": {},
                                 "digest": secrets.token_hex(32), "polls": 0, "durable": False}
@@ -161,7 +162,8 @@ class FakeExchange:
         nxt = STEPS[STEPS.index(state) + 1]
         if nxt == self.faults.get("fail_at"):
             self.release(order, "EXECUTION_FAILED")
-            order["failure"] = {"reason": "WALLET_APPROVAL_TIMEOUT_OR_COORDINATOR_FAILURE", "transactionSubmitted": False}
+            order["failure"] = {"reason": "WALLET_APPROVAL_TIMEOUT_OR_COORDINATOR_FAILURE",
+                                "transactionSubmitted": False}
             return
         if nxt == self.faults.get("uncertain_at"):
             order["state"] = "UNCERTAIN"
@@ -189,7 +191,7 @@ class FakeExchange:
         reconciled = STEPS.index(state) >= STEPS.index("RECONCILED") if state in STEPS else False
         verdict = "REJECTED" if self.faults.get("proof_not_verified") else "VERIFIED"
         return {"id": order["id"], "state": state, "quote": {"digest": order["digest"], "quantity": order["quantity"],
-                                                              "paymentZat": order["payment"], "network": "regtest"}
+                                                             "paymentZat": order["payment"], "network": "regtest"}
                 if state != "BUYER_REQUESTED" else None,
                 "proofVerified": True, "proof": {k: verdict for k in analysis.VERDICT_KEYS},
                 "buyerApprovalMode": "CUSTODIAL_DEMO_POLICY", "sellerApprovalMode": "CUSTODIAL_DEMO_POLICY",
@@ -209,7 +211,8 @@ class FakeExchange:
                 order = self.orders[oid]
                 evidence = {}
                 if order.get("txid") and order["state"] in ("INCLUDED", "RECONCILED", "RECEIPT_AVAILABLE", "UNCERTAIN"):
-                    evidence["INCLUDED"] = {"txid": order["txid"], "height": order["height"], "blockHash": order["blockHash"]}
+                    evidence["INCLUDED"] = {"txid": order["txid"],
+                                            "height": order["height"], "blockHash": order["blockHash"]}
                 if order.get("failure"):
                     evidence[order["state"]] = order["failure"]
                 orders[oid] = {"id": oid, "state": order["state"], "evidence": evidence,
@@ -221,10 +224,12 @@ class FakeExchange:
                     "chain": {"live": True, "tip": self.height,
                               "genesisHash": self.faults.get("genesis", safety.REGTEST_GENESIS)},
                     "offers": offers, "dealerPolicy": "ACTIVE",
-                    "dealerScans": [{"asset_base": o["asset"], "asset_units": 1000 - o["sold"], "scan_height": self.height}
+                    "dealerScans": [{"asset_base": o["asset"], "asset_units": 1000 - o["sold"],
+                                     "scan_height": self.height}
                                     for o in self.offers.values()],
                     "settlements": [{"order_id": k, "txid": v} for k, v in self.settlements.items()],
-                    "orderIndex": [{"id": o["id"], "offer_id": o["offer"], "quantity": o["quantity"], "state": o["state"]}
+                    "orderIndex": [{"id": o["id"], "offer_id": o["offer"], "quantity": o["quantity"],
+                                    "state": o["state"]}
                                    for o in self.orders.values()],
                     "orders": orders}
 
@@ -260,7 +265,8 @@ class Harness:
                          wait_durability=faults.get("wait_durability", True))
         self.run = LevelRun(plan, thresholds=Thresholds(), relay=self.exchange, probe=self.exchange.probe,
                             monitor=self.monitor, controller=self.controller, events=self.events,
-                            redactor=self.redactor, timing=Timing(self.clock.now, self.clock.sleep, interruptible=False))
+                            redactor=self.redactor,
+                            timing=Timing(self.clock.now, self.clock.sleep, interruptible=False))
 
     def execute(self) -> dict:
         try:
@@ -519,8 +525,10 @@ class Latencies(unittest.TestCase):
                                       "seller-signer.log": ns(180), "receipt.json": ns(185),
                                       "seller-after.log": ns(195), "order-receipt.json": ns(196)}}
         timeline = {"purchaseSubmitted": 100.0, "confirmed": 112.0, "receiptSeen": 197.0}
-        procs = [{"label": "groth16:generate", "startedAt": 113.5, "peakRssBytes": 900, "cpuSeconds": 15.0, "samples": 16},
-                 {"label": "tx-tool:signer:authorize-live:buyer", "startedAt": 141.0, "peakRssBytes": 5, "cpuSeconds": 1,
+        procs = [{"label": "groth16:generate", "startedAt": 113.5, "peakRssBytes": 900, "cpuSeconds": 15.0,
+                  "samples": 16},
+                 {"label": "tx-tool:signer:authorize-live:buyer", "startedAt": 141.0, "peakRssBytes": 5,
+                  "cpuSeconds": 1,
                   "samples": 19},
                  {"label": "tx-tool:signer:authorize-live:seller", "startedAt": 161.0, "peakRssBytes": 5,
                   "cpuSeconds": 1, "samples": 19}]

@@ -237,7 +237,8 @@ class DockerAllowlist(unittest.TestCase):
     def setUp(self):
         self.runner = Recorder()
         self.docker = Docker(runner=self.runner)
-        self.compose = Compose(self.docker, project="zwa-bench-a", deploy_dir=DEPLOY, env_file=Path("/w/private/bench.env"))
+        self.compose = Compose(self.docker, project="zwa-bench-a", deploy_dir=DEPLOY,
+                               env_file=Path("/w/private/bench.env"))
 
     def test_every_compose_command_names_the_project_and_the_override(self):
         self.compose("config", "--format", "json")
