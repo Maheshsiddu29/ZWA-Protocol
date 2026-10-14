@@ -382,9 +382,13 @@ STAGE_ARGS=("${BACKUP_FLAG[@]}" --backup-dir "$BACKUP" --engine-tag "$STAGE_TAG"
 python3 -I deploy/scripts/provenance-stage.py plan "${SUDO_FLAG[@]}" "${STAGE_ARGS[@]}"
 ```
 
-`plan` creates no volume or file outside `$EVIDENCE`. Its only Docker change is
-one never-started, network-less container used to copy the zebra executable
-out, removed again with `rm -v`. It checks:
+`plan` creates no named volume and no file outside `$EVIDENCE`. Its Docker
+changes are short-lived:
+
+- one never-started, network-less container, used to copy the zebra executable and the image's `/etc/passwd` and `/etc/group` out, then removed with `rm -v`;
+- `docker run --rm` probe containers of the staging engine image (no network, read-only root, no capabilities, `no-new-privileges`). Each is removed on exit with any anonymous volume.
+
+It checks:
 
 - **Backup:** `$BACKUP/SHA256SUMS` (or `--checksum-file`) is parsed without being rewritten.
   - Entries may be plain names, or absolute paths directly inside exactly `$BACKUP`. The AWS manifest has five absolute entries.
