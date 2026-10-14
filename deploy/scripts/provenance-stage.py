@@ -12,7 +12,8 @@ host's AMD64 override, deploy/compose.amd64.yaml.
          identity, the proving parameters); renders and checks the Compose
          configuration; checks the pinned AMD64 image, that zebra's effective
          user can read its configuration through the exact read-only mount,
-         and the engine image's code; refuses existing staging volumes or
+         and that the engine image's files are the reviewed code and usable
+         by the engine user 10001; refuses existing staging volumes or
          containers. Never changes a file mode. Prints the
          rendered-configuration sha256 for the operator to review.
   stage  Repeats every plan check and requires --rendered-sha256 from plan.
@@ -170,6 +171,12 @@ ZEBRA_CONFIG_TARGET = "/config/regtest-config.toml"
 SAFE_BIND_SOURCE = re.compile(r"/[A-Za-z0-9._/-]{1,4000}\Z")  # no ',' or ':' to break --mount/-v parsing
 IMAGE_USER = re.compile(r"[A-Za-z0-9_.-]{0,64}(?::[A-Za-z0-9_.-]{1,64})?\Z")
 MAX_ACCOUNT_FILE = 65536
+# The engine containers' identity exactly as compose.yaml sets it (`user: "10001:10001"`, checked on the
+# rendering), and what the engine reads or runs inside its image.
+ENGINE_UID = ENGINE_GID = 10001
+ENGINE_CODE = "/app/ZWA-Brand-Integration"
+ENGINE_PATHS = ("/app", "/opt/zwa/tx-tool", "/usr/local/bin/node")
+ENGINE_EXECUTABLES = ("/opt/zwa/tx-tool/target/release/zcash_tx_tool", "/usr/local/bin/node")
 READ, EXECUTE = 4, 1  # permission bits; EXECUTE on a directory is search
 
 # Run inside a one-shot container with the security settings of the container it stands in for (user,
@@ -1144,24 +1151,35 @@ class Stage:
                 "owner": host[1:], "sha256": CONFIG_SHA256}
 
     def check_engine_image(self) -> dict:
-        info = self.docker.ok("image", "inspect", "--", self.cfg.engine_image, what="engine image inspect")
+        """The engine image holds the reviewed exchange code, and the engine user can use all of its files.
+
+        Every engine service runs as 10001:10001 with no capabilities (checked on the rendering). An image
+        built from restrictive source modes (e.g. an overlay COPY of mode-600 files) installs root-owned code
+        that user cannot read. A probe container with exactly that identity and hardening lists, opens and
+        hashes everything under ENGINE_PATHS; the hashes it read are compared with the checkout.
+        """
+        image = self.cfg.engine_image
+        info = self.docker.ok("image", "inspect", "--", image, what="engine image inspect")
         data = json.loads(info)
         if not isinstance(data, list) or len(data) != 1 or f"{data[0].get('Os')}/{data[0].get('Architecture')}" \
                 != PLATFORM:
-            raise StageError(f"{self.cfg.engine_image} is not a linux/amd64 image")
-        listing = self.docker.ok("run", "--rm", "--network", "none", "--entrypoint", "sh", self.cfg.engine_image,
-                                 "-c", "cd /app/ZWA-Brand-Integration && sha256sum exchange/*.py",
-                                 what="engine code listing")
-        inside = {}
-        for line in listing.splitlines():
-            digest, _, name = line.partition("  ")
-            inside[name] = digest
+            raise StageError(f"{image} is not a linux/amd64 image")
+        report = self.probe("engine file check", image, user=(ENGINE_UID, ENGINE_GID), paths=ENGINE_PATHS)
+        problems = access_problems(report, ENGINE_UID, frozenset({ENGINE_GID}), ENGINE_EXECUTABLES)
+        if problems:
+            raise StageError(f"{image} has {len(problems)} path(s) the engine user {ENGINE_UID}:{ENGINE_GID} cannot "
+                             f"use, e.g. {problems[:5]}. Rebuild it from world-readable sources (see the runbook); "
+                             "this tool never changes file modes")
+        prefix = f"{ENGINE_CODE}/exchange/"
+        inside = {path[len(ENGINE_CODE) + 1:]: meta[3] for path, meta in report["files"].items()
+                  if path.startswith(prefix) and path.endswith(".py") and "/" not in path[len(prefix):]}
         expected = {f"exchange/{p.name}": _sha256(p) for p in sorted((self.cfg.repo_root / "exchange").glob("*.py"))
                     if not p.name.startswith("test_")}
         if inside != expected:
             differ = sorted(set(inside.items()) ^ set(expected.items()))[:5]
-            raise StageError(f"{self.cfg.engine_image} does not contain the reviewed exchange code: {differ}")
-        return {"engineImageId": data[0].get("Id"), "exchangeFiles": len(expected)}
+            raise StageError(f"{image} does not contain the reviewed exchange code: {differ}")
+        return {"engineImageId": data[0].get("Id"), "exchangeFiles": len(expected),
+                "engineUser": f"{ENGINE_UID}:{ENGINE_GID}", "engineFilesReadable": len(report["files"])}
 
     def check_isolation(self) -> None:
         cfg = self.cfg

@@ -15,6 +15,7 @@ import io
 import json
 import os
 from pathlib import Path
+import posixpath
 import secrets
 import re
 import shutil
@@ -173,6 +174,30 @@ class FakeHost:
         self.accounts: dict[str, bytes | None] = {"/etc/passwd": PASSWD, "/etc/group": GROUP}
         self.probe_hook = None
         self.probes: list[list[str]] = []
+        self.engine_tree = test.work / f"engine-image-{secrets.token_hex(4)}"   # the engine image's filesystem
+        self.engine_owner: dict[str, tuple[int, int]] = {}   # image path -> owner; default root, as COPY makes
+        self.build_engine_image()
+
+    def build_engine_image(self) -> None:
+        """What deploy/engine/Dockerfile installs, as far as the engine file check reads it."""
+        files = {f"app/ZWA-Brand-Integration/exchange/{p.name}": (p.read_bytes(), 0o644)
+                 for p in (REPOSITORY / "exchange").glob("*.py") if not p.name.startswith("test_")}
+        files.update({"app/ZWA-Brand-Integration/exchange/catalog.json": (b"{}", 0o644),
+                      "app/ZWA-Brand-Integration/checkout/authorization/native_zec_v2.js": (b"// v2", 0o644),
+                      "app/ZWA-Protocol/node_modules/snarkjs/build/main.cjs": (b"// snarkjs", 0o644),
+                      "opt/zwa/tx-tool/.zwa-tx-tool-revision": (b"16052323\n", 0o644),
+                      "opt/zwa/tx-tool/target/release/zcash_tx_tool": (elf(), 0o755),
+                      "usr/local/bin/node": (elf(), 0o755)})
+        for name, (data, mode) in files.items():
+            path = self.engine_tree / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+            path.chmod(mode)
+        for directory, _dirs, _files in os.walk(self.engine_tree):   # explicit: main() sets umask 077
+            os.chmod(directory, 0o755)
+
+    def image_path(self, inside: str) -> Path:
+        return self.engine_tree / inside.lstrip("/")
 
     def __call__(self, argv, input=None, capture_output=True, env=None, timeout=None):
         self.calls.append(list(argv))
@@ -241,10 +266,6 @@ class FakeHost:
         entry = args[args.index("--entrypoint") + 1]
         if entry == "python3" and args[args.index("-c") + 1] == stage_module.ACCESS_PROBE:
             return self.probe(args)
-        if entry == "sh":  # engine code listing
-            files = sorted(p for p in (REPOSITORY / "exchange").glob("*.py") if not p.name.startswith("test_"))
-            return 0, "".join(f"{hashlib.sha256(p.read_bytes()).hexdigest()}  exchange/{p.name}\n"
-                              for p in files), ""
         volume = next(a.split(":")[0] for a in args if a.endswith(":/dst") or a.endswith(":/dst:ro"))
         short = volume.split("_", 1)[1]
         if entry == "tar":
@@ -308,7 +329,7 @@ class FakeHost:
                 binds[fields["target"]] = fields["source"]
         assert "-v" not in args, args
         paths = args[args.index("-c") + 2:]
-        mapped = {binds.get(path, path): path for path in paths}
+        mapped = {binds[path] if path in binds else str(self.image_path(path)): path for path in paths}
         out = io.StringIO()
         with patch.object(sys, "argv", ["-c", *mapped]), redirect_stdout(out):
             exec(compile(stage_module.ACCESS_PROBE, "<access probe>", "exec"), {"__name__": "__main__"})
@@ -317,9 +338,32 @@ class FakeHost:
                                     if path == host or path.startswith(host + "/")), path)
         report = {"identity": {"uid": uid, "euid": uid, "gid": gid, "egid": gid, "groups": sorted(gids - {gid})},
                   "files": {}, "dirs": {}, "links": {}, "other": {}, "errors": {}}
+        bound = set(binds)
         for kind in ("files", "dirs", "links", "other", "errors"):
             for path, value in seen[kind].items():
-                report[kind][rename(path)] = value
+                inside = rename(path)
+                if kind in ("files", "dirs", "other") and inside not in bound:   # image files: owned as built
+                    value[1:3] = self.engine_owner.get(inside, (0, 0))
+                report[kind][inside] = value
+
+        def hidden(path: str) -> str | None:
+            """What a parent directory's permissions do to this path for the container's identity."""
+            parent = posixpath.dirname(path)
+            ancestors = sorted((d for d in report["dirs"] if parent == d or parent.startswith(d + "/")), key=len)
+            for directory in ancestors:
+                meta = report["dirs"][directory]
+                if not kernel_allows(*meta[:3], uid, gids, 4):
+                    return "absent"                    # listdir failed: never visited
+                if not kernel_allows(*meta[:3], uid, gids, 1):
+                    return "error" if directory == parent else "absent"   # lstat fails: EACCES
+            return None
+        for kind in ("files", "dirs", "links", "other"):
+            for path in list(report[kind]):
+                effect = hidden(path)
+                if effect:
+                    del report[kind][path]
+                    if effect == "error":
+                        report["errors"][path] = "Permission denied"
         for path, meta in report["dirs"].items():
             if not kernel_allows(*meta[:3], uid, gids, 4):
                 meta[3] = False
@@ -778,14 +822,19 @@ class PlanRefusalTests(StageFixture):
         self.assert_plan_refused("already exists; staging needs new volumes")
 
     def test_engine_image_must_contain_the_reviewed_code(self):
-        real = self.host.run
-
-        def stale_engine(args):
-            code, out, err = real(args)
-            if args[args.index("--entrypoint") + 1] == "sh":
-                out = out.replace(out[:64], "0" * 64, 1)
-            return code, out, err
-        self.host.run = stale_engine
+        code = self.host.image_path(stage_module.ENGINE_CODE) / "exchange"
+        stale = code / "zebra_provenance.py"
+        good = stale.read_bytes()
+        stale.write_bytes(good.replace(b"PROVENANCE_REFUSED", b"PROVENANCE_REFUSEX", 1))  # same size
+        self.assert_plan_refused("does not contain the reviewed exchange code")
+        stale.write_bytes(good)
+        (code / "test_injected.py").write_bytes(b"")            # tests are deleted by the Dockerfile
+        (code / "test_injected.py").chmod(0o644)
+        self.assert_plan_refused("does not contain the reviewed exchange code")
+        (code / "test_injected.py").unlink()
+        stale.unlink()
+        self.assert_plan_refused("does not contain the reviewed exchange code")
+        stale.symlink_to(REPOSITORY / "exchange/zebra_provenance.py")   # a link is not the reviewed file
         self.assert_plan_refused("does not contain the reviewed exchange code")
 
 
@@ -1444,7 +1493,7 @@ class ZebraConfigAccessTests(StageFixture):
         err = self.assert_refused("is not readable by the zebra container user zebra = uid 10001")
         self.assertIn("mode 0600", err)
         self.assertIn("never changes file modes", err)
-        self.assertEqual(self.host.probes, [])  # the host check refuses before the probe container
+        self.assertFalse([c for c in self.host.probes if "--mount" in c])  # the host check refuses first
         self.host.zebra_user = ""              # root without capabilities has no override either
         self.host.accounts = {"/etc/passwd": None, "/etc/group": None}
         if self.group != 0:
@@ -1639,6 +1688,139 @@ class ZebraConfigAccessTests(StageFixture):
         self.assertFalse(allows([0o066, 7, 50], 7, frozenset({50}), 4))           # owner class is exclusive
         self.assertTrue(allows([0o755, 0, 0], 10001, frozenset({10001}), 5))
         self.assertFalse(allows([0o754, 0, 0], 10001, frozenset({10001}), 5))     # read but no execute
+
+
+class EngineImageAccessTests(StageFixture):
+    """AWS failure 2: an overlay engine image COPYed exchange/*.py from mode-600 sources, so the root-owned
+    files were unreadable by the engine user 10001. plan must refuse that image before anything is created."""
+
+    def setUp(self):
+        super().setUp()
+        self.code = self.host.image_path(stage_module.ENGINE_CODE) / "exchange"
+        self.overlay = (self.code / "persistent_chain.py", self.code / "zebra_provenance.py")
+
+    def plan(self) -> tuple[int, dict | None, str]:
+        shutil.rmtree(self.work / "evidence", ignore_errors=True)
+        self.host.calls.clear()
+        self.host.probes.clear()
+        return self.main("plan")
+
+    def assert_refused(self, message: str) -> str:
+        modes = {p: p.lstat().st_mode for p in self.host.engine_tree.rglob("*")}
+        code, _, err = self.plan()
+        self.assertEqual(code, 2, err)
+        self.assertIn(message, err)
+        self.assertEqual(self.mutating_calls(), [])
+        self.assertFalse(self.host.volumes)
+        self.assertFalse([c for c in self.host.probes if "--mount" in c])   # stops at the engine check
+        self.assertEqual({p: p.lstat().st_mode for p in self.host.engine_tree.rglob("*")}, modes)
+        self.assertFalse((self.work / "evidence/plan.json").exists())
+        return err
+
+    def test_aws_overlay_with_mode_600_python_files_is_refused(self):
+        for path in self.overlay:
+            path.chmod(0o600)        # root-owned in the image, as COPY without --chmod leaves them
+        err = self.assert_refused("cannot use")
+        for path in self.overlay:
+            self.assertIn(f"exchange/{path.name} is not readable (mode 0600, owner 0:0)", err)
+        self.assertIn("never changes file modes", err)
+
+    def test_stage_refuses_an_engine_image_rebuilt_unreadable_after_plan(self):
+        code, planned, err = self.main("plan")
+        self.assertEqual(code, 0, err)
+        self.overlay[0].chmod(0o600)
+        code, _, err = self.main("stage", "--rendered-sha256", planned["renderedSha256"])
+        self.assertEqual(code, 2)
+        self.assertIn("persistent_chain.py is not readable (mode 0600, owner 0:0)", err)
+        self.assertFalse(self.host.volumes)
+        self.assertFalse(any("up" in c for c in self.host.calls))
+
+    def test_readable_images_are_accepted(self):
+        cases = [((0, 0), 0o644), ((0, 0), 0o444), ((0, 10001), 0o640), ((10001, 10001), 0o600),
+                 ((10001, 0), 0o400)]
+        for owner, mode in cases:
+            with self.subTest(owner=owner, mode=oct(mode)):
+                for path in self.overlay:
+                    path.chmod(mode)
+                    self.host.engine_owner[f"{stage_module.ENGINE_CODE}/exchange/{path.name}"] = owner
+                code, planned, err = self.plan()
+                self.assertEqual(code, 0, err)
+                self.assertEqual(planned["engine"]["engineUser"], "10001:10001")
+                self.assertGreaterEqual(planned["engine"]["engineFilesReadable"], planned["engine"]["exchangeFiles"])
+
+    def test_owner_and_group_classes_are_exclusive(self):
+        target = self.overlay[0]
+        for owner, mode in (((10001, 0), 0o044), ((0, 10001), 0o604), ((0, 0), 0o640)):
+            with self.subTest(owner=owner, mode=oct(mode)):
+                target.chmod(mode)
+                self.host.engine_owner[f"{stage_module.ENGINE_CODE}/exchange/{target.name}"] = owner
+                self.assert_refused(f"persistent_chain.py is not readable (mode {mode:04o}, "
+                                    f"owner {owner[0]}:{owner[1]})")
+        target.chmod(0o644)
+
+    def test_unusable_directories_executables_and_special_files_are_refused(self):
+        tree = self.host.image_path
+        cases = [
+            ("exchange/ is not listable and searchable (mode 0700", lambda: self.code.chmod(0o700),
+             lambda: self.code.chmod(0o755)),
+            ("exchange/__init__.py: Permission denied", lambda: self.code.chmod(0o744),   # no search
+             lambda: self.code.chmod(0o755)),
+            ("zcash_tx_tool is not an executable regular file",
+             lambda: tree(stage_module.ENGINE_EXECUTABLES[0]).chmod(0o644),
+             lambda: tree(stage_module.ENGINE_EXECUTABLES[0]).chmod(0o755)),
+            ("/usr/local/bin/node: No such file", lambda: tree("/usr/local/bin/node").rename(tree("/usr/local/bin/x")),
+             lambda: tree("/usr/local/bin/x").rename(tree("/usr/local/bin/node"))),
+            ("node is not an executable regular file", lambda: (
+                tree("/usr/local/bin/node").rename(tree("/usr/local/bin/node-22")),
+                tree("/usr/local/bin/node").symlink_to("node-22")),
+             lambda: (tree("/usr/local/bin/node").unlink(),
+                      tree("/usr/local/bin/node-22").rename(tree("/usr/local/bin/node")))),
+            ("is a device, FIFO or socket", lambda: os.mkfifo(self.code / "fifo"),
+             lambda: (self.code / "fifo").unlink()),
+        ]
+        for message, breaks, repairs in cases:
+            with self.subTest(message):
+                breaks()
+                try:
+                    self.assert_refused(message)
+                finally:
+                    repairs()
+        self.assertEqual(self.plan()[0], 0)
+
+    def test_engine_probe_runs_as_10001_with_the_portal_hardening(self):
+        code, _, err = self.plan()
+        self.assertEqual(code, 0, err)
+        probes = [c for c in self.host.probes if "--mount" not in c]
+        self.assertEqual(len(probes), 1)
+        call = probes[0]
+        self.assertEqual(call[call.index("--user") + 1], "10001:10001")
+        self.assertNotIn("--group-add", call)
+        self.assertNotIn("-v", call)
+        self.assertEqual(call[call.index("--entrypoint") + 2], "zwa-engine:provenance-test")
+        self.assertEqual(tuple(call[call.index("-c") + 2:]), stage_module.ENGINE_PATHS)
+        for change, message in ((lambda r: r["identity"].update(uid=0, euid=0), "not as uid 10001"),
+                                (lambda r: r["identity"].update(egid=0), "not as uid 10001"),
+                                (lambda r: r["identity"].update(groups=[0, 10001]), "not as uid 10001"),
+                                (lambda r: r.update(files=[]), "malformed report"),
+                                (lambda r: r["dirs"]["/app"].__setitem__(3, "yes"), "malformed report")):
+            with self.subTest(message):
+                self.host.probe_hook = lambda report, change=change: (
+                    change(report) if "/app" in report["dirs"] else None)
+                self.assert_refused(message)
+        self.host.probe_hook = None
+
+    def test_engine_identity_constants_match_compose_yaml(self):
+        compose = (REPOSITORY / "deploy/compose.yaml").read_text()
+        self.assertIn('x-engine: &engine\n  image: zwa-engine:${ZWA_ENGINE_TAG:-local}\n  user: "10001:10001"\n',
+                      compose)
+        self.assertEqual((stage_module.ENGINE_UID, stage_module.ENGINE_GID), (10001, 10001))
+        dockerfile = (REPOSITORY / "deploy/engine/Dockerfile").read_text()
+        self.assertIn("WORKDIR /app/ZWA-Brand-Integration\n", dockerfile)
+        self.assertIn("--uid 10001 --gid zwa", dockerfile)
+        self.assertIn("COPY --from=txtool /out /opt/zwa/tx-tool\n", dockerfile)
+        self.assertIn("cp target/release/zcash_tx_tool /out/target/release/", dockerfile)
+        self.assertEqual(stage_module.ENGINE_EXECUTABLES[0], "/opt/zwa/tx-tool/target/release/zcash_tx_tool")
+        self.assertIn('"--node-bin", "/usr/local/bin/node"', compose)
 
 
 if __name__ == "__main__":
