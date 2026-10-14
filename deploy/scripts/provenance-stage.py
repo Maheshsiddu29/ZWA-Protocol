@@ -414,19 +414,22 @@ def _account_lines(raw: bytes | None, fields: int, what: str) -> list[list[str]]
         raise StageError(f"the zebra image's {what} is too large")
     rows = []
     for line in raw.decode(errors="strict").splitlines():
-        if not line.strip() or line.startswith("#"):
+        if not line.strip():
             continue
         row = line.split(":")
-        # runc reads a malformed numeric field as 0 (root): refuse instead of guessing.
+        # runc reads a malformed numeric field (or a '#' line) as 0, i.e. root: refuse instead of guessing.
         if len(row) < fields or not row[2].isdigit() or (what == "/etc/passwd" and not row[3].isdigit()):
             raise StageError(f"the zebra image's {what} has a malformed line")
         rows.append(row)
     return rows
 
 
-def resolve_user(spec: object, passwd: bytes | None, group: bytes | None) -> tuple[int, int, frozenset[int]]:
-    """(uid, primary gid, supplementary gids) Docker gives a container whose image sets USER `spec`
-    (runc's GetExecUser with Docker's root defaults). Unresolvable or unusual specs are refused."""
+def resolve_user(spec: object, passwd: bytes | None,
+                 group: bytes | None) -> tuple[int, int, tuple[frozenset[int], ...]]:
+    """(uid, primary gid, possible supplementary gid sets) Docker gives a container whose image sets USER
+    `spec`: runc's GetExecUser with Docker's root defaults. With an explicit `user:group`, Docker versions
+    differ on also adding the user's /etc/group memberships (CVE-2022-36109), so both sets are returned and
+    each must work. Unresolvable or unusual specs are refused."""
     if not isinstance(spec, str) or not IMAGE_USER.fullmatch(spec):
         raise StageError(f"unsupported zebra image user {spec!r}")
     user_arg, _, group_arg = spec.partition(":")
@@ -447,7 +450,7 @@ def resolve_user(spec: object, passwd: bytes | None, group: bytes | None) -> tup
         raise StageError(f"the zebra image's user {user_arg!r} is not in its /etc/passwd")
     else:
         name, uid, gid = None, int(user_arg or 0), 0
-    extra: frozenset[int] = frozenset()
+    member = frozenset(int(g[2]) for g in groups if name is not None and name in g[3].split(","))
     if group_arg:
         found = [g for g in groups if (int(g[2]) == int(group_arg) if group_arg.isdigit() else g[0] == group_arg)]
         if found:
@@ -456,9 +459,8 @@ def resolve_user(spec: object, passwd: bytes | None, group: bytes | None) -> tup
             gid = int(group_arg)
         else:
             raise StageError(f"the zebra image's group {group_arg!r} is not in its /etc/group")
-    elif name is not None:
-        extra = frozenset(int(g[2]) for g in groups if name in g[3].split(","))
-    return uid, gid, extra
+        return uid, gid, tuple(dict.fromkeys((frozenset(), member)))
+    return uid, gid, (member,)
 
 
 def probe_report(output: str, what: str) -> dict:
@@ -1119,10 +1121,7 @@ class Stage:
         same read-only bind. Nothing is ever chmodded: an unreadable file stops staging.
         """
         config = self.cfg.deploy_dir / "zebra/regtest-config.toml"
-        spec, uid, gid, extra = self.zebra_identity
-        groups = extra | {gid}
-        who = f"the zebra container user {spec or '(image default: root)'} = uid {uid}, gid {gid}, " \
-              f"groups {sorted(groups)}, with all capabilities dropped"
+        spec, uid, gid, variants = self.zebra_identity
         try:
             info = os.lstat(config)
         except OSError as exc:
@@ -1130,24 +1129,33 @@ class Stage:
         if not stat.S_ISREG(info.st_mode) or Path(os.path.realpath(config)) != config:
             raise StageError("deploy/zebra/regtest-config.toml must be a regular file reached without symlinks")
         host = [stat.S_IMODE(info.st_mode), info.st_uid, info.st_gid]
-        if not dac_allows(host, uid, groups, READ):
-            raise StageError(f"deploy/zebra/regtest-config.toml (mode {host[0]:04o}, owner {host[1]}:{host[2]}) "
-                             f"is not readable by {who}. Prepare the staging checkout under umask 022 "
-                             "(see the runbook); this tool never changes file modes")
+        for extra in variants:
+            groups = extra | {gid}
+            who = f"the zebra container user {spec or '(image default: root)'} = uid {uid}, gid {gid}, " \
+                  f"groups {sorted(groups)}, with all capabilities dropped"
+            if not dac_allows(host, uid, groups, READ):
+                raise StageError(f"deploy/zebra/regtest-config.toml (mode {host[0]:04o}, owner {host[1]}:{host[2]}) "
+                                 f"is not readable by {who}. Prepare the staging checkout under umask 022 "
+                                 "(see the runbook); this tool never changes file modes")
         if _sha256(config) != CONFIG_SHA256:
             raise StageError("deploy/zebra/regtest-config.toml is not the pinned Zebra configuration")
-        report = self.probe("zebra configuration probe", self.cfg.engine_image, user=(uid, gid), groups=extra,
-                            bind=(str(config), ZEBRA_CONFIG_TARGET), paths=(ZEBRA_CONFIG_TARGET,))
-        seen = report["files"].get(ZEBRA_CONFIG_TARGET)
-        if seen is None or set(report["files"]) != {ZEBRA_CONFIG_TARGET} or report["links"] or report["dirs"]:
-            raise StageError(f"the zebra configuration mount at {ZEBRA_CONFIG_TARGET} is not a regular file")
-        problems = access_problems(report, uid, groups)
-        if problems:
-            raise StageError(f"the zebra configuration is not readable inside the container by {who}: "
-                             f"{problems[0]}. This tool never changes file modes")
-        if seen[3] != CONFIG_SHA256 or seen[0] != host[0]:
-            raise StageError(f"the file mounted at {ZEBRA_CONFIG_TARGET} is not the checkout's pinned configuration")
-        return {"user": spec, "uid": uid, "gid": gid, "groups": sorted(groups), "mode": f"{host[0]:04o}",
+        for extra in variants:
+            groups = extra | {gid}
+            who = f"uid {uid}, gid {gid}, groups {sorted(groups)}, with all capabilities dropped"
+            report = self.probe("zebra configuration probe", self.cfg.engine_image, user=(uid, gid), groups=extra,
+                                bind=(str(config), ZEBRA_CONFIG_TARGET), paths=(ZEBRA_CONFIG_TARGET,))
+            seen = report["files"].get(ZEBRA_CONFIG_TARGET)
+            if seen is None or set(report["files"]) != {ZEBRA_CONFIG_TARGET} or report["links"] or report["dirs"]:
+                raise StageError(f"the zebra configuration mount at {ZEBRA_CONFIG_TARGET} is not a regular file")
+            problems = access_problems(report, uid, groups)
+            if problems:
+                raise StageError(f"the zebra configuration is not readable inside the container by {who}: "
+                                 f"{problems[0]}. This tool never changes file modes")
+            if seen[3] != CONFIG_SHA256 or seen[0] != host[0]:
+                raise StageError(f"the file mounted at {ZEBRA_CONFIG_TARGET} is not the checkout's pinned "
+                                 "configuration")
+        return {"user": spec, "uid": uid, "gid": gid, "groups": sorted(variants[0] | {gid}),
+                "groupVariants": [sorted(extra | {gid}) for extra in variants], "mode": f"{host[0]:04o}",
                 "owner": host[1:], "sha256": CONFIG_SHA256}
 
     def check_engine_image(self) -> dict:

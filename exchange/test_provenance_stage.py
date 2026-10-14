@@ -1521,6 +1521,16 @@ class ZebraConfigAccessTests(StageFixture):
         self.assertFalse(any("up" in c for c in self.host.calls))  # zebra never started
         self.assertEqual(self.mode(), 0o600)
 
+    def test_any_config_change_between_plan_and_start_halts(self):
+        def chmod_during_restore(volume, _directory):
+            if volume == "zwa-params":
+                self.config_file.chmod(0o444)   # still readable, but not what plan recorded
+        self.host.corrupt_hook = chmod_during_restore
+        code, _, err = self.plan_and_stage()
+        self.assertEqual(code, 2)
+        self.assertIn("the zebra configuration's mode, owner or identity changed since plan", err)
+        self.assertFalse(any("up" in c for c in self.host.calls))
+
     def test_readable_configurations_are_accepted(self):
         cases = [
             ("zebra", 0o644, None),
@@ -1562,6 +1572,7 @@ class ZebraConfigAccessTests(StageFixture):
         code, planned, err = self.plan()
         self.assertEqual(code, 0, err)
         self.assertEqual((planned["zebraConfig"]["uid"], planned["zebraConfig"]["groups"]), (10001, [4, 10001]))
+        self.assertEqual(planned["zebraConfig"]["groupVariants"], [[4, 10001]])
         probes = [c for c in self.host.probes if any(a.startswith("type=bind") for a in c)]
         self.assertEqual(len(probes), 1)
         call = probes[0]
@@ -1633,33 +1644,58 @@ class ZebraConfigAccessTests(StageFixture):
         cfg = self.config()
         cfg.deploy_dir = alias
         stage = stage_module.Stage(cfg, stage_module.Docker(False, runner=self.host), log=lambda _m: None)
-        stage.zebra_identity = ("zebra", 10001, 10001, frozenset())
+        stage.zebra_identity = ("zebra", 10001, 10001, (frozenset(),))
         with self.assertRaisesRegex(stage_module.StageError, "reached without symlinks"):
             stage.check_zebra_config()
 
     def test_zebra_image_user_resolution(self):
         resolve = stage_module.resolve_user
-        self.assertEqual(resolve("", None, None), (0, 0, frozenset()))
-        self.assertEqual(resolve("", PASSWD, GROUP), (0, 0, frozenset()))
-        self.assertEqual(resolve("zebra", PASSWD, GROUP), (10001, 10001, frozenset()))
-        self.assertEqual(resolve("zebra", PASSWD, GROUP + b"adm:x:4:syslog,zebra\n"), (10001, 10001, frozenset({4})))
-        self.assertEqual(resolve("10001", PASSWD, GROUP), (10001, 10001, frozenset()))
-        self.assertEqual(resolve("2000", PASSWD, GROUP), (2000, 0, frozenset()))      # not in passwd: gid 0
-        self.assertEqual(resolve("2000:3000", None, None), (2000, 3000, frozenset()))
-        self.assertEqual(resolve("zebra:root", PASSWD, GROUP + b"adm:x:4:zebra\n"), (10001, 0, frozenset()))
+        none = frozenset()
+        self.assertEqual(resolve("", None, None), (0, 0, (none,)))
+        self.assertEqual(resolve("", PASSWD, GROUP), (0, 0, (none,)))
+        self.assertEqual(resolve("zebra", PASSWD, GROUP), (10001, 10001, (none,)))
+        self.assertEqual(resolve("zebra", PASSWD, GROUP + b"adm:x:4:syslog,zebra\n"), (10001, 10001, (frozenset({4}),)))
+        self.assertEqual(resolve("10001", PASSWD, GROUP + b"adm:x:4:zebra\n"), (10001, 10001, (frozenset({4}),)))
+        self.assertEqual(resolve("2000", PASSWD, GROUP), (2000, 0, (none,)))      # not in passwd: gid 0
+        self.assertEqual(resolve("2000:3000", None, None), (2000, 3000, (none,)))
+        self.assertEqual(resolve("zebra:root", PASSWD, GROUP), (10001, 0, (none,)))
+        # An explicit group: whether Docker also adds memberships depends on its version, so both are checked.
+        self.assertEqual(resolve("zebra:root", PASSWD, GROUP + b"adm:x:4:zebra\n"),
+                         (10001, 0, (none, frozenset({4}))))
+        self.assertEqual(resolve("zebra:7", PASSWD, GROUP), (10001, 7, (none,)))
         for spec, passwd, group, message in (
                 ("ghost", PASSWD, GROUP, "not in its /etc/passwd"),
                 ("ghost", None, None, "not in its /etc/passwd"),
                 ("zebra:ghost", PASSWD, GROUP, "not in its /etc/group"),
                 ("zebra;id", PASSWD, GROUP, "unsupported zebra image user"),
+                ("zebra:", PASSWD, GROUP, "unsupported zebra image user"),
                 (None, PASSWD, GROUP, "unsupported zebra image user"),
                 ("zebra", b"zebra:x:abc:10001::/:/bin/sh\n", GROUP, "malformed line"),
+                ("zebra", b"zebra:x:10001:10001\n", GROUP, "malformed line"),
+                ("", b"# accounts\n" + PASSWD, GROUP, "malformed line"),   # runc would read it as uid 0
                 ("zebra", PASSWD, b"zebra:x:\n", "malformed line"),
                 ("zebra", b"x" * 70000, GROUP, "too large"),
                 ("zebra", b"\xff:x:1:1::/:/bin/sh\n", GROUP, "not text")):
             with self.subTest(spec=spec, message=message):
                 with self.assertRaisesRegex(stage_module.StageError, message):
                     resolve(spec, passwd, group)
+
+    def test_both_group_variants_must_read_the_config(self):
+        """USER zebra:<gid> while /etc/group also lists zebra in the file's group. Docker may or may not add
+        that membership, so the file must be readable both with and without it."""
+        primary = 7 if self.group != 7 else 8
+        self.host.zebra_user = f"zebra:{primary}"
+        self.host.accounts["/etc/group"] = GROUP + b"cfg:x:%d:zebra\n" % self.group
+        self.config_file.chmod(0o644)
+        code, planned, err = self.plan()
+        self.assertEqual(code, 0, err)
+        self.assertEqual(planned["zebraConfig"]["groupVariants"], [[primary], sorted({primary, self.group})])
+        self.assertEqual(len([c for c in self.host.probes if "--mount" in c]), 2)   # one probe per variant
+        self.config_file.chmod(0o604)    # without the membership other bits allow; with it the group class denies
+        self.assert_refused("mode 0604")
+        self.config_file.chmod(0o640)    # with the membership the group class allows; without it other denies
+        self.assert_refused("mode 0640")
+        self.config_file.chmod(0o644)
 
     def test_image_account_files(self):
         self.host.accounts = {"/etc/passwd": None, "/etc/group": None}   # e.g. a distroless image
