@@ -3,12 +3,19 @@
 An explicit, operator-run metadata migration for externally managed (Compose)
 chains. It never runs on startup or on a status check:
 
-    python3 deploy/scripts/zebra_runtime_attest.py attest --image "$ZWA_ZEBRA_IMAGE" \\
+    python3 -I deploy/scripts/zebra-runtime-attest.py attest --image "$ZWA_ZEBRA_IMAGE" \\
         --project <compose project> > attestation.json            # on the host
-    docker compose -p <project> run --rm --no-deps -T --entrypoint python3 portal \\
-        -m exchange.zebra_provenance record --root /var/lib/zwa/zwa4e-demo \\
-        --rpc-host zebra --rpc-port 18232 --expect-genesis <hash> \\
-        --expect-anchor-height <height> [--dry-run] < attestation.json
+    docker compose -p <project> -f compose.yaml [-f compose.amd64.yaml] run --rm --no-deps -T \\
+        --entrypoint python3 portal -m exchange.zebra_provenance record \\
+        --root /var/lib/zwa/zwa4e-demo --rpc-host zebra --rpc-port 18232 \\
+        --expect-genesis <hash> --expect-anchor-height <height> \\
+        --expect-compose-project <compose project> [--dry-run] < attestation.json
+
+A recorded runtime is point-in-time evidence: it says which pinned
+image one named container ran when the host attested it. It never proves the
+image running later; re-run `zebra-runtime-attest.py verify` on the host
+after every Zebra start, restart or container replacement. An existing record
+is never changed by a later attestation.
 
 Docker facts are verified only on the host (this process has no Docker
 socket). Here the attestation is rechecked against the pinned image table and
@@ -56,8 +63,9 @@ import tempfile
 import time
 
 from .config import PROTECTED_ROOTS
-from .persistent_chain import (PINNED_ZEBRA_IMAGES, RUNTIME_KEY, ZEBRA_SOURCE_REVISION, ChainError, _paths,
-                               _rpc, identity_lock, runtime_provenance, validate_identity, verify_anchor)
+from .persistent_chain import (COMPOSE_PROJECT, PINNED_ZEBRA_IMAGES, RUNTIME_EVIDENCE, RUNTIME_KEY,
+                               ZEBRA_SOURCE_REVISION, ChainError, _paths, _rpc, identity_lock, runtime_provenance,
+                               validate_identity, verify_anchor)
 
 IDENTITY = "chain-identity.json"
 MAX_IDENTITY_BYTES = 8192
@@ -69,7 +77,7 @@ MAX_ATTESTATION_AGE = 900
 MAX_CLOCK_SKEW = 120
 MACHINE_PLATFORMS = {"x86_64": "linux/amd64", "amd64": "linux/amd64",
                      "aarch64": "linux/arm64", "arm64": "linux/arm64"}
-PROJECT = re.compile(r"[a-z0-9][a-z0-9_-]{0,62}\Z")
+PROJECT = COMPOSE_PROJECT
 MIGRATION_LOCK_TIMEOUT = 10.0
 
 
@@ -89,8 +97,10 @@ def machine_platform() -> str | None:
     return MACHINE_PLATFORMS.get(platform.machine().lower())
 
 
-def validate_attestation(attestation: object, *, now: int, machine: str | None) -> dict:
-    """The host's claims must be internally consistent and name a pin for this machine."""
+def validate_attestation(attestation: object, *, now: int, machine: str | None, project: str) -> dict:
+    """The host's claims must be consistent, name a pin for this machine and the expected project."""
+    if not isinstance(project, str) or not PROJECT.fullmatch(project):
+        raise ProvenanceError("invalid expected Compose project")
     if not isinstance(attestation, dict) or set(attestation) != ATTESTATION_FIELDS:
         raise ProvenanceError("attestation schema")
     image, claimed = attestation["imageId"], attestation["platform"]
@@ -111,6 +121,9 @@ def validate_attestation(attestation: object, *, now: int, machine: str | None) 
             or not isinstance(attestation["composeProject"], str)
             or not PROJECT.fullmatch(attestation["composeProject"])):
         raise ProvenanceError("attestation fields")
+    if attestation["composeProject"] != project:
+        raise ProvenanceError(f"attestation is for Compose project {attestation['composeProject']!r}, "
+                              f"not the expected {project!r}")
     attested = attestation["attestedAt"]
     if type(attested) is not int or not now - MAX_ATTESTATION_AGE <= attested <= now + MAX_CLOCK_SKEW:
         raise ProvenanceError("attestation is stale or from the future")
@@ -236,7 +249,8 @@ def _chain_view(rpc, meta: dict) -> int:
 
 
 def record(root: Path, attestation: object, *, rpc, expect_genesis: str, expect_anchor_height: int,
-           dry_run: bool = False, now: int | None = None, machine: str | None = None) -> dict:
+           expect_project: str, dry_run: bool = False, now: int | None = None,
+           machine: str | None = None) -> dict:
     """Add host-attested runtime provenance; see the module docstring."""
     root = Path(root)
     if str(root) in PROTECTED_ROOTS:
@@ -246,11 +260,12 @@ def record(root: Path, attestation: object, *, rpc, expect_genesis: str, expect_
         raise ProvenanceError("root must be an existing directory")
     with identity_lock(root, MIGRATION_LOCK_TIMEOUT):
         return _record_locked(root, attestation, rpc=rpc, expect_genesis=expect_genesis,
-                              expect_anchor_height=expect_anchor_height, dry_run=dry_run, now=now, machine=machine)
+                              expect_anchor_height=expect_anchor_height, expect_project=expect_project,
+                              dry_run=dry_run, now=now, machine=machine)
 
 
 def _record_locked(root: Path, attestation: object, *, rpc, expect_genesis: str, expect_anchor_height: int,
-                   dry_run: bool, now: int | None, machine: str | None) -> dict:
+                   expect_project: str, dry_run: bool, now: int | None, machine: str | None) -> dict:
     path = root / IDENTITY
     original, info = _read_regular(path)
     try:
@@ -264,7 +279,8 @@ def _record_locked(root: Path, attestation: object, *, rpc, expect_genesis: str,
     if meta["genesisHash"] != expect_genesis or meta["anchorHeight"] != expect_anchor_height:
         raise ProvenanceError("chain identity differs from the operator's expected genesis or anchor height")
     claim = validate_attestation(attestation, now=int(time.time()) if now is None else now,
-                                 machine=machine_platform() if machine is None else machine)
+                                 machine=machine_platform() if machine is None else machine,
+                                 project=expect_project)
     tip = _chain_view(rpc, meta)
 
     existing = meta.get(RUNTIME_KEY)
@@ -272,13 +288,19 @@ def _record_locked(root: Path, attestation: object, *, rpc, expect_genesis: str,
         if (existing["imageId"], existing["platform"]) == (claim["imageId"], claim["platform"]):
             if not dry_run:
                 _confirm_durable(path, original)
+            # The existing record is left exactly as it is. A replaced container or another project
+            # is reported, never silently written: this attestation is only today's host check.
             return {"changed": False, "reason": "ALREADY_RECORDED", "durable": not dry_run,
-                    "zebraRuntime": existing, "sha256": hashlib.sha256(original).hexdigest()}
+                    "zebraRuntime": existing, "sha256": hashlib.sha256(original).hexdigest(),
+                    "freshAttestation": {"containerId": claim["containerId"], "attestedAt": claim["attestedAt"],
+                                         "composeProject": claim["composeProject"],
+                                         "sameContainerAsRecord": claim["containerId"] == existing["containerId"]}}
         raise ProvenanceError("a different Zebra runtime is already recorded; refusing to overwrite it")
 
-    runtime = {"schema": 1, "imageId": claim["imageId"], "platform": claim["platform"],
-               "sourceRevision": ZEBRA_SOURCE_REVISION, "evidence": "HOST_ATTESTED",
-               "attestedAt": claim["attestedAt"], "recordedImage": meta["image"],
+    runtime = {"schema": 2, "imageId": claim["imageId"], "platform": claim["platform"],
+               "declaredSourceRevision": ZEBRA_SOURCE_REVISION, "evidence": RUNTIME_EVIDENCE,
+               "attestedAt": claim["attestedAt"], "containerId": claim["containerId"],
+               "composeProject": claim["composeProject"], "recordedImage": meta["image"],
                "verifiedChain": {"genesisHash": meta["genesisHash"], "anchorHeight": meta["anchorHeight"],
                                  "anchorHash": meta["anchorHash"], "observedHeight": tip},
                "migratedFromSha256": hashlib.sha256(original).hexdigest()}
@@ -355,6 +377,7 @@ def main(argv: list[str] | None = None) -> None:
     recorded.add_argument("--rpc-port", type=int, default=18232)
     recorded.add_argument("--expect-genesis", required=True)
     recorded.add_argument("--expect-anchor-height", type=int, required=True)
+    recorded.add_argument("--expect-compose-project", required=True)
     recorded.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
     os.umask(0o077)
@@ -368,6 +391,8 @@ def main(argv: list[str] | None = None) -> None:
                 parser.error("invalid port or anchor height")
             if not re.fullmatch(r"[0-9a-f]{64}", args.expect_genesis):
                 parser.error("--expect-genesis must be 64 lowercase hex characters")
+            if not PROJECT.fullmatch(args.expect_compose_project):
+                parser.error("invalid --expect-compose-project")
             raw = sys.stdin.buffer.read(MAX_ATTESTATION_BYTES + 1)
             if len(raw) > MAX_ATTESTATION_BYTES:
                 raise ProvenanceError("attestation is too large")
@@ -378,7 +403,7 @@ def main(argv: list[str] | None = None) -> None:
             output = record(args.root, attestation,
                             rpc=lambda method, params=None: _rpc(args.rpc_port, method, params, host=args.rpc_host),
                             expect_genesis=args.expect_genesis, expect_anchor_height=args.expect_anchor_height,
-                            dry_run=args.dry_run)
+                            expect_project=args.expect_compose_project, dry_run=args.dry_run)
     except UncertainWrite as exc:
         print(json.dumps({"outcome": "UNCERTAIN", "detail": str(exc),
                           "sha256": {"before": exc.before, "after": exc.after}}, indent=2, sort_keys=True))

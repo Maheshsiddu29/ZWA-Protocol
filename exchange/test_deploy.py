@@ -189,7 +189,8 @@ class ZebraHostAttestationTests(unittest.TestCase):
             self.assertEqual((result["imageId"], result["platform"], result["containerImageId"]),
                              (image, platform, image))
             # The engine-side migration accepts exactly what the host produced.
-            zebra_provenance.validate_attestation(result, now=1_760_000_000, machine=platform)
+            zebra_provenance.validate_attestation(result, now=1_760_000_000, machine=platform,
+                                                  project="zwa-prov-stage")
 
     def test_wrong_image_architecture_or_container_is_refused(self):
         cases = {
@@ -217,6 +218,24 @@ class ZebraHostAttestationTests(unittest.TestCase):
         self.attest(docker)
         self.assertEqual({call[0] for call in docker.calls}, {"image", "info", "ps", "inspect"})
         self.assertTrue(all(call[:2] == ("image", "inspect") for call in docker.calls if call[0] == "image"))
+
+    def test_fresh_verification_compares_with_the_recorded_point_in_time_runtime(self):
+        recorded = {"provenance": {"evidence": "POINT_IN_TIME_HOST_ATTESTATION", "attestedImage": self.AMD64,
+                                   "attestedPlatform": "linux/amd64", "attestedContainerId": f"{1:064x}"}}
+        with patch.object(self.tool, "_docker", side_effect=FakeDocker(self.AMD64, "linux/amd64")):
+            same = self.tool.verify("qedit/zebra-zsa-swap-pinned:latest", "zwa-prov-stage", recorded, now=1)
+            recorded["provenance"]["attestedContainerId"] = "f" * 64  # container since replaced
+            replaced = self.tool.verify("qedit/zebra-zsa-swap-pinned:latest", "zwa-prov-stage", recorded, now=1)
+        self.assertEqual((same["verified"], same["sameContainerAsRecord"]), (True, True))
+        self.assertIs(replaced["sameContainerAsRecord"], False)
+        for provenance in ({"evidence": "LABEL_ONLY"},
+                           dict(recorded["provenance"], attestedImage=self.ARM64, attestedPlatform="linux/arm64")):
+            with patch.object(self.tool, "_docker", side_effect=FakeDocker(self.AMD64, "linux/amd64")), \
+                 self.assertRaises(self.tool.AttestError):
+                self.tool.verify("qedit/zebra-zsa-swap-pinned:latest", "zwa-prov-stage", {"provenance": provenance})
+        with patch.object(self.tool, "_docker", side_effect=FakeDocker(self.AMD64, "linux/amd64", running=False)), \
+             self.assertRaises(self.tool.AttestError):
+            self.tool.verify("qedit/zebra-zsa-swap-pinned:latest", "zwa-prov-stage")
 
     def test_preflight_checks_both_pins_through_the_host_tool(self):
         script = (REPOSITORY / "deploy/scripts/preflight.sh").read_text()

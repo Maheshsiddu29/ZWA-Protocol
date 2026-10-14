@@ -20,7 +20,10 @@ import sys
 import time
 from urllib.request import Request, urlopen
 
-# QED-it/zebra (zsa-swap-multiple-ag) revision every pinned image was built from.
+# QED-it/zebra (zsa-swap-multiple-ag) revision the owner declares both pinned
+# images were built from. An image ID identifies image content only; without
+# reproducible-build evidence it does not prove which source produced it, so
+# records call this a *declared* source revision.
 ZEBRA_SOURCE_REVISION = "0aef55cea41b83f17610e6ea708e59995f9e739f"
 # The only Zebra images accepted as runtime provenance, by build platform.
 PINNED_ZEBRA_IMAGES = {
@@ -35,6 +38,9 @@ PINNED_ZEBRA_IMAGES = {
 RECORDED_IMAGE = PINNED_ZEBRA_IMAGES["linux/arm64"]
 IMAGE = RECORDED_IMAGE  # docker-local runtime image (the local arm64 workflow)
 RUNTIME_KEY = "zebraRuntime"
+# A recorded runtime is what the host saw at one moment, not the current image.
+RUNTIME_EVIDENCE = "POINT_IN_TIME_HOST_ATTESTATION"
+COMPOSE_PROJECT = re.compile(r"[a-z0-9][a-z0-9_-]{0,62}\Z")
 CONFIG = """[mining]
 miner_address = 'tmLTZegcJN5zaufWQBARHkvqC62mTumm3jR'
 
@@ -140,8 +146,9 @@ def _height(value: object) -> bool:
     return type(value) is int and value >= 0
 
 
-RUNTIME_FIELDS = frozenset({"schema", "imageId", "platform", "sourceRevision", "evidence", "attestedAt",
-                            "recordedImage", "verifiedChain", "migratedFromSha256"})
+RUNTIME_FIELDS = frozenset({"schema", "imageId", "platform", "declaredSourceRevision", "evidence", "attestedAt",
+                            "containerId", "composeProject", "recordedImage", "verifiedChain",
+                            "migratedFromSha256"})
 VERIFIED_CHAIN_FIELDS = frozenset({"genesisHash", "anchorHeight", "anchorHash", "observedHeight"})
 
 
@@ -158,12 +165,15 @@ def validate_runtime(meta: dict) -> dict | None:
     chain = runtime.get("verifiedChain") if isinstance(runtime, dict) else None
     if (not isinstance(runtime, dict) or set(runtime) != RUNTIME_FIELDS
             or meta.get("management") != "external"
-            or type(runtime["schema"]) is not int or runtime["schema"] != 1
+            or type(runtime["schema"]) is not int or runtime["schema"] != 2
             or not isinstance(runtime["platform"], str)
             or PINNED_ZEBRA_IMAGES.get(runtime["platform"]) != runtime["imageId"]
-            or runtime["sourceRevision"] != ZEBRA_SOURCE_REVISION
-            or runtime["evidence"] != "HOST_ATTESTED"
+            or runtime["declaredSourceRevision"] != ZEBRA_SOURCE_REVISION
+            or runtime["evidence"] != RUNTIME_EVIDENCE
             or type(runtime["attestedAt"]) is not int or runtime["attestedAt"] <= 0
+            or not _hex64(runtime["containerId"])
+            or not isinstance(runtime["composeProject"], str)
+            or not COMPOSE_PROJECT.fullmatch(runtime["composeProject"])
             or runtime["recordedImage"] != meta["image"]
             or not _hex64(runtime["migratedFromSha256"])
             or not isinstance(chain, dict) or set(chain) != VERIFIED_CHAIN_FIELDS
@@ -200,19 +210,31 @@ def _meta(root: Path) -> dict | None:
     return validate_identity(json.loads(path.read_text()))
 
 
+FRESH_HOST_CHECK = ("not verified by this process; after any Zebra start, restart or container replacement "
+                    "run deploy/scripts/zebra-runtime-attest.py verify on the host")
+
+
 def runtime_provenance(meta: dict, managed: str) -> dict:
-    """What this process can honestly say about the running Zebra image."""
+    """What this process can honestly say about the running Zebra image.
+
+    currentRuntimeVerified is True only when this call itself inspected the
+    running container (docker-local). A recorded host attestation describes
+    one container at one moment; it never establishes the image running now.
+    """
     if managed == "docker-local":
         # _validate_container compared the live container's image ID.
-        return {"recordedImage": meta["image"], "runtimeImage": IMAGE,
-                "platform": "linux/arm64", "evidence": "CONTAINER_INSPECTED"}
+        return {"recordedImage": meta["image"], "evidence": "CONTAINER_INSPECTED",
+                "currentRuntimeVerified": True, "currentImage": IMAGE, "currentPlatform": "linux/arm64"}
     runtime = meta.get(RUNTIME_KEY)
     if runtime is None:
         # The recorded label alone never proves which image is running.
-        return {"recordedImage": meta["image"], "evidence": "UNVERIFIED"}
-    return {"recordedImage": meta["image"], "runtimeImage": runtime["imageId"],
-            "platform": runtime["platform"], "evidence": "HOST_ATTESTED",
-            "attestedAt": runtime["attestedAt"]}
+        return {"recordedImage": meta["image"], "evidence": "LABEL_ONLY",
+                "currentRuntimeVerified": False, "currentRuntime": FRESH_HOST_CHECK}
+    return {"recordedImage": meta["image"], "evidence": RUNTIME_EVIDENCE,
+            "currentRuntimeVerified": False, "currentRuntime": FRESH_HOST_CHECK,
+            "attestedImage": runtime["imageId"], "attestedPlatform": runtime["platform"],
+            "attestedAt": runtime["attestedAt"], "attestedContainerId": runtime["containerId"],
+            "attestedComposeProject": runtime["composeProject"]}
 
 
 def verify_anchor(meta: dict, block_hash_at_height, tip_height: int) -> None:

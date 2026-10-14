@@ -12,6 +12,15 @@ containers never mount the Docker socket; they only receive what this prints.
         Also: the project's one zebra container is running exactly that image
         ID. Prints the attestation read by `exchange.zebra_provenance record`.
 
+    python3 -I scripts/zebra-runtime-attest.py verify --image "$ZWA_ZEBRA_IMAGE" --project zwa-demo \
+        [--recorded-show show.json]
+        The same checks as `attest`, as a fresh verification. A chain identity's
+        recorded runtime is point-in-time evidence only, so run this after
+        every Zebra start, restart or container replacement. With the output
+        of `exchange.zebra_provenance show`, also refuses an image that
+        differs from the recorded one and reports whether the container is
+        still the attested one.
+
 Pins: exchange/persistent_chain.py PINNED_ZEBRA_IMAGES. An emulated image (an
 amd64 image on an arm64 host, or the reverse) is refused.
 """
@@ -101,6 +110,21 @@ def attest(tag: str, project: str, now: int | None = None) -> dict:
             "composeProject": project, "attestedAt": int(time.time()) if now is None else now}
 
 
+def verify(tag: str, project: str, recorded: dict | None = None, now: int | None = None) -> dict:
+    fresh = attest(tag, project, now)
+    report = {"verified": True, "checkedAt": fresh["attestedAt"], "imageId": fresh["imageId"],
+              "platform": fresh["platform"], "containerId": fresh["containerId"], "composeProject": project}
+    if recorded is not None:
+        provenance = recorded.get("provenance") if isinstance(recorded, dict) else None
+        if not isinstance(provenance, dict) or provenance.get("evidence") != "POINT_IN_TIME_HOST_ATTESTATION":
+            raise AttestError("the `show` output records no runtime attestation")
+        if (provenance.get("attestedImage"), provenance.get("attestedPlatform")) != (fresh["imageId"],
+                                                                                     fresh["platform"]):
+            raise AttestError("the running Zebra image differs from the recorded runtime")
+        report["sameContainerAsRecord"] = provenance.get("attestedContainerId") == fresh["containerId"]
+    return report
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     actions = parser.add_subparsers(dest="action", required=True)
@@ -109,11 +133,18 @@ def main(argv: list[str] | None = None) -> None:
     attested = actions.add_parser("attest")
     attested.add_argument("--image", required=True)
     attested.add_argument("--project", required=True)
+    verified = actions.add_parser("verify")
+    verified.add_argument("--image", required=True)
+    verified.add_argument("--project", required=True)
+    verified.add_argument("--recorded-show", type=Path)
     args = parser.parse_args(argv)
     try:
         if args.action == "check-image":
             image_id, platform = check_image(args.image)
             output = {"imageId": image_id, "platform": platform}
+        elif args.action == "verify":
+            recorded = json.loads(args.recorded_show.read_text()) if args.recorded_show else None
+            output = verify(args.image, args.project, recorded)
         else:
             output = attest(args.image, args.project)
     except (AttestError, OSError, ValueError, subprocess.TimeoutExpired) as exc:

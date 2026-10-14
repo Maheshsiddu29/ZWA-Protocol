@@ -115,6 +115,7 @@ class Fixture(unittest.TestCase):
     def record(self, data=None, *, machine="linux/amd64", **kwargs) -> dict:
         kwargs.setdefault("expect_genesis", GENESIS)
         kwargs.setdefault("expect_anchor_height", 335)
+        kwargs.setdefault("expect_project", "zwa-prov-stage")
         with patch.object(provenance, "PROTECTED_ROOTS", frozenset({str(self.root) + "-protected"})):
             return provenance.record(self.root, attestation() if data is None else data, rpc=self.chain.rpc,
                                      now=NOW, machine=machine, **kwargs)
@@ -139,9 +140,10 @@ class MigrationSuccessTests(Fixture):
         runtime = data.pop(chain.RUNTIME_KEY)
         self.assertEqual(data, aws_identity())  # genesis, anchor, heights, label: untouched
         self.assertEqual(runtime, {
-            "schema": 1, "imageId": AMD64, "platform": "linux/amd64",
-            "sourceRevision": "0aef55cea41b83f17610e6ea708e59995f9e739f", "evidence": "HOST_ATTESTED",
-            "attestedAt": NOW - 30, "recordedImage": ARM64,
+            "schema": 2, "imageId": AMD64, "platform": "linux/amd64",
+            "declaredSourceRevision": "0aef55cea41b83f17610e6ea708e59995f9e739f",
+            "evidence": "POINT_IN_TIME_HOST_ATTESTATION", "attestedAt": NOW - 30,
+            "containerId": "b" * 64, "composeProject": "zwa-prov-stage", "recordedImage": ARM64,
             "verifiedChain": {"genesisHash": GENESIS, "anchorHeight": 335, "anchorHash": ANCHOR,
                               "observedHeight": 436},
             "migratedFromSha256": hashlib.sha256(original_bytes).hexdigest()})
@@ -275,6 +277,26 @@ class MigrationRefusalTests(Fixture):
         self.assert_refused("expected", expect_anchor_height=336)
         self.assert_refused("expected", expect_anchor_height=0)
 
+    def test_valid_attestation_for_another_compose_project_is_refused(self):
+        # A genuine, fresh, pinned attestation of the live zwa-demo stack must not
+        # be recorded into a staging identity, nor the reverse.
+        self.assert_refused("Compose project 'zwa-demo', not the expected 'zwa-prov-stage'",
+                            data=attestation(composeProject="zwa-demo"))
+        self.assert_refused("Compose project 'zwa-prov-stage', not the expected 'zwa-demo'",
+                            expect_project="zwa-demo")
+        for bad in ("", "ZWA", "../zwa-demo", None):
+            self.assert_refused("invalid expected Compose project", expect_project=bad)
+        self.assertEqual(self.chain.calls, [])  # refused before any chain read or write
+
+    def test_replaced_container_is_reported_never_written(self):
+        self.record()
+        migrated = self.identity.read_bytes()
+        again = self.record(attestation(containerId="c" * 64, attestedAt=NOW - 1))
+        self.assertEqual(again["reason"], "ALREADY_RECORDED")
+        self.assertIs(again["freshAttestation"]["sameContainerAsRecord"], False)
+        self.assertEqual(again["zebraRuntime"]["containerId"], "b" * 64)
+        self.assertEqual(self.identity.read_bytes(), migrated)
+
     def test_different_recorded_runtime_is_never_overwritten(self):
         self.record()
         self.assert_refused("different Zebra runtime",
@@ -286,11 +308,13 @@ class MigrationRefusalTests(Fixture):
              patch.object(provenance, "_read_regular", side_effect=AssertionError("opened")):
             with self.assertRaisesRegex(chain.ChainError, "protected"):
                 provenance.record(self.root, attestation(), rpc=self.chain.rpc, expect_genesis=GENESIS,
-                                  expect_anchor_height=335, now=NOW, machine="linux/amd64")
+                                  expect_anchor_height=335, expect_project="zwa-prov-stage", now=NOW,
+                                  machine="linux/amd64")
         for root in (Path("/private/tmp/other"), Path("/var/lib/zwa/zwa4e-x/../zwa4e-y"), Path("relative")):
             with self.assertRaises(chain.ChainError):
                 provenance.record(root, attestation(), rpc=self.chain.rpc, expect_genesis=GENESIS,
-                                  expect_anchor_height=335, now=NOW, machine="linux/amd64")
+                                  expect_anchor_height=335, expect_project="zwa-prov-stage", now=NOW,
+                                  machine="linux/amd64")
 
 
 class CrashSafetyTests(Fixture):
@@ -472,7 +496,8 @@ class UncertainOutcomeTests(Fixture):
 
     def test_command_line_reports_uncertain_with_exit_3(self):
         out, err = io.StringIO(), io.StringIO()
-        argv = ["record", "--root", str(self.root), "--rpc-host", "zebra", "--expect-genesis", GENESIS,
+        argv = ["record", "--root", str(self.root), "--rpc-host", "zebra",
+                "--expect-compose-project", "zwa-prov-stage", "--expect-genesis", GENESIS,
                 "--expect-anchor-height", "335"]
         stdin = io.TextIOWrapper(io.BytesIO(json.dumps(attestation()).encode()))
         rpc = lambda _p, m, params=None, host=None: self.chain.rpc(m, params)  # noqa: E731
@@ -498,7 +523,8 @@ class CompatibilityAfterMigrationTests(Fixture):
         migrated = self.identity.read_bytes()
         result = self.status()
         self.assertEqual((result["state"], result["height"], result["anchorHeight"]), ("CHAIN_ACTIVE", 436, 335))
-        self.assertEqual(result["provenance"]["evidence"], "HOST_ATTESTED")
+        self.assertEqual(result["provenance"]["evidence"], "POINT_IN_TIME_HOST_ATTESTATION")
+        self.assertIs(result["provenance"]["currentRuntimeVerified"], False)
         self.assertEqual(self.identity.read_bytes(), migrated)  # status never rewrites it
         runtime = json.loads(migrated)[chain.RUNTIME_KEY]
 
@@ -560,7 +586,8 @@ class CommandLineTests(Fixture):
         return code, out.getvalue(), err.getvalue()
 
     def test_record_and_show(self):
-        args = ["record", "--root", str(self.root), "--rpc-host", "zebra", "--expect-genesis", GENESIS,
+        args = ["record", "--root", str(self.root), "--rpc-host", "zebra",
+                "--expect-compose-project", "zwa-prov-stage", "--expect-genesis", GENESIS,
                 "--expect-anchor-height", "335"]
         code, out, _ = self.run_main(args + ["--dry-run"], json.dumps(attestation()).encode())
         self.assertEqual((code, json.loads(out)["reason"]), (0, "DRY_RUN"))
@@ -569,7 +596,8 @@ class CommandLineTests(Fixture):
         self.assertEqual((code, json.loads(out)["changed"]), (0, True))
         code, out, _ = self.run_main(["show", "--root", str(self.root)])
         shown = json.loads(out)
-        self.assertEqual((code, shown["provenance"]["evidence"], shown["anchorHeight"]), (0, "HOST_ATTESTED", 335))
+        self.assertEqual((code, shown["provenance"]["evidence"], shown["anchorHeight"]),
+                         (0, "POINT_IN_TIME_HOST_ATTESTATION", 335))
         with patch.object(provenance, "PROTECTED_ROOTS", frozenset()):
             code, out, _ = self.run_main(["revert", "--root", str(self.root)])
         self.assertEqual((code, json.loads(out)["changed"]), (0, True))
@@ -577,7 +605,8 @@ class CommandLineTests(Fixture):
 
     def test_refusals_exit_nonzero_without_writing(self):
         before = self.tree()
-        args = ["record", "--root", str(self.root), "--rpc-host", "zebra", "--expect-genesis", GENESIS,
+        args = ["record", "--root", str(self.root), "--rpc-host", "zebra",
+                "--expect-compose-project", "zwa-prov-stage", "--expect-genesis", GENESIS,
                 "--expect-anchor-height", "335"]
         for stdin in (b"", b"not json", b"[]", b"{" + b" " * 5000 + b"}",
                       json.dumps(attestation(imageId="sha256:" + "e" * 64)).encode()):

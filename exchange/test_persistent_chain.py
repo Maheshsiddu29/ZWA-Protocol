@@ -98,9 +98,10 @@ def aws_external_identity() -> dict:
 
 
 def attested_runtime(meta: dict) -> dict:
-    return {"schema": 1, "imageId": chain.PINNED_ZEBRA_IMAGES["linux/amd64"], "platform": "linux/amd64",
-            "sourceRevision": chain.ZEBRA_SOURCE_REVISION, "evidence": "HOST_ATTESTED",
-            "attestedAt": 1_760_000_000, "recordedImage": meta["image"],
+    return {"schema": 2, "imageId": chain.PINNED_ZEBRA_IMAGES["linux/amd64"], "platform": "linux/amd64",
+            "declaredSourceRevision": chain.ZEBRA_SOURCE_REVISION,
+            "evidence": "POINT_IN_TIME_HOST_ATTESTATION", "attestedAt": 1_760_000_000,
+            "containerId": "b" * 64, "composeProject": "zwa-prov-stage", "recordedImage": meta["image"],
             "verifiedChain": {"genesisHash": meta["genesisHash"], "anchorHeight": meta["anchorHeight"],
                               "anchorHash": meta["anchorHash"], "observedHeight": 436},
             "migratedFromSha256": "d" * 64}
@@ -142,9 +143,15 @@ class IdentitySchemaTests(unittest.TestCase):
             "arm64 id claimed as amd64": lambda m, r: r.update(imageId=chain.PINNED_ZEBRA_IMAGES["linux/arm64"]),
             "amd64 id claimed as arm64": lambda m, r: r.update(platform="linux/arm64"),
             "unhashable platform": lambda m, r: r.update(platform=["linux/amd64"]),
-            "other source": lambda m, r: r.update(sourceRevision="0" * 40),
+            "other source": lambda m, r: r.update(declaredSourceRevision="0" * 40),
+            "undeclared source key": lambda m, r: r.update(sourceRevision=r.pop("declaredSourceRevision")),
             "label evidence": lambda m, r: r.update(evidence="LABEL"),
+            "current-image claim": lambda m, r: r.update(evidence="HOST_ATTESTED"),
+            "schema 1 (never deployed)": lambda m, r: r.update(schema=1),
             "boolean schema": lambda m, r: r.update(schema=True),
+            "short container id": lambda m, r: r.update(containerId="b" * 12),
+            "bad project": lambda m, r: r.update(composeProject="../zwa-demo"),
+            "missing project": lambda m, r: r.pop("composeProject"),
             "extra field": lambda m, r: r.update(note="x"),
             "missing field": lambda m, r: r.pop("migratedFromSha256"),
             "rewritten label": lambda m, r: r.update(recordedImage=r["imageId"]),
@@ -186,16 +193,24 @@ class IdentitySchemaTests(unittest.TestCase):
                   patch.object(chain, "_rpc", side_effect=fake_rpc)):
                 result = chain.status(root, "zebra", 18232, host="zebra", managed="external")
                 self.assertEqual(result["provenance"], {"recordedImage": chain.RECORDED_IMAGE,
-                                                        "evidence": "UNVERIFIED"})
+                                                        "evidence": "LABEL_ONLY",
+                                                        "currentRuntimeVerified": False,
+                                                        "currentRuntime": chain.FRESH_HOST_CHECK})
                 self.assertEqual(result["state"], "CHAIN_ACTIVE")
                 # An ordinary status check never rewrites the identity.
                 self.assertEqual(path.read_bytes(), before)
                 meta[chain.RUNTIME_KEY] = attested_runtime(meta)
                 self.write(root, meta)
                 result = chain.status(root, "zebra", 18232, host="zebra", managed="external")
-            self.assertEqual(result["provenance"]["evidence"], "HOST_ATTESTED")
-            self.assertEqual(result["provenance"]["runtimeImage"], chain.PINNED_ZEBRA_IMAGES["linux/amd64"])
-            self.assertEqual(result["provenance"]["recordedImage"], chain.RECORDED_IMAGE)
+            provenance = result["provenance"]
+            # A recorded attestation is point-in-time evidence, never the current image.
+            self.assertEqual(provenance["evidence"], "POINT_IN_TIME_HOST_ATTESTATION")
+            self.assertIs(provenance["currentRuntimeVerified"], False)
+            self.assertNotIn("currentImage", provenance)
+            self.assertIn("zebra-runtime-attest.py verify", provenance["currentRuntime"])
+            self.assertEqual(provenance["attestedImage"], chain.PINNED_ZEBRA_IMAGES["linux/amd64"])
+            self.assertEqual(provenance["attestedContainerId"], "b" * 64)
+            self.assertEqual(provenance["recordedImage"], chain.RECORDED_IMAGE)
 
     def test_docker_local_status_reports_the_inspected_container(self):
         with tempfile.TemporaryDirectory(prefix="zwa4e-test-", dir="/private/tmp") as raw:
@@ -211,7 +226,8 @@ class IdentitySchemaTests(unittest.TestCase):
                 result = chain.status(root, "test", 18320)
             self.assertEqual(result["state"], "CHAIN_RESTARTED")
             self.assertEqual(result["provenance"]["evidence"], "CONTAINER_INSPECTED")
-            self.assertEqual(result["provenance"]["runtimeImage"], chain.PINNED_ZEBRA_IMAGES["linux/arm64"])
+            self.assertIs(result["provenance"]["currentRuntimeVerified"], True)
+            self.assertEqual(result["provenance"]["currentImage"], chain.PINNED_ZEBRA_IMAGES["linux/arm64"])
 
 
 if __name__ == "__main__":
