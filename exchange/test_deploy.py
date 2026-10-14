@@ -274,7 +274,9 @@ class ZebraHostAttestationTests(unittest.TestCase):
         for required in ("zwa-recovery/paired-", ".tar.gz", "provenance-stage.py plan", "--rendered-sha256",
                          "--docker-sudo", "declaredSourceRevision", "POINT_IN_TIME_HOST_ATTESTATION",
                          "PROVENANCE_UNCERTAIN", "never revert blindly", "identity_lock", "x86-64 ELF",
-                         "SHA-256 of every regular file", "Not yet exercised on real Docker"):
+                         "SHA-256 of every regular file", "Not yet exercised on real Docker",
+                         "--backup-sudo", "BACKUP_READER", "never chmodded, chowned, copied, rewritten",
+                         "paired-20261013T230743Z", "five absolute entries"):
             self.assertIn(required, runbook)
 
     def test_no_container_receives_the_docker_socket(self):

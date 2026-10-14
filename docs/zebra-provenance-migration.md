@@ -202,7 +202,7 @@ LIVE_DEPLOY="$LIVE/deploy"                            # live deployment director
 STAGE_CHECKOUT="$HOME/zwa-provenance-stage"           # new, separate checkout (never under /opt/zwa)
 REVIEWED="REPLACE_WITH_40_HEX_REVIEWED_COMMIT"
 BUNDLE=""                                             # optional: path to an owner-made git bundle
-BACKUP="$HOME/zwa-recovery/REPLACE_WITH_paired-DIRECTORY_NAME"
+BACKUP="$HOME/zwa-recovery/paired-20261013T230743Z"     # the paired backup to stage (never modified)
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 INPUTS="$HOME/zwa-prov-stage-inputs/$STAMP"           # private snapshot of the live inputs
 EVIDENCE="$HOME/zwa-prov-stage-evidence/$STAMP"
@@ -223,8 +223,38 @@ git_live() { if git -C "$LIVE" rev-parse HEAD > /dev/null 2>&1; then git -C "$LI
 # Docker access: plain if the user may use the socket, otherwise sudo (prompt once now).
 if docker info > /dev/null 2>&1; then D=(docker); SUDO_FLAG=()
 else sudo -v; D=(sudo -n docker); SUDO_FLAG=(--docker-sudo); fi
+# Backup access: the original backup is readable only by root on the EC2 host. The driver then reads it
+# through one fixed reader run as `sudo -n /usr/bin/python3 -I -c <reader>`; nothing is chmodded,
+# chowned or copied, and the driver itself stays unprivileged.
+if [[ -r "$BACKUP/SHA256SUMS" ]]; then BACKUP_FLAG=(); else sudo -v; BACKUP_FLAG=(--backup-sudo); fi
 "${D[@]}" info --format '{{.OSType}}/{{.Architecture}}'      # expect linux/x86_64
 ```
+
+### Backup access and operator permissions
+
+The original paired backup is never chmodded, chowned, copied, rewritten or
+written. All host-side backup reads go through one fixed program in
+`deploy/scripts/provenance-stage.py`, `BACKUP_READER`, run as its own
+process:
+
+- **Readable backup:** unprivileged.
+- **Root-only backup** (`--backup-sudo`): exactly `sudo -n /usr/bin/python3 -I -c <BACKUP_READER> list <backup-dir>`, or `… read <backup-dir> <file-name>`.
+
+The reader works as follows:
+
+- It accepts only a canonical absolute directory (no symlink anywhere in its path), and plain file names directly inside it.
+- It opens files with `O_NOFOLLOW | O_NONBLOCK` relative to that directory, requires a regular file, and streams its bytes to the unprivileged driver over a pipe. It never writes anything.
+- The driver hashes and inspects the stream in memory-bounded chunks. It treats any non-zero reader exit as a failure, even after a complete stream.
+- The `/usr/bin/python3` that `sudo` runs must be root-owned and writable only by root.
+- No private working copy is made.
+- Archive contents (wallets, ledger) are hashed, never printed or saved; evidence holds only names, metadata and digests.
+
+The operator (`ubuntu`) needs:
+
+- **Docker:** membership in the `docker` group, or `sudo` for `docker` (`--docker-sudo`).
+- **Root-only backup:** `sudo -n /usr/bin/python3` without a prompt, either cached by `sudo -v` (step 0) or by a NOPASSWD rule. No other `sudo` is used by the driver.
+- **The live checkout:** read access to `/opt/zwa/repo/deploy` files, directly or through `sudo cat` (step 1). No write access is needed or used.
+- **Nothing else:** no write access to `~/zwa-recovery`, `/opt/zwa/repo` or any Docker volume of `zwa-demo`.
 
 ### 1. Snapshot and preserve the AWS-local inputs (read only)
 
@@ -311,7 +341,7 @@ fails that check; then rebuild fully.
 
 ```sh
 cd "$STAGE_CHECKOUT"
-STAGE_ARGS=(--backup-dir "$BACKUP" --engine-tag "$STAGE_TAG" --env-file "$INPUTS/live.env"
+STAGE_ARGS=("${BACKUP_FLAG[@]}" --backup-dir "$BACKUP" --engine-tag "$STAGE_TAG" --env-file "$INPUTS/live.env"
   --evidence-dir "$EVIDENCE"
   --expect-genesis 029f11d80ef9765602235e1bc9727e3eb6ba20839319f761fee920d63401e327
   --expect-anchor-height 335
@@ -324,7 +354,11 @@ python3 -I deploy/scripts/provenance-stage.py plan "${SUDO_FLAG[@]}" "${STAGE_AR
 one never-started, network-less container used to copy the zebra executable
 out, removed again with `rm -v`. It checks:
 
-- **Backup:** `$BACKUP/SHA256SUMS` lists and matches all three `zwa-demo_*.tar.gz` (`--checksum-file` names another manifest).
+- **Backup:** `$BACKUP/SHA256SUMS` (or `--checksum-file`) is parsed without being rewritten.
+  - Entries may be plain names, or absolute paths directly inside exactly `$BACKUP`. The AWS manifest has five absolute entries.
+  - Paths elsewhere, `..`, `.`, `//`, nesting and duplicates (after reducing an entry to its file name) are refused.
+  - **Every** listed archive is checksummed, but only the three `zwa-demo_{zwa-root,zebra-state,zwa-params}.tar.gz` are restored.
+  - The directory's names, modes, owners, sizes and mtimes are recorded and must be identical at the end of `stage`.
 - **Archive contents** (read without extracting):
   - relative paths only; no traversal, devices, FIFOs or setuid;
   - nothing below a symlink, and hard links only to earlier regular members;
@@ -403,7 +437,7 @@ the developer's arm64 Mac, only these real-Docker pieces were run:
 
 - `plan` and `stage` end to end on an AMD64 host;
 - the real `compose.amd64.yaml`;
-- the real `SHA256SUMS` manifest and `.tar.gz` layout;
+- the real `SHA256SUMS` manifest and `.tar.gz` layout, and reading them through real `sudo` (`--backup-sudo`);
 - `tar -xzf` restores and the `find`/digest one-shots into real volumes;
 - `docker compose up`/`run` in `zwa-prov-stage`;
 - real Zebra RPC for the settled-transaction check;
