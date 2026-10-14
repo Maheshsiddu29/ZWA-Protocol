@@ -288,6 +288,26 @@ class MigrationRefusalTests(Fixture):
             self.assert_refused("invalid expected Compose project", expect_project=bad)
         self.assertEqual(self.chain.calls, [])  # refused before any chain read or write
 
+    def test_same_image_and_architecture_in_another_project_is_refused(self):
+        self.record()
+        migrated = self.identity.read_bytes()
+        before = self.tree()
+        # A genuine, fresh attestation, but of another project's container, with the matching expectation.
+        self.assert_refused("belongs to Compose project 'zwa-prov-stage', not the expected 'zwa-prov-other'",
+                            data=attestation(composeProject="zwa-prov-other", containerId="c" * 64),
+                            expect_project="zwa-prov-other")
+        self.assertEqual(self.identity.read_bytes(), migrated)
+        self.assertEqual(self.tree(), before)
+
+    def test_same_project_same_image_is_an_idempotent_no_op(self):
+        self.record()
+        migrated = self.identity.read_bytes()
+        again = self.record(attestation(attestedAt=NOW - 2))
+        self.assertEqual((again["changed"], again["reason"], again["durable"]), (False, "ALREADY_RECORDED", True))
+        self.assertIs(again["freshAttestation"]["sameContainerAsRecord"], True)
+        self.assertEqual(again["zebraRuntime"]["composeProject"], "zwa-prov-stage")
+        self.assertEqual(self.identity.read_bytes(), migrated)
+
     def test_replaced_container_is_reported_never_written(self):
         self.record()
         migrated = self.identity.read_bytes()

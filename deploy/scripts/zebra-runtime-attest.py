@@ -121,6 +121,9 @@ def verify(tag: str, project: str, recorded: dict | None = None, now: int | None
         provenance = recorded.get("provenance") if isinstance(recorded, dict) else None
         if not isinstance(provenance, dict) or provenance.get("evidence") != "POINT_IN_TIME_HOST_ATTESTATION":
             raise AttestError("the `show` output records no runtime attestation")
+        if provenance.get("attestedComposeProject") != project:
+            raise AttestError(f"the recorded runtime belongs to Compose project "
+                              f"{provenance.get('attestedComposeProject')!r}, not {project!r}")
         if (provenance.get("attestedImage"), provenance.get("attestedPlatform")) != (fresh["imageId"],
                                                                                      fresh["platform"]):
             raise AttestError("the running Zebra image differs from the recorded runtime")

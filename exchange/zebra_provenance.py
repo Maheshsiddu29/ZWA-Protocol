@@ -285,11 +285,14 @@ def _record_locked(root: Path, attestation: object, *, rpc, expect_genesis: str,
 
     existing = meta.get(RUNTIME_KEY)
     if existing is not None:
+        if existing["composeProject"] != expect_project:
+            raise ProvenanceError(f"the recorded runtime belongs to Compose project {existing['composeProject']!r}, "
+                                  f"not the expected {expect_project!r}; refusing")
         if (existing["imageId"], existing["platform"]) == (claim["imageId"], claim["platform"]):
             if not dry_run:
                 _confirm_durable(path, original)
-            # The existing record is left exactly as it is. A replaced container or another project
-            # is reported, never silently written: this attestation is only today's host check.
+            # The existing record is left exactly as it is. A replaced container in the same project is
+            # reported, never silently written: this attestation is only today's host check.
             return {"changed": False, "reason": "ALREADY_RECORDED", "durable": not dry_run,
                     "zebraRuntime": existing, "sha256": hashlib.sha256(original).hexdigest(),
                     "freshAttestation": {"containerId": claim["containerId"], "attestedAt": claim["attestedAt"],

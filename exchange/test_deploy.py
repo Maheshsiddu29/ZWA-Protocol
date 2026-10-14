@@ -222,7 +222,8 @@ class ZebraHostAttestationTests(unittest.TestCase):
 
     def test_fresh_verification_compares_with_the_recorded_point_in_time_runtime(self):
         recorded = {"provenance": {"evidence": "POINT_IN_TIME_HOST_ATTESTATION", "attestedImage": self.AMD64,
-                                   "attestedPlatform": "linux/amd64", "attestedContainerId": f"{1:064x}"}}
+                                   "attestedPlatform": "linux/amd64", "attestedContainerId": f"{1:064x}",
+                                   "attestedComposeProject": "zwa-prov-stage"}}
         with patch.object(self.tool, "_docker", side_effect=FakeDocker(self.AMD64, "linux/amd64")):
             same = self.tool.verify("qedit/zebra-zsa-swap-pinned:latest", "zwa-prov-stage", recorded, now=1)
             recorded["provenance"]["attestedContainerId"] = "f" * 64  # container since replaced
@@ -230,7 +231,8 @@ class ZebraHostAttestationTests(unittest.TestCase):
         self.assertEqual((same["verified"], same["sameContainerAsRecord"]), (True, True))
         self.assertIs(replaced["sameContainerAsRecord"], False)
         for provenance in ({"evidence": "LABEL_ONLY"},
-                           dict(recorded["provenance"], attestedImage=self.ARM64, attestedPlatform="linux/arm64")):
+                           dict(recorded["provenance"], attestedImage=self.ARM64, attestedPlatform="linux/arm64"),
+                           dict(recorded["provenance"], attestedComposeProject="zwa-demo")):
             with patch.object(self.tool, "_docker", side_effect=FakeDocker(self.AMD64, "linux/amd64")), \
                  self.assertRaises(self.tool.AttestError):
                 self.tool.verify("qedit/zebra-zsa-swap-pinned:latest", "zwa-prov-stage", {"provenance": provenance})
