@@ -14,6 +14,7 @@ import unittest
 from unittest.mock import patch
 
 from benchmark import analysis, cli, evidence as ev, report, safety, workload
+from benchmark.correlation import CorrelationStore
 from benchmark.docker import Docker
 from benchmark.test_safety import rendered
 from benchmark.test_workload import Harness
@@ -41,8 +42,10 @@ def compose_subcommand(argv: list[str]) -> list[str]:
 
 class FakeDockerHost:
     def __init__(self, params_dir: str, *, platform="linux/amd64", name=PROJECT, volumes=(), labelled=None,
-                 zebra_id=None):
+                 zebra_id=None, probes=None):
         self.calls: list[list[str]] = []
+        # Answers to the read-only probe, in order (the last repeats); None = the portal cannot be reached.
+        self.probes = list(probes or [])
         self.platform = platform
         self.params_dir = params_dir
         self.name = name
@@ -65,6 +68,11 @@ class FakeDockerHost:
                 config["services"]["params"]["volumes"][0]["source"] = self.params_dir
                 text = json.dumps(config).replace('"zwa-engine:local"', '"zwa-engine:bench"')  # ZWA_ENGINE_TAG
                 return Done(0, text)
+            if sub[0] == "exec" and "zwa-bench-probe" in sub:
+                answer = self.probes.pop(0) if len(self.probes) > 1 else (self.probes[0] if self.probes else None)
+                if answer is None:
+                    return Done(1, "", "service \"portal\" is not running")
+                return Done(0, json.dumps(answer))
             return Done(0, "")
         if args[:2] == ["image", "inspect"]:
             ident = self.zebra_id if "zebra" in args[2] else ENGINE_ID
@@ -87,6 +95,37 @@ class FakeDockerHost:
 
     def compose_calls(self) -> list[list[str]]:
         return [compose_subcommand(c) for c in self.calls if c[1] == "compose" and c[2] != "version"]
+
+
+OFFER = "0f" * 16
+
+
+def snapshot(orders=(), *, tip=900, live=True, wallets=(), details=None, genesis=None):
+    """A read-only probe answer for a benchmark exchange (exchange.portal / engine.PROBE shape)."""
+    from benchmark.safety import REGTEST_GENESIS
+    genesis = genesis or REGTEST_GENESIS
+    released = ("CANCELLED", "EXPIRED", "REJECTED", "EXECUTION_FAILED")
+    index = [{"id": oid, "offer_id": OFFER, "quantity": 1, "state": state} for oid, state in orders]
+    sold = sum(1 for o in index if o["state"] == "RECEIPT_AVAILABLE")
+    reserved = sum(1 for o in index if o["state"] not in released and o["state"] != "RECEIPT_AVAILABLE")
+    detail = {}
+    for o in index:
+        settled = o["state"] == "RECEIPT_AVAILABLE"
+        detail[o["id"]] = {"id": o["id"], "state": o["state"], "evidence": {},
+                           "artifactMtimeNs": {"stabilization.json": 1} if settled else {},
+                           "onChain": {"txInBlock": True, "blockHashMatches": True} if settled else None}
+    detail.update(details or {})
+    return {"probe": 1, "approvalMode": "CUSTODIAL_DEMO_POLICY", "integrity": "ok",
+            "identity": {"genesisHash": genesis},
+            "chain": {"live": True, "tip": tip, "tipHash": format(tip, "064x"), "genesisHash": genesis}
+            if live else {"live": False, "error": "URLError"},
+            "offers": [{"id": OFFER, "instrument_id": "zwa-gold-reference", "asset_base": "a" * 64, "capacity": 900,
+                        "reserved": reserved, "sold": sold, "state": "OFFER_CREATED"}],
+            "dealerPolicy": "ACTIVE", "dealerScans": [{"asset_base": "a" * 64, "asset_units": 1000 - sold}],
+            "settlements": [{"order_id": o["id"], "txid": "e" * 64} for o in index
+                            if o["state"] == "RECEIPT_AVAILABLE"],
+            "wallets": [{"account_id": f"judge-{i:020d}", "state": state} for i, state in enumerate(wallets)],
+            "orderIndex": index, "orders": detail}
 
 
 def run_cli(argv, docker) -> tuple[int, dict | None, str]:
@@ -391,18 +430,165 @@ class Prepared(CliCase):
     def test_cleanup_removes_exactly_the_manifest_resources_and_keeps_evidence(self):
         other = ["zwa-demo_zwa-root", "zwa-prov-stage_zwa-root", "zwa-bench-other_zwa-root"]
         host = FakeDockerHost(str(self.params), volumes=self.volumes + other,
-                              labelled={**{v: PROJECT for v in self.volumes}, **{v: v.split("_")[0] for v in other}})
+                              labelled={**{v: PROJECT for v in self.volumes}, **{v: v.split("_")[0] for v in other}},
+                              probes=[snapshot([("a" * 32, "RECEIPT_AVAILABLE")], wallets=["READY"])])
         before = sorted(p.name for p in self.work.evidence.iterdir())
-        code, out, err = run_cli(self.cleanup_args(), self.docker(host))
+        with patch.object(cli, "SLEEP", lambda seconds: None):
+            code, out, err = run_cli(self.cleanup_args(), self.docker(host))
         self.assertEqual(code, 0, err)
         self.assertEqual(sorted(out["removedVolumes"]), sorted(self.volumes))
         self.assertEqual(sorted(host.volumes), sorted(other))
-        self.assertEqual(host.compose_calls(), [["down"]])
+        self.assertEqual([c[0] for c in host.compose_calls()], ["exec", "exec", "down"])
         flat = " ".join(" ".join(c) for c in host.calls)
         for token in (" -v", "--volumes", "prune", "--force"):
             self.assertNotIn(token, flat)
         after = sorted(p.name for p in self.work.evidence.iterdir())
         self.assertTrue(set(before) <= set(after), "evidence is never deleted")
+
+
+class CleanupQuiescence(Prepared):
+    """Review finding 3: cleanup must prove the exchange is at rest and every purchase is resolved."""
+
+    def cleanup(self, probes, *extra):
+        host = FakeDockerHost(str(self.params), volumes=self.volumes, probes=probes)
+        with patch.object(cli, "SLEEP", lambda seconds: None):
+            code, out, err = run_cli(self.cleanup_args() + list(extra), self.docker(host))
+        return host, code, out, err
+
+    def assertRefusedUntouched(self, host, code, err, text):
+        self.assertEqual(code, cli.EXIT_REFUSED, err)
+        self.assertIn(text, err)
+        self.assertNotIn("down", [c[0] for c in host.compose_calls()])
+        self.assertFalse(any(c[1:3] == ["volume", "rm"] for c in host.calls))
+        self.assertEqual(host.volumes, self.volumes)
+
+    def partial_run(self, order_id):
+        run_dir = self.work.evidence / "runs" / "20261014T010000Z-L1-abcdef"
+        run_dir.mkdir()
+        (run_dir / "summary.json").write_text(json.dumps({"result": "PARTIAL", "transactions": [
+            {"orderId": order_id, "outcome": "IN_PROGRESS_AT_DRAIN_END"}]}))
+
+    def test_partial_run_then_cleanup_is_refused(self):
+        order = "b" * 32
+        self.partial_run(order)
+        host, code, _, err = self.cleanup([snapshot([(order, "SELLER_APPROVED")])])
+        self.assertRefusedUntouched(host, code, err, "not quiescent")
+        self.assertIn("SELLER_APPROVED", err)
+
+    def test_every_unresolved_order_state_is_refused(self):
+        for state in ("BUYER_REQUESTED", "QUOTE_READY", "BUYER_CONFIRMED", "PROOF_VERIFIED", "TRADE_AUTHORIZED",
+                      "BUYER_APPROVED", "SUBMITTED", "INCLUDED", "RECONCILED", "UNCERTAIN"):
+            host, code, _, err = self.cleanup([snapshot([("c" * 32, state)])])
+            self.assertRefusedUntouched(host, code, err, state)
+
+    def test_unavailable_rpc_is_refused(self):
+        host, code, _, err = self.cleanup([snapshot(live=False)])
+        self.assertRefusedUntouched(host, code, err, "chain RPC")
+
+    def test_unavailable_exchange_state_is_refused(self):
+        host, code, _, err = self.cleanup([None])
+        self.assertRefusedUntouched(host, code, err, "state is unavailable")
+
+    def test_an_exchange_still_changing_is_refused(self):
+        host, code, _, err = self.cleanup([snapshot(tip=900), snapshot(tip=901)])
+        self.assertRefusedUntouched(host, code, err, "changed between")
+
+    def test_wallet_provisioning_in_progress_is_refused(self):
+        for state in ("REQUESTED", "CREATED", "FUNDING"):
+            host, code, _, err = self.cleanup([snapshot(wallets=[state])])
+            self.assertRefusedUntouched(host, code, err, state)
+
+    def test_settlement_without_durability_or_inclusion_is_refused(self):
+        order = "d" * 32
+        for detail, text in (({"artifactMtimeNs": {}}, "stabilization"),
+                             ({"artifactMtimeNs": {"stabilization.json": 1, "dropped.json": 2}}, "dropped"),
+                             ({"onChain": {"txInBlock": False, "blockHashMatches": True}}, "not verified")):
+            base = snapshot([(order, "RECEIPT_AVAILABLE")])
+            base["orders"][order].update(detail)
+            host, code, _, err = self.cleanup([base])
+            self.assertRefusedUntouched(host, code, err, text)
+
+    def test_an_order_named_by_evidence_but_missing_from_the_ledger_is_refused(self):
+        self.partial_run("e" * 32)
+        host, code, _, err = self.cleanup([snapshot()])
+        self.assertRefusedUntouched(host, code, err, "missing from the ledger")
+
+    def test_an_unresolved_purchase_correlation_is_refused(self):
+        store = CorrelationStore(self.work.correlations, "20261014T010000Z-L1-abcdef")
+        store.begin("P1", account="judge-00000000000000000000", session="s" * 64, key="bench-" + "0" * 24,
+                    offer_id=OFFER, instrument="zwa-gold-reference", quantity=1)
+        host, code, _, err = self.cleanup([snapshot()])
+        self.assertRefusedUntouched(host, code, err, "unresolved purchase")
+        self.assertNotIn("s" * 64, err)
+        self.assertEqual(host.compose_calls(), [], "refused before even reading the exchange")
+
+    def test_inconsistent_inventory_is_refused(self):
+        bad = snapshot([("f" * 32, "RECEIPT_AVAILABLE")])
+        bad["offers"][0]["sold"] = 0
+        host, code, _, err = self.cleanup([bad])
+        self.assertRefusedUntouched(host, code, err, "sold")
+
+    def test_quiescent_exchange_is_cleaned_with_a_recorded_check(self):
+        settled = "a" * 32
+        self.partial_run(settled)
+        host, code, out, err = self.cleanup([snapshot([(settled, "RECEIPT_AVAILABLE"), ("9" * 32, "EXPIRED")],
+                                                      wallets=["READY", "RETIRED"])])
+        self.assertEqual(code, 0, err)
+        self.assertEqual(sorted(out["removedVolumes"]), sorted(self.volumes))
+        (check,) = self.work.evidence.glob("cleanup-check-*.json")
+        recorded = json.loads(check.read_text())
+        self.assertEqual(recorded["result"], "QUIESCENT")
+        self.assertEqual(recorded["orders"], {"EXPIRED": 1, "RECEIPT_AVAILABLE": 1})
+
+    def test_stopped_stack_cannot_be_cleaned_until_reconciled(self):
+        host, code, _, err = self.cleanup([None])
+        self.assertIn("restart", err)
+
+    def test_quiescence_window_is_bounded(self):
+        host = FakeDockerHost(str(self.params), volumes=self.volumes, probes=[snapshot()])
+        code, _, err = run_cli(self.cleanup_args() + ["--quiescence-seconds", "1"], self.docker(host))
+        self.assertEqual(code, cli.EXIT_REFUSED)
+        self.assertIn("quiescence", err)
+
+
+class FailedPrepareCleanup(CliCase):
+    """A project whose prepare never finished: nothing was ever submitted, so no exchange state needs preserving."""
+
+    def setUp(self):
+        super().setUp()
+        self.work = ev.Workdir(self.workdir)
+        self.work.ensure()
+        ev.write_new(self.work.env_file, "".join(f"{k}={v}\n" for k, v in {
+            "ZWA_ENGINE_TAG": "bench", "ZWA_ZEBRA_IMAGE": "z", "ZWA_PARAMS_DIR": str(self.params),
+            "ZWA_PORTAL_TOKEN": "t" * 64, "ZWA_PUBLIC_ORIGIN": "https://bench.invalid",
+            "ZWA_SITE_ADDRESS": "bench.invalid", "ZWA_BIND_ADDRESS": "127.0.0.1"}.items()))
+        self.volumes = [f"{PROJECT}_{v}" for v in ("zebra-state", "zwa-params", "zwa-root")]
+        ev.write_new(self.work.manifest_path, json.dumps({"manifest": 1, "project": PROJECT, "maxTransactions": 6,
+                                                          "resources": {"volumes": self.volumes}}))
+        self.args = ["cleanup", *self.common(), "--confirm-project", PROJECT, "--confirm-manifest-sha256",
+                     ev.sha256_file(self.work.manifest_path), "--prepare-failed"]
+
+    def run_cleanup(self):
+        host = FakeDockerHost(str(self.params), volumes=self.volumes)
+        return host, *run_cli(self.args, self.docker(host))
+
+    def test_failed_prepare_with_no_submissions_can_be_cleaned_without_a_probe(self):
+        host, code, out, err = self.run_cleanup()
+        self.assertEqual(code, 0, err)
+        self.assertNotIn("exec", [c[0] for c in host.compose_calls()])
+        (check,) = self.work.evidence.glob("cleanup-check-*.json")
+        self.assertEqual(json.loads(check.read_text())["result"], "PREPARE_FAILED_NO_SUBMISSIONS")
+
+    def test_prepare_failed_is_refused_once_anything_ran(self):
+        ev.write_new(self.work.evidence / "prepare-result.json", json.dumps({"status": "PREPARED"}))
+        host, code, _, err = self.run_cleanup()
+        self.assertEqual(code, cli.EXIT_REFUSED)
+        self.assertIn("was prepared", err)
+        (self.work.evidence / "prepare-result.json").unlink()
+        self.work.reserve_budget("20261014T000000Z-L0-abcdef", 0, 0)
+        host, code, _, err = self.run_cleanup()
+        self.assertIn("level run", err)
+        self.assertEqual(host.volumes, self.volumes)
 
 
 class RunOrderIds(unittest.TestCase):

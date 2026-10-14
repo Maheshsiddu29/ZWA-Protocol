@@ -15,11 +15,17 @@
   reconcile  Read-only re-check of a run's orders after a stop.
   report     Re-render a run's Markdown report from its summary.json.
   status     Read-only: containers and a probe snapshot.
-  stop       `docker compose stop` for the project. Containers, volumes and
-             evidence are kept.
+  stop       Emergency only: `docker compose stop` for the project. It is
+             crash-equivalent for the exchange (a coordinator stopped after
+             both approvals leaves the order UNCERTAIN). Containers, volumes
+             and evidence are kept; cleanup is then refused until the project
+             is restarted, reconciled and quiescent.
   cleanup    Separate, explicit removal of exactly the resources the
              manifest names (containers, network, volumes), after label
-             checks. Evidence is never deleted.
+             checks, and only when two read-only probes --quiescence-seconds
+             apart show an exchange at rest with every purchase resolved
+             (or, with --prepare-failed, a project that never completed
+             prepare and never ran a level). Evidence is never deleted.
 
 Exit status: 0 passed; 2 refused or failed before any submission; 3 the level
 stopped or is partial (inspect, then reconcile); 4 the evidence scan found a
@@ -29,6 +35,7 @@ secret (restrict the evidence directory and report it).
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import fcntl
 import hashlib
 import json
@@ -62,6 +69,8 @@ ENV_KEYS = ("ZWA_ENGINE_TAG", "ZWA_ZEBRA_IMAGE", "ZWA_PARAMS_DIR", "ZWA_PORTAL_T
             "ZWA_SITE_ADDRESS", "ZWA_BIND_ADDRESS")
 MIN_COMPOSE = (2, 24)  # `!reset` in deploy/benchmark/compose.bench.yaml
 EXIT_REFUSED, EXIT_STOPPED, EXIT_SECRET = 2, 3, 4
+SLEEP = time.sleep  # the quiescence interval; replaced in tests
+QUIESCENCE_BOUNDS = (5, 600)
 
 
 class Refused(RuntimeError):
@@ -92,6 +101,22 @@ class Bench:
         self.cgroup_root = cgroup_root
         self.redactor = ev.Redactor()
         self._compose: Compose | None = None
+        self._lock: int | None = None
+
+    def lock(self) -> None:
+        """Exclusive lock on the workdir for this command (run or cleanup); released by release()."""
+        descriptor = os.open(self.workdir.private / "run.lock", os.O_WRONLY | os.O_CREAT, 0o600)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            os.close(descriptor)
+            raise Refused("another benchmark command holds this workdir")
+        self._lock = descriptor
+
+    def release(self) -> None:
+        if self._lock is not None:
+            os.close(self._lock)  # closing the descriptor releases the flock
+            self._lock = None
 
     @property
     def compose(self) -> Compose:
@@ -386,11 +411,7 @@ class Bench:
         if host:
             raise Refused("host checks failed: " + "; ".join(host))
         self.read_env()
-        lock = os.open(self.workdir.private / "run.lock", os.O_WRONLY | os.O_CREAT, 0o600)
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise Refused("another benchmark command holds this workdir")
+        self.lock()
         safety.check_budget(manifest["maxTransactions"], self.workdir.budget_used(), wanted)  # under the lock
         states = self.inspect_services()
         for service in safety.LONG_RUNNING:
@@ -580,7 +601,8 @@ class Bench:
         self.workdir.manifest()
         self.read_env()
         self.compose.ok("stop", what="docker compose stop")
-        return {"stopped": self.project, "kept": "containers, volumes and evidence"}
+        return {"stopped": self.project, "kept": "containers, volumes and evidence", "crashEquivalent": True,
+                "next": "restart the project, run reconcile; cleanup is refused until the exchange is quiescent"}
 
     def cleanup(self) -> dict:
         """Remove exactly the manifest's resources. Never `down -v`, never prune, never evidence."""
@@ -594,29 +616,95 @@ class Bench:
         expected = set(manifest["resources"]["volumes"])
         if not expected or any(not name.startswith(self.project + "_") for name in expected):
             raise Refused("manifest volumes are not this project's")
-        lock = os.open(self.workdir.private / "run.lock", os.O_WRONLY | os.O_CREAT, 0o600)
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise Refused("a benchmark command is still running in this workdir")
+        self.lock()
         found = self.resources()
         unknown = set(found["volumes"]) - expected
         if unknown:
             raise Refused(f"refusing cleanup: unexpected volumes carry this project's name or label: {sorted(unknown)}")
-        self.compose.ok("down", what="docker compose down (volumes kept by Compose)")
-        removed = []
-        for name in sorted(set(found["volumes"]) & expected):
+        targets = sorted(set(found["volumes"]) & expected)
+        for name in targets:  # every ownership check before anything is changed
             data = json.loads(self.docker.ok("volume", "inspect", name, what=f"volume inspect {name}"))
             labels = (data[0].get("Labels") or {}) if data else {}
             if labels.get("com.docker.compose.project") != self.project:
                 raise Refused(f"volume {name} is not labelled for {self.project}; left in place")
+        # The ledger and wallet volumes are deleted only on evidence that nothing is left to settle or reconcile.
+        check = self.prepare_failed_check() if self.args.prepare_failed else self.quiescence_check()
+        self.compose.ok("down", what="docker compose down (volumes kept by Compose)")
+        removed = []
+        for name in targets:
             self.docker.ok("volume", "rm", name, what=f"volume rm {name}")
             removed.append(name)
         result = {"cleanup": 1, "project": self.project, "removedVolumes": removed, "at": now_iso(),
-                  "evidenceKept": str(self.workdir.evidence)}
-        ev.write_new(self.workdir.evidence / f"cleanup-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.json",
-                     json.dumps(result, indent=2, sort_keys=True) + "\n")
+                  "basis": check["result"], "evidenceKept": str(self.workdir.evidence)}
+        ev.write_new(self.workdir.evidence / f"cleanup-{stamp()}.json", json.dumps(result, indent=2, sort_keys=True)
+                     + "\n")
         return result
+
+    def record_check(self, check: dict) -> None:
+        ev.write_new(self.workdir.evidence / f"cleanup-check-{stamp()}.json",
+                     json.dumps(self.redactor(check), indent=2, sort_keys=True) + "\n")
+
+    def evidence_order_ids(self, records: list[dict]) -> set[str]:
+        ids = {record["orderId"] for record in records if record.get("orderId")}
+        runs = self.workdir.evidence / "runs"
+        for run_dir in sorted(runs.iterdir()) if runs.is_dir() else []:
+            if run_dir.is_dir() and not run_dir.is_symlink():
+                ids |= set(run_order_ids(run_dir))
+        return ids
+
+    def quiescence_check(self) -> dict:
+        """Two read-only probes, --quiescence-seconds apart, must show an exchange at rest (see
+        analysis.quiescence_problems), and every recorded purchase must be resolved. Refuses otherwise."""
+        records = self.correlation_records()
+        unresolved = sorted(f"{r['runId']}/{r['label']}" for r in records if r["status"] in correlation.UNRESOLVED)
+        if unresolved:
+            self.record_check({"cleanupCheck": 1, "result": "UNRESOLVED_PURCHASES", "at": now_iso(),
+                               "unresolvedPurchases": unresolved})
+            raise Refused(f"unresolved purchase(s) {unresolved}: run reconcile (a read-only lookup) and resolve "
+                          "them before cleanup")
+        evidence_ids = self.evidence_order_ids(records)
+        snapshots = []
+        for attempt in range(2):
+            if attempt:
+                SLEEP(self.args.quiescence_seconds)
+            try:
+                snapshots.append(engine.probe(self.compose))
+            except (Refused, safety.SafetyError, engine.EngineError, ValueError, OSError,
+                    subprocess.TimeoutExpired) as exc:
+                self.record_check({"cleanupCheck": 1, "result": "STATE_UNAVAILABLE", "at": now_iso(),
+                                   "error": str(exc)[:300]})
+                raise Refused(f"exchange state is unavailable ({str(exc)[:160]}); restart this project's zebra and "
+                              "engine services, run reconcile, then retry cleanup") from exc
+        problems = analysis.quiescence_problems(snapshots[0], snapshots[1], evidence_ids)
+        last = snapshots[1]
+        count = lambda items, key: dict(sorted(Counter(item[key] for item in items).items()))  # noqa: E731
+        check = {"cleanupCheck": 1, "result": "NOT_QUIESCENT" if problems else "QUIESCENT", "at": now_iso(),
+                 "intervalSeconds": self.args.quiescence_seconds, "tip": (last.get("chain") or {}).get("tip"),
+                 "orders": count(last.get("orderIndex") or [], "state"),
+                 "wallets": count(last.get("wallets") or [], "state"),
+                 "evidenceOrders": len(evidence_ids), "purchases": len(records), "problems": problems}
+        self.record_check(check)
+        if problems:
+            raise Refused("exchange is not quiescent: " + "; ".join(problems[:6]))
+        return check
+
+    def prepare_failed_check(self) -> dict:
+        """A project whose prepare never completed and that never ran a level has nothing to settle: the harness
+        submitted no purchase, and only bootstrap's disposable regtest state exists. Anything else is refused."""
+        path = self.workdir.evidence / "prepare-result.json"
+        if path.exists() and json.loads(path.read_text()).get("status") == "PREPARED":
+            raise Refused("this project was prepared successfully; cleanup requires a quiescent exchange "
+                          "(omit --prepare-failed)")
+        runs = self.workdir.evidence / "runs"
+        if any((self.workdir.evidence / "budget").glob("*.json")) or (runs.is_dir() and any(runs.iterdir())):
+            raise Refused("a level run was started for this project; cleanup requires a quiescent exchange "
+                          "(omit --prepare-failed)")
+        if correlation.CorrelationStore.all_records(self.workdir.correlations):
+            raise Refused("purchase records exist; cleanup requires a quiescent exchange (omit --prepare-failed)")
+        check = {"cleanupCheck": 1, "result": "PREPARE_FAILED_NO_SUBMISSIONS", "at": now_iso(),
+                 "prepared": False, "levelRuns": 0, "purchases": 0}
+        self.record_check(check)
+        return check
 
 
 def run_order_ids(run_dir: Path) -> list[str]:
@@ -648,6 +736,11 @@ def mount_point_for(path: str, mountinfo: str) -> str:
             if (path == point or path.startswith(point.rstrip("/") + "/")) and len(point) > len(best):
                 best = point
     return best
+
+
+def stamp() -> str:
+    """A file-name timestamp that never collides with an earlier file of the same second."""
+    return time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()) + "-" + secrets.token_hex(2)
 
 
 def now_iso() -> str:
@@ -724,10 +817,16 @@ def parser() -> argparse.ArgumentParser:
     common(p)
     p.add_argument("--confirm-project", required=True)
     p.add_argument("--confirm-manifest-sha256", required=True)
+    p.add_argument("--quiescence-seconds", type=int, default=30,
+                   help="interval between the two read-only probes that must show an exchange at rest (5..600)")
+    p.add_argument("--prepare-failed", action="store_true",
+                   help="only for a project whose prepare never completed and that never ran a level")
     return root
 
 
 def validate_args(args) -> None:
+    if args.command == "cleanup" and not QUIESCENCE_BOUNDS[0] <= args.quiescence_seconds <= QUIESCENCE_BOUNDS[1]:
+        raise Refused(f"--quiescence-seconds must be {QUIESCENCE_BOUNDS[0]}..{QUIESCENCE_BOUNDS[1]}")
     if args.command == "run":
         if not 0.25 <= args.sample_interval <= 1.0:
             raise Refused("--sample-interval must be between 0.25 and 1.0 seconds (at least one sample per second)")
@@ -743,13 +842,16 @@ def main(argv: list[str] | None = None, docker: Docker | None = None) -> int:
         validate_args(args)
         bench = Bench(args, docker)
         code = 0
-        if args.command == "run":
-            output, code = bench.run()
-        else:
-            output = getattr(bench, args.command)()
-            if args.command == "plan":
-                ev.write_new(bench.workdir.evidence / f"plan-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.json",
-                             json.dumps(output, indent=2, sort_keys=True) + "\n")
+        try:
+            if args.command == "run":
+                output, code = bench.run()
+            else:
+                output = getattr(bench, args.command)()
+        finally:
+            bench.release()
+        if args.command == "plan":
+            ev.write_new(bench.workdir.evidence / f"plan-{stamp()}.json",
+                         json.dumps(output, indent=2, sort_keys=True) + "\n")
     except (Refused, safety.SafetyError, ev.EvidenceError, engine.EngineError, metrics.MetricsError,
             ValueError, OSError, subprocess.TimeoutExpired) as exc:
         print(f"BENCH_REFUSED {exc}", file=sys.stderr)

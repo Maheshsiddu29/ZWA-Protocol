@@ -389,3 +389,63 @@ def acceptance_problems(summary: dict, *, include_stops: bool = True) -> list[st
         if durability_required and not (t.get("durabilityObserved") is True and t.get("durability")):
             out.append(f"{label}: durability not observed")
     return out
+
+
+# ---------------------------------------------------------------- quiescence (cleanup)
+
+PROVISIONING_WALLET_STATES = ("REQUESTED", "CREATED", "FUNDING")
+
+
+def quiescence_problems(first: dict, second: dict, evidence_order_ids: set[str] | frozenset[str]) -> list[str]:
+    """Reasons the exchange is not provably at rest, from two read-only probes taken some time apart.
+
+    At rest means: the chain RPC answers and is regtest; every order is either released or settled; every
+    settlement is verified in its block, stabilized and not dropped; no demo wallet is being created or funded;
+    reservations and sales reconcile; every order the evidence names exists in the ledger; and nothing changed
+    between the probes (tip, orders, wallets, settlements, offers).
+    """
+    out: list[str] = []
+    if not (first.get("chain") or {}).get("live") or not (second.get("chain") or {}).get("live"):
+        out.append("the chain RPC is unavailable, so transaction state cannot be verified")
+    out += [p for p in chain_problems(second) if p != "chain RPC is not live"]
+    index = second.get("orderIndex") or []
+    details = second.get("orders") or {}
+    for order in index:
+        state, short = order["state"], order["id"][:12]
+        if state not in RELEASED and state != SETTLED:
+            out.append(f"order {short} is {state}")
+            continue
+        if state != SETTLED:
+            continue
+        detail = details.get(order["id"])
+        if not detail:
+            out.append(f"settled order {short} has no probe detail")
+            continue
+        artifacts = detail.get("artifactMtimeNs") or {}
+        if "dropped.json" in artifacts:
+            out.append(f"settlement of order {short} was dropped from the chain; owner review needed")
+        elif "stabilization.json" not in artifacts:
+            out.append(f"settled order {short} has no stabilization record yet")
+        on_chain = detail.get("onChain") or {}
+        if not (on_chain.get("txInBlock") and on_chain.get("blockHashMatches")):
+            out.append(f"inclusion of settled order {short} is not verified on chain")
+    for wallet in second.get("wallets") or []:
+        if wallet.get("state") in PROVISIONING_WALLET_STATES:
+            out.append(f"demo wallet {wallet.get('account_id')} is {wallet['state']}")
+    out += inventory_problems(second)
+    known = {order["id"] for order in index}
+    for order_id in sorted(set(evidence_order_ids) - known):
+        out.append(f"order {order_id[:12]} recorded in evidence is missing from the ledger")
+
+    def fingerprint(snapshot: dict) -> dict:
+        chain = snapshot.get("chain") or {}
+        return {"tip": (chain.get("tip"), chain.get("tipHash")),
+                "orders": sorted((o["id"], o["state"]) for o in snapshot.get("orderIndex") or []),
+                "wallets": sorted((w.get("account_id"), w.get("state")) for w in snapshot.get("wallets") or []),
+                "settlements": sorted((s["order_id"], s["txid"]) for s in snapshot.get("settlements") or []),
+                "offers": sorted((o["id"], o["reserved"], o["sold"]) for o in snapshot.get("offers") or [])}
+    before, after = fingerprint(first), fingerprint(second)
+    changed = [key for key in before if before[key] != after[key]]
+    if changed:
+        out.append("the exchange changed between the two probes (" + ", ".join(changed) + ")")
+    return out
