@@ -34,6 +34,13 @@ from .watchdog import StopController, Thresholds, Watchdog
 INSTRUMENTS = ("zwa-gold-reference", "zwa-treasury-style", "zwa-credit-participation")
 WALLET_STATES = ("REQUESTED", "CREATED", "FUNDING", "READY")
 PORTAL_REFUSAL_LIMIT = 5
+# Every purchase outcome (summary.json transactions[].outcome; pinned by the schema test).
+OUTCOMES = ("NOT_STARTED", "ABANDONED_BEFORE_PURCHASE", "WALLET_FAILED", "WALLET_TIMEOUT", "NO_INVENTORY",
+            "DUPLICATE_MISMATCH", "FAILED_BEFORE_QUOTE", "QUOTE_TIMEOUT", "QUOTE_MISMATCH",
+            "CANCELLED_BEFORE_SIGNING", "UNCONFIRMED_NEEDS_RECONCILE", "CONFIRM_REFUSED", "FAILED_AFTER_CONFIRM",
+            "UNCERTAIN", "SETTLED_VERIFIED", "SETTLED_WITH_PROBLEMS", "IN_PROGRESS_AT_DRAIN_END", "PORTAL_REFUSED",
+            "HARNESS_ERROR")
+RESULTS = ("PASS", "STOPPED", "PARTIAL")
 
 
 @dataclass

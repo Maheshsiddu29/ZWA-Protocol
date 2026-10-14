@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zwa-protocol.invalid/schemas/zwa-bench-sample-1.json",
+  "title": "One line of evidence/runs/<run>/samples.jsonl",
+  "description": "A resource sample (at least one per second) or a recorded sampling failure. Host, container (cgroup) and process memory are separate fields and must not be added together.",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["t", "index", "error"],
+      "additionalProperties": false,
+      "properties": {"t": {"type": "number"}, "index": {"type": "integer"}, "error": {"type": "string"}}
+    },
+    {
+      "type": "object",
+      "required": ["t", "index", "host", "containers"],
+      "additionalProperties": false,
+      "properties": {
+        "t": {"type": "number"},
+        "index": {"type": "integer", "minimum": 0},
+        "host": {
+          "type": "object",
+          "required": ["memTotal", "memAvailable", "swapTotal", "swapUsed", "cpuPercent", "loadAvg", "oomKillCount",
+                       "disk"],
+          "properties": {
+            "memTotal": {"type": "integer"}, "memAvailable": {"type": "integer"},
+            "swapTotal": {"type": "integer"}, "swapUsed": {"type": "integer"},
+            "cpuPercent": {"type": ["number", "null"], "description": "all CPUs, busy share since the previous sample"},
+            "loadAvg": {"type": "array", "items": {"type": "number"}},
+            "oomKillCount": {"type": ["integer", "null"], "description": "/proc/vmstat oom_kill (cumulative since boot)"},
+            "swapInPages": {"type": ["integer", "null"]}, "swapOutPages": {"type": ["integer", "null"]},
+            "memoryPressure": {"type": ["object", "null"]},
+            "disk": {"type": "object", "additionalProperties": {"type": "object", "required": ["freeBytes", "totalBytes"]}}
+          }
+        },
+        "containers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["service", "present", "state"],
+            "properties": {
+              "service": {"enum": ["zebra", "order-service", "demo-signer", "portal"]},
+              "present": {"type": "boolean"},
+              "initPidAlive": {"type": "boolean"},
+              "memoryCurrent": {"type": ["integer", "null"]}, "memoryPeak": {"type": ["integer", "null"]},
+              "memoryMax": {"type": ["integer", "null"]}, "swapCurrent": {"type": ["integer", "null"]},
+              "memoryAnon": {"type": ["integer", "null"]}, "memoryFile": {"type": ["integer", "null"]},
+              "oomEvents": {"type": "integer"}, "oomKillEvents": {"type": "integer"}, "memoryMaxEvents": {"type": "integer"},
+              "cpuUsageUsec": {"type": ["integer", "null"]}, "cpuThrottledUsec": {"type": ["integer", "null"]},
+              "cpuNrThrottled": {"type": ["integer", "null"]}, "pidsCurrent": {"type": ["integer", "null"]},
+              "memoryPressure": {"type": ["object", "null"]},
+              "state": {"type": "object", "description": "docker inspect: status, restartCount, oomKilled, exitCode, startedAt"},
+              "processes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["pid", "label", "rssBytes", "peakRssBytes", "cpuSeconds", "startedAt"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "pid": {"type": "integer"},
+                    "label": {"type": "string", "description": "fixed classification; never the command line"},
+                    "rssBytes": {"type": ["integer", "null"]}, "peakRssBytes": {"type": ["integer", "null"]},
+                    "cpuSeconds": {"type": "number"}, "startedAt": {"type": "number"}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -19,6 +19,8 @@ from .safety import REGTEST_GENESIS
 
 RELEASED = ("CANCELLED", "EXPIRED", "REJECTED", "EXECUTION_FAILED")  # reservation returned
 DEMO_MODE = "CUSTODIAL_DEMO_POLICY"
+RECONCILE_CLASSES = ("NOT_CREATED", "SETTLED", "SETTLED_UNVERIFIED", "NOT_EXECUTED", "UNEXPECTED", "UNCERTAIN",
+                     "UNCONFIRMED", "IN_PROGRESS")
 
 
 # ---------------------------------------------------------------- consistency

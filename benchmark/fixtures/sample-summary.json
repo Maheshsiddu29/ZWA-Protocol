@@ -1,0 +1,445 @@
+{
+  "concurrency": 2,
+  "consistencyProblems": [],
+  "fixture": true,
+  "level": 2,
+  "phases": {
+    "end": 1760000028.0,
+    "finalProbe": 1760000028.0,
+    "idleAfter": 1760000027.0,
+    "idleBefore": 1760000000.0,
+    "purchasesFinished": 1760000027.0,
+    "purchasesStarted": 1760000001.0,
+    "start": 1760000000.0
+  },
+  "provenance": {
+    "engineImageId": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "platform": "linux/amd64",
+    "renderedSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "sourceDirty": false,
+    "sourceRevision": "ffffffffffffffffffffffffffffffffffffffff",
+    "txToolRevision": "1111111111111111111111111111111111111111",
+    "zebraAttestation": {},
+    "zebraImageId": "sha256:2c3f3dde0230f572911d70b7f74cc8f4587c1a139b0756d904e3b09eba2e32b9",
+    "zebraPinned": "sha256:2c3f3dde0230f572911d70b7f74cc8f4587c1a139b0756d904e3b09eba2e32b9"
+  },
+  "relay": {
+    "calls": [
+      "demo-start",
+      "wallet",
+      "demo-start",
+      "wallet",
+      "wallet",
+      "wallet",
+      "wallet",
+      "wallet",
+      "market",
+      "market",
+      "buy",
+      "buy",
+      "buy",
+      "buy",
+      "order",
+      "order",
+      "confirm",
+      "order",
+      "order",
+      "order",
+      "order",
+      "order",
+      "order",
+      "order",
+      "order",
+      "order",
+      "order",
+      "order",
+      "order",
+      "order",
+      "order",
+      "order",
+      "verify-tx",
+      "order",
+      "order",
+      "confirm",
+      "order",
+      "order",
+      "order",
+      "order",
+      "order",
+      "order",
+      "order",
+      "order",
+      "verify-tx",
+      "order"
+    ],
+    "restarts": null
+  },
+  "resources": {
+    "containers": {},
+    "host": {
+      "cpuPercentMax": 20.0,
+      "cpuPercentMean": 20.0,
+      "diskFreeMinBytes": {},
+      "loadAvg1Max": 0.5,
+      "memAvailableMinBytes": 5368709120,
+      "memAvailableStartBytes": 5368709120,
+      "memTotalBytes": 8589934592,
+      "oomKillDelta": 0,
+      "swapGrowthMaxBytes": 0,
+      "swapUsedMaxBytes": 0,
+      "swapUsedStartBytes": 0
+    },
+    "processes": {},
+    "sampleErrors": 0,
+    "samples": 3
+  },
+  "result": "PASS",
+  "run": {
+    "endedAt": "2026-10-14T12:10:00Z",
+    "eventsFile": "events.jsonl",
+    "project": "zwa-bench-fixture",
+    "runId": "20261014T120000Z-L2-a1b2c3",
+    "sampleInterval": 1.0,
+    "samplesFile": "samples.jsonl",
+    "startedAt": "2026-10-14T12:00:00Z"
+  },
+  "schema": "zwa-bench-summary/1",
+  "stopReason": null,
+  "stopReasons": [],
+  "thresholds": {
+    "drain_timeout_s": 1200,
+    "level_timeout_s": 3600,
+    "max_swap_growth_bytes": 268435456,
+    "min_disk_free_bytes": 10737418240,
+    "min_mem_available_bytes": 1610612736,
+    "quote_timeout_s": 240,
+    "sampler_failure_limit": 5,
+    "settlement_timeout_s": 900,
+    "wallet_ready_timeout_s": 600
+  },
+  "transactions": [
+    {
+      "account": "judge-f04b7b1b2e235240fa5e",
+      "blockHash": "84996859fe552a7b1f6df188a4c8aa6a3c58ca83457350e4883a6bd8d3933b90",
+      "confirmations": 1,
+      "durability": "RESTART_DURABLE",
+      "finalState": "RECEIPT_AVAILABLE",
+      "height": 401,
+      "instrument": "zwa-gold-reference",
+      "label": "P1",
+      "observedStates": [
+        [
+          "BUYER_REQUESTED",
+          1760000005.0
+        ],
+        [
+          "QUOTE_READY",
+          1760000005.0
+        ],
+        [
+          "BUYER_CONFIRMED",
+          1760000006.0
+        ],
+        [
+          "PROOF_VERIFIED",
+          1760000006.0
+        ],
+        [
+          "TRADE_AUTHORIZED",
+          1760000008.0
+        ],
+        [
+          "BUYER_APPROVED",
+          1760000010.0
+        ],
+        [
+          "SELLER_APPROVED",
+          1760000012.0
+        ],
+        [
+          "SUBMITTED",
+          1760000014.0
+        ],
+        [
+          "INCLUDED",
+          1760000016.0
+        ],
+        [
+          "RECONCILED",
+          1760000018.0
+        ],
+        [
+          "RECEIPT_AVAILABLE",
+          1760000020.0
+        ]
+      ],
+      "offerId": "bf9fbee46cd4c6c1a1a109b7afdeb577",
+      "operations": {},
+      "orderId": "bed65f6e0d1bc12c96a7eb2095d15cd7",
+      "outcome": "SETTLED_VERIFIED",
+      "paymentZat": 1000,
+      "problems": [],
+      "quantity": 1,
+      "reconciliation": {
+        "action": "none",
+        "class": "SETTLED"
+      },
+      "stages": {
+        "assembleBroadcastInclude": {
+          "method": "seller-signer.log -> receipt.json (assembly, re-verification, broadcast and regtest block inclusion; one tool call)",
+          "seconds": 2.0
+        },
+        "buyerActionGroupProveAndSign": {
+          "method": "upper bound: seller-review.log -> buyer-signer.log (includes service and signer polling); buyer Action Group: Halo2 proving and spend-auth signing (one tool call, not separable)",
+          "seconds": 2.0
+        },
+        "confirmToReceipt": {
+          "method": "client confirm -> order-receipt.json",
+          "seconds": 14.0
+        },
+        "coordinatorExecuteLive": null,
+        "durability": null,
+        "endToEnd": {
+          "method": "client submit -> order-receipt.json (includes queueing)",
+          "seconds": 15.0
+        },
+        "endToEndClientObserved": {
+          "method": "client submit -> RECEIPT_AVAILABLE observed (\u00b1poll interval)",
+          "seconds": 15.0
+        },
+        "groth16ProofGeneration": {
+          "method": "upper bound: client confirm -> proof-generation.log (includes service tick wait)",
+          "seconds": 0.0
+        },
+        "groth16Verification": {
+          "method": "proof-generation.log -> preflight-authorization.json",
+          "seconds": 0.0
+        },
+        "inclusionReconciliation": {
+          "method": "receipt.json -> seller-after.log (RPC check + wallet after-scans)",
+          "seconds": 4.0
+        },
+        "quotePreparation": null,
+        "quoteReadyIncludingQueue": {
+          "method": "client submit -> terms.json written",
+          "seconds": 0.0
+        },
+        "receiptGeneration": {
+          "method": "seller-after.log -> order-receipt.json",
+          "seconds": 2.0
+        },
+        "reservationRequest": {
+          "method": "client: portal buy round trip (ledger reservation)",
+          "seconds": 0.0
+        },
+        "sellerActionGroupProveAndSign": {
+          "method": "upper bound: buyer-signer.log -> seller-signer.log (includes service and signer polling); seller Action Group: Halo2 proving and spend-auth signing (one tool call, not separable)",
+          "seconds": 2.0
+        },
+        "walletFunding": {
+          "method": "client poll: FUNDING first seen -> READY (fund tx, 110 durability blocks, scans)",
+          "seconds": 2.0
+        },
+        "walletReview": {
+          "method": "preflight-authorization.json -> seller-review.log (both wallet reviews)",
+          "seconds": 2.0
+        },
+        "walletSetup": {
+          "method": "client poll (\u00b1poll interval)",
+          "seconds": 4.0
+        }
+      },
+      "timeline": {
+        "confirmed": 1760000006.0,
+        "duplicateChecked": 1760000005.0,
+        "durableSeen": 1760000020.0,
+        "purchaseAccepted": 1760000005.0,
+        "purchaseSubmitted": 1760000005.0,
+        "quoteReadySeen": 1760000006.0,
+        "receiptSeen": 1760000020.0,
+        "walletCreated": 1760000001.0,
+        "walletFunding": 1760000003.0,
+        "walletReady": 1760000005.0,
+        "walletRequested": 1760000001.0
+      },
+      "txid": "71a2120bfadf768a64669faf02e0a442875a21a93aa5fcd4245bdc2301d7189f",
+      "verifyTx": {
+        "blockHash": "84996859fe552a7b1f6df188a4c8aa6a3c58ca83457350e4883a6bd8d3933b90",
+        "chainActive": true,
+        "found": true,
+        "genesisHash": "029f11d80ef9765602235e1bc9727e3eb6ba20839319f761fee920d63401e327",
+        "height": 401,
+        "included": true
+      }
+    },
+    {
+      "account": "judge-a220cfe746d348485e34",
+      "blockHash": "39049f86d81e4f567093dab855798a7a5a08758b0a1626547d776ce497a1d6a0",
+      "confirmations": 1,
+      "durability": "RESTART_DURABLE",
+      "finalState": "RECEIPT_AVAILABLE",
+      "height": 402,
+      "instrument": "zwa-treasury-style",
+      "label": "P2",
+      "observedStates": [
+        [
+          "BUYER_REQUESTED",
+          1760000005.0
+        ],
+        [
+          "QUOTE_READY",
+          1760000020.0
+        ],
+        [
+          "BUYER_CONFIRMED",
+          1760000020.0
+        ],
+        [
+          "PROOF_VERIFIED",
+          1760000020.0
+        ],
+        [
+          "TRADE_AUTHORIZED",
+          1760000021.0
+        ],
+        [
+          "BUYER_APPROVED",
+          1760000022.0
+        ],
+        [
+          "SELLER_APPROVED",
+          1760000023.0
+        ],
+        [
+          "SUBMITTED",
+          1760000024.0
+        ],
+        [
+          "INCLUDED",
+          1760000025.0
+        ],
+        [
+          "RECONCILED",
+          1760000026.0
+        ],
+        [
+          "RECEIPT_AVAILABLE",
+          1760000027.0
+        ]
+      ],
+      "offerId": "174dce679d2beb6fe53d47e22ebd1a41",
+      "operations": {},
+      "orderId": "a1da4a526f6111616fd78c9a9e5c2e0f",
+      "outcome": "SETTLED_VERIFIED",
+      "paymentZat": 1250,
+      "problems": [],
+      "quantity": 1,
+      "reconciliation": {
+        "action": "none",
+        "class": "SETTLED"
+      },
+      "stages": {
+        "assembleBroadcastInclude": {
+          "method": "seller-signer.log -> receipt.json (assembly, re-verification, broadcast and regtest block inclusion; one tool call)",
+          "seconds": 1.0
+        },
+        "buyerActionGroupProveAndSign": {
+          "method": "upper bound: seller-review.log -> buyer-signer.log (includes service and signer polling); buyer Action Group: Halo2 proving and spend-auth signing (one tool call, not separable)",
+          "seconds": 1.0
+        },
+        "confirmToReceipt": {
+          "method": "client confirm -> order-receipt.json",
+          "seconds": 7.0
+        },
+        "coordinatorExecuteLive": null,
+        "durability": null,
+        "endToEnd": {
+          "method": "client submit -> order-receipt.json (includes queueing)",
+          "seconds": 22.0
+        },
+        "endToEndClientObserved": {
+          "method": "client submit -> RECEIPT_AVAILABLE observed (\u00b1poll interval)",
+          "seconds": 22.0
+        },
+        "groth16ProofGeneration": {
+          "method": "upper bound: client confirm -> proof-generation.log (includes service tick wait)",
+          "seconds": 0.0
+        },
+        "groth16Verification": {
+          "method": "proof-generation.log -> preflight-authorization.json",
+          "seconds": 0.0
+        },
+        "inclusionReconciliation": {
+          "method": "receipt.json -> seller-after.log (RPC check + wallet after-scans)",
+          "seconds": 2.0
+        },
+        "quotePreparation": null,
+        "quoteReadyIncludingQueue": {
+          "method": "client submit -> terms.json written",
+          "seconds": 15.0
+        },
+        "receiptGeneration": {
+          "method": "seller-after.log -> order-receipt.json",
+          "seconds": 1.0
+        },
+        "reservationRequest": {
+          "method": "client: portal buy round trip (ledger reservation)",
+          "seconds": 0.0
+        },
+        "sellerActionGroupProveAndSign": {
+          "method": "upper bound: buyer-signer.log -> seller-signer.log (includes service and signer polling); seller Action Group: Halo2 proving and spend-auth signing (one tool call, not separable)",
+          "seconds": 1.0
+        },
+        "walletFunding": {
+          "method": "client poll: FUNDING first seen -> READY (fund tx, 110 durability blocks, scans)",
+          "seconds": 1.0
+        },
+        "walletReview": {
+          "method": "preflight-authorization.json -> seller-review.log (both wallet reviews)",
+          "seconds": 1.0
+        },
+        "walletSetup": {
+          "method": "client poll (\u00b1poll interval)",
+          "seconds": 4.0
+        }
+      },
+      "timeline": {
+        "confirmed": 1760000020.0,
+        "duplicateChecked": 1760000005.0,
+        "durableSeen": 1760000027.0,
+        "purchaseAccepted": 1760000005.0,
+        "purchaseSubmitted": 1760000005.0,
+        "quoteReadySeen": 1760000020.0,
+        "receiptSeen": 1760000027.0,
+        "walletCreated": 1760000002.0,
+        "walletFunding": 1760000004.0,
+        "walletReady": 1760000005.0,
+        "walletRequested": 1760000001.0
+      },
+      "txid": "dde9bd8ba8cae7d5294447a5007cbbbfd77b9d18a2c4900e9a2b86af46c5df69",
+      "verifyTx": {
+        "blockHash": "39049f86d81e4f567093dab855798a7a5a08758b0a1626547d776ce497a1d6a0",
+        "chainActive": true,
+        "found": true,
+        "genesisHash": "029f11d80ef9765602235e1bc9727e3eb6ba20839319f761fee920d63401e327",
+        "height": 402,
+        "included": true
+      }
+    }
+  ],
+  "workload": {
+    "concurrency": 2,
+    "level": 2,
+    "purchases": [
+      {
+        "instrument": "zwa-gold-reference",
+        "quantity": 1
+      },
+      {
+        "instrument": "zwa-treasury-style",
+        "quantity": 1
+      }
+    ],
+    "waitDurability": true
+  }
+}
