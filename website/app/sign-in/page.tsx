@@ -7,7 +7,7 @@ export default async function SignInPage({ searchParams }: { searchParams: Promi
   const { error } = await searchParams;
   return <section className="page"><div className="shell">
     <header className="page-head"><div><p className="eyebrow">Participants</p><h1>Sign in</h1>
-      <p className="lede">{demoMode() ? "For the operator of the demo dealer. To try the exchange as a buyer, use Try demo instead; no account is needed." : "For provisioned buyer and seller accounts. A sign-in never authorizes a wallet spend."}</p></div></header>
+      <p className="lede">{demoMode() ? "For the operator of the demo dealer. To try the exchange as a buyer, use Launch demo instead; no account is needed." : "For provisioned buyer and seller accounts. A sign-in never authorizes a wallet spend."}</p></div></header>
     <div className="panel auth-card">
       <form action="/api/exchange/login" method="post">
         <label className="field-label" htmlFor="id">Account</label>

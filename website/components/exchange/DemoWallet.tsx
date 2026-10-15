@@ -101,6 +101,7 @@ export function DemoWallet({ initial, csrf }: { initial: WalletStatus | null; cs
       <div className="panel panel-muted">
         <p className="label">Session</p>
         <dl className="facts">
+          <div><dt>Network</dt><dd>Zcash regtest (experimental ZSA test chain; no real funds)</dd></div>
           <div><dt>Address</dt><dd className="hash">{status.walletAddress ?? "Creating…"}</dd></div>
           {status.fundingTxid && <div><dt>Funding transaction</dt><dd className="hash">{shortHash(status.fundingTxid, 14, 8)}</dd></div>}
           <div><dt>Purchases</dt><dd>{status.ordersUsed ?? 0} of {status.limits?.maxOrders ?? "—"} used · up to {status.limits?.maxUnitsPerOrder} units each</dd></div>

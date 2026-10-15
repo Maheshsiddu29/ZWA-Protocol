@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 /** Starts a judge session; the server provisions its own disposable wallet. */
-export function TryDemoButton({ className = "button button-blue", label = "Try the demo" }: { className?: string; label?: string }) {
+export function TryDemoButton({ className = "button button-blue", label = "Launch demo" }: { className?: string; label?: string }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");

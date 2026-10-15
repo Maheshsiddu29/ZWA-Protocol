@@ -31,7 +31,7 @@ export function Navbar({ viewer, demo }: { viewer: Viewer; demo: boolean }) {
     (href === "/exchange" && pathname.startsWith("/orders/"));
   const status = viewer?.kind === "demo" ? <Link className="nav-session" href="/wallet"><span className="dot" />Demo wallet</Link>
     : viewer ? <Link className="nav-session" href={viewer.role === "seller" ? "/seller" : "/portfolio"}>{viewer.id}</Link>
-    : demo ? <TryDemoButton className="nav-cta" label="Try demo" /> : <Link className="nav-cta-link" href="/sign-in">Sign in</Link>;
+    : demo ? <TryDemoButton className="nav-cta" label="Launch demo" /> : <Link className="nav-cta-link" href="/sign-in">Sign in</Link>;
   return <header className={`site-header ${dark ? "on-dark" : "on-light"}`}>
     <a href="#main" className="skip-link">Skip to content</a>
     <nav className="site-nav shell" aria-label="Primary">

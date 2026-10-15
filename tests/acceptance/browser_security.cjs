@@ -29,7 +29,7 @@ async function start(browser) {
   const context = await browser.newContext({ ignoreHTTPSErrors: false });
   const page = await context.newPage();
   await page.goto(base, { waitUntil: 'networkidle' });
-  await page.getByRole('button', { name: 'Try the demo' }).first().click();
+  await page.getByRole('button', { name: 'Launch demo' }).first().click();
   await page.waitForURL('**/wallet', { timeout: 20000 });
   await page.getByRole('link', { name: 'Browse assets' }).waitFor({ timeout: 180000 });
   // A client-side navigation need not leave the RSC payload in page.content().
