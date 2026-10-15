@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Read-only inspection of a running judge-demo Compose project, for the REAL browser purchase acceptance.
 
-    real_settlement_inspect.py --project NAME [--ssh HOST] [--sudo] preflight
-    real_settlement_inspect.py --project NAME [--ssh HOST] [--sudo] verify --order ID --preflight FILE \
+    real_settlement_inspect.py --project NAME [--ssh HOST [--ssh-key FILE]] [--sudo] preflight
+    real_settlement_inspect.py --project NAME [--ssh HOST [--ssh-key FILE]] [--sudo] verify \
+        --order ID --preflight FILE \
         --instrument ID --quantity N
 
 `preflight` runs before any purchase. It proves that every cryptographic and chain component is the real one:
@@ -146,16 +147,17 @@ print(json.dumps({
 
 
 class Inspector:
-    def __init__(self, project: str, ssh: str | None, sudo: bool):
+    def __init__(self, project: str, ssh: str | None, sudo: bool, ssh_key: str | None = None):
         if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,62}", project):
             raise SystemExit("invalid Compose project name")
-        self.project, self.ssh, self.sudo = project, ssh, sudo
+        self.project, self.ssh, self.sudo, self.ssh_key = project, ssh, sudo, ssh_key
         self.checks: list[dict] = []
 
     def docker(self, *args: str, stdin: str | None = None) -> str:
-        argv = (["sudo"] if self.sudo else []) + ["docker", *args]
+        argv = (["sudo", "-n"] if self.sudo else []) + ["docker", *args]
         if self.ssh:
-            argv = ["ssh", "-o", "BatchMode=yes", self.ssh, shlex.join(argv)]
+            key = ["-i", self.ssh_key] if self.ssh_key else []
+            argv = ["ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", *key, self.ssh, shlex.join(argv)]
         done = subprocess.run(argv, input=stdin, capture_output=True, text=True, timeout=300)
         if done.returncode:
             raise RuntimeError(f"docker {args[0]} failed: {done.stderr.strip()[-300:]}")
@@ -373,7 +375,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--project", required=True)
     parser.add_argument("--ssh", help="run docker on this SSH host (read-only commands only)")
-    parser.add_argument("--sudo", action="store_true", help="prefix docker with sudo")
+    parser.add_argument("--ssh-key", help="identity file for --ssh")
+    parser.add_argument("--sudo", action="store_true", help="prefix docker with sudo -n")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("preflight")
     verify = sub.add_parser("verify")
@@ -382,7 +385,7 @@ def main() -> int:
     verify.add_argument("--instrument", required=True)
     verify.add_argument("--quantity", required=True, type=int)
     args = parser.parse_args()
-    inspector = Inspector(args.project, args.ssh, args.sudo)
+    inspector = Inspector(args.project, args.ssh, args.sudo, args.ssh_key)
     try:
         if args.command == "preflight":
             result = inspector.preflight()

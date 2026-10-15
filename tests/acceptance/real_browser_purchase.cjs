@@ -3,7 +3,7 @@
  *
  *   ZWA_REAL_PURCHASE=ONE \
  *   ZWA_REAL_BASE=https://localhost:9443 ZWA_REAL_PROJECT=zwa-judge-e2e ZWA_REAL_OUT=/private/tmp/zwa-real-e2e \
- *   [ZWA_REAL_CA_FILE=caddy-root.crt] [ZWA_REAL_SSH=host] [ZWA_REAL_SUDO=1] \
+ *   [ZWA_REAL_CA_FILE=caddy-root.crt] [ZWA_REAL_SSH=user@host ZWA_REAL_SSH_KEY=key.pem] [ZWA_REAL_SUDO=1] \
  *   ZWA_PLAYWRIGHT_PACKAGE=/path/to/node_modules/playwright node tests/acceptance/real_browser_purchase.cjs
  *
  * 1. Preflight (tests/acceptance/real_settlement_inspect.py): refuses to start unless the project runs the
@@ -55,7 +55,8 @@ const scrub = (text) => String(text).split('\n')[0].replace(/zwa_session=\S+/g, 
 class Stop extends Error {}
 
 function inspector(...args) {
-  const extra = [...(env.ZWA_REAL_SSH ? ['--ssh', env.ZWA_REAL_SSH] : []), ...(env.ZWA_REAL_SUDO === '1' ? ['--sudo'] : [])];
+  const extra = [...(env.ZWA_REAL_SSH ? ['--ssh', env.ZWA_REAL_SSH] : []),
+    ...(env.ZWA_REAL_SSH_KEY ? ['--ssh-key', env.ZWA_REAL_SSH_KEY] : []), ...(env.ZWA_REAL_SUDO === '1' ? ['--sudo'] : [])];
   let text;
   try {
     text = execFileSync('python3', [path.join(repo, 'tests/acceptance/real_settlement_inspect.py'), '--project', project,
