@@ -5,6 +5,7 @@ import { TryDemoButton } from "@/components/exchange/TryDemoButton";
 import { assetName, assets, zec } from "@/lib/exchange";
 import { currentSession, demoMode } from "@/lib/exchange-auth";
 import { participantPortfolio } from "@/lib/persistent-portfolio";
+import { verdict } from "@/lib/order-labels";
 import { ownOrders, walletStatus } from "@/lib/private-orders";
 
 export const metadata: Metadata = { title: "Portfolio" };
@@ -32,7 +33,7 @@ export default async function PortfolioPage() {
     if (portfolio) { native = portfolio.nativeZat; scanHeight = portfolio.scanHeight; state = "READY";
       holdings = portfolio.holdings.map(h => ({ instrumentId: h.instrumentId, units: h.units })); }
   }
-  const settled = orders.filter(order => order.state === "RECEIPT_AVAILABLE");
+  const settled = orders.filter(order => verdict(order) === "VERIFIED");
   const held = holdings.filter(h => h.units > 0);
   return <section className="page"><div className="shell">
     <header className="page-head"><div><p className="eyebrow">Portfolio</p><h1>Portfolio</h1>
@@ -43,7 +44,7 @@ export default async function PortfolioPage() {
     <div className="metrics" style={{ margin: "8px 0 0" }}>
       <div><span>ZEC balance</span><strong>{zec(native)}</strong></div>
       <div><span>Assets held</span><strong>{held.reduce((sum, h) => sum + h.units, 0).toLocaleString("en-US")} units</strong></div>
-      <div><span>Settled purchases</span><strong>{settled.length}</strong></div>
+      <div><span>Verified settlements</span><strong>{settled.length}</strong></div>
     </div>
     <div className="section-title"><h2>Holdings</h2>{scanHeight !== null && <span className="small muted">Scanned at block {scanHeight.toLocaleString("en-US")}</span>}</div>
     <div className="list">{assets.map(asset => {
