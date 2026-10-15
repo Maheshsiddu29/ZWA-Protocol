@@ -204,6 +204,16 @@ It launches Chrome with normal certificate validation, provisions two new
 disposable wallets, tests session boundaries, and retires both wallets. It
 does not confirm a purchase.
 
+The **real purchase acceptance** makes exactly one disposable regtest purchase
+through the website and verifies it independently:
+`ZWA_REAL_PURCHASE=ONE … node tests/acceptance/real_browser_purchase.cjs`. Its
+read-only inspector (`tests/acceptance/real_settlement_inspect.py`, local or
+over SSH) first refuses any project that is not running the pinned Zebra, the
+real engine services, the pinned tx-tool and the repository's Groth16
+verifier, or that has an unresolved order. Usage, TLS handling and the public
+deployment steps are in
+[`docs/public-judge-deployment-plan.md`](../docs/public-judge-deployment-plan.md).
+
 ## Operations
 
 - **Health:** `docker compose ps`. The portal answers `GET /healthz`
