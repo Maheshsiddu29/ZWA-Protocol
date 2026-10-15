@@ -160,5 +160,5 @@ exchange (two hours) and their cookies on the site become inert.
 ## 8. Cost
 
 No new service. Vercel Hobby functions (each proxied call and page render is one invocation; a
-purchase with status polling is a few hundred) and the existing exchange host. Check the Vercel
+purchase with 2-second status polling is on the order of a hundred: an estimate, not measured) and the existing exchange host. Check the Vercel
 Usage tab during judging, and that the Hobby plan's terms fit the use.
