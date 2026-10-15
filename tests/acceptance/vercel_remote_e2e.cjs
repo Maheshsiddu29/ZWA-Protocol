@@ -57,6 +57,10 @@ function certificate() {
 function front(tls, listen, upstream, mode) {
   const server = https.createServer({ key: tls.key, cert: tls.cert }, (req, res) => {
     if (mode === 'caddy' && front.exchangeDown) { req.socket.destroy(); return; }
+    if (mode === 'caddy' && front.hang) { front.hung.push(req); return; }   // never answers, never forwards
+    const route = `${req.method} ${req.url.split('?')[0]}`;
+    const drop = mode === 'caddy' && front.dropResponses.route === route && front.dropResponses.count > 0;
+    if (drop) front.dropResponses.count -= 1;
     const headers = { ...req.headers };
     const judge = headers['x-test-client'];
     delete headers['x-test-client'];
@@ -64,6 +68,8 @@ function front(tls, listen, upstream, mode) {
     if (mode === 'caddy') front.exchangeRequests.push(`${req.method} ${req.url.split('?')[0]}`);
     let size = 0;
     const out = http.request({ host: '127.0.0.1', port: upstream, method: req.method, path: req.url, headers }, (reply) => {
+      // The exchange has answered (and committed); the answer is lost on the way back to the site.
+      if (drop) { reply.resume(); reply.on('end', () => req.socket.destroy()); return; }
       res.writeHead(reply.statusCode, reply.rawHeaders);
       reply.pipe(res);
     });
@@ -76,6 +82,9 @@ function front(tls, listen, upstream, mode) {
 }
 front.exchangeRequests = [];
 front.exchangeDown = false;
+front.hang = false;
+front.hung = [];
+front.dropResponses = { route: '', count: 0 };
 
 function startBackend() {
   const child = spawn('python3', ['tests/acceptance/web_test_double_exchange.py', '--pace', '0.25'],
@@ -216,6 +225,19 @@ async function main() {
     assert.equal(start.status, 503);
     assert.ok(!home.text.includes('Launch demo'), 'no demo offered when misconfigured');
     pass('remote mode next to a backend secret fails closed (503, no demo offered)');
+
+    const noTls = `https://localhost:${ports.guard + 1}`;
+    await startNext(siteDir, ports.guardWeb + 1, { ...siteEnv, ZWA_PUBLIC_ORIGIN: noTls, NODE_TLS_REJECT_UNAUTHORIZED: '0' });
+    await front(tls, ports.guard + 1, ports.guardWeb + 1, 'edge');
+    assert.equal((await raw('GET', `${noTls}/api/exchange/market`)).status, 503);
+    const untrusted = `https://localhost:${ports.guard + 2}`;
+    const { NODE_EXTRA_CA_CERTS: _ca, ...withoutCa } = siteEnv;
+    await startNext(siteDir, ports.guardWeb + 2, { ...withoutCa, ZWA_PUBLIC_ORIGIN: untrusted });
+    await front(tls, ports.guard + 2, ports.guardWeb + 2, 'edge');
+    assert.equal((await raw('GET', `${untrusted}/api/exchange/market`)).status, 502, 'an untrusted exchange certificate is refused');
+    const untrustedStart = await raw('POST', `${untrusted}/api/demo/session`, { headers: { origin: untrusted, 'content-type': 'application/json' }, body: '{}' });
+    assert.equal(untrustedStart.status, 503);
+    pass('exchange TLS is verified: disabling verification fails closed (503); an untrusted certificate gets no data (502/503)');
   }
 
   // 1. Read-only: the public site and live inventory, before any session.
@@ -243,6 +265,12 @@ async function main() {
     await reject('no Origin', raw('POST', `${site}/api/demo/session`, { headers: json, body: '{}' }), 403);
     await reject('foreign Origin', raw('POST', `${site}/api/demo/session`, { headers: { ...json, origin: 'https://evil.example' }, body: '{}' }), 403);
     await reject('the exchange Origin', raw('POST', `${site}/api/demo/session`, { headers: { ...json, origin: exchange }, body: '{}' }), 403);
+    for (const origin of ['null', `http://localhost:${ports.site}`, `https://localhost:${ports.site + 1}`, `https://LOCALHOST:${ports.site}`,
+                          `${site}/`, `https://localhost:${ports.site}.evil.example`, `https://evil.example/https://localhost:${ports.site}`]) {
+      await reject(`Origin ${origin}`, raw('POST', `${site}/api/demo/session`, { headers: { ...json, origin }, body: '{}' }), 403);
+    }
+    await reject('X-Forwarded-Host does not replace Host', raw('POST', `http://127.0.0.1:${ports.siteWeb}/api/demo/session`,
+      { direct: true, headers: { ...json, origin: site, host: 'evil.example', 'x-forwarded-host': `localhost:${ports.site}` }, body: '{}' }), 403);
     await reject('foreign Host', raw('POST', `http://127.0.0.1:${ports.siteWeb}/api/demo/session`,
       { direct: true, headers: { ...json, origin: site, host: 'evil.example' }, body: '{}' }), 403);
     await reject('oversized body', raw('POST', `${site}/api/demo/session`, { headers: { ...json, origin: site }, body: `{"x":"${'a'.repeat(3000)}"}` }), 413);
@@ -262,7 +290,7 @@ async function main() {
     assert.ok(forgedPage.text.includes('No wallet yet') && !/csrf/.test(forgedPage.text), 'a forged cookie is signed out');
     const leaks = [anonymous, forgedPage].flatMap((r) => Object.keys(r.headers)).filter((h) => /^(server|x-powered-by|set-cookie)$/.test(h));
     assert.deepEqual(leaks, []);
-    pass('proxy refuses missing/foreign Origin, foreign Host, oversize and non-object bodies, operator routes, forged cookies');
+    pass('proxy refuses missing/null/foreign/look-alike Origins, foreign Host, oversize and non-object bodies, operator routes, forged cookies');
   }
 
   const browser = await chromium.launch({ channel: 'chrome', headless: process.env.ZWA_E2E_HEADED !== '1' });
@@ -345,6 +373,33 @@ async function main() {
     assert.equal((await B.context.request.get(`${site}/api/exchange/orders`).then((r) => r.json())).orders.length, 0, 'the lost buy never reached the exchange');
     pass('exchange unreachable: a buy is reported as unknown outcome (503), reads 502, pages render; session resumes');
 
+    // 4c. The exchange hangs: the site gives up before its function limit and reports an unknown outcome.
+    front.hang = true;
+    const t0 = Date.now();
+    const hung = await B.context.request.post(`${site}/api/exchange/orders`, { timeout: 60000, headers: { origin: site, 'x-zwa-csrf': csrfB, 'content-type': 'application/json' },
+      data: { offerId: listing.instruments[0].offerId, quantity: 1, idempotencyKey: `buy-${crypto.randomUUID()}` } });
+    const waited = Date.now() - t0;
+    front.hang = false;
+    front.hung.splice(0).forEach((req) => req.socket.destroy());
+    assert.equal(hung.status(), 503);
+    assert.equal((await hung.json()).outcome, 'unknown');
+    assert.ok(waited >= 27000 && waited < 30000, `gave up after ${waited} ms (limit 28 s, function maximum 30 s)`);
+    pass('exchange hangs: a buy is an unknown outcome after the 28 s upstream timeout, inside the 30 s function limit', `${waited} ms`);
+
+    // 4d. The exchange commits the buy but its answer is lost twice on the way back: same key, one order.
+    await openAsset(B.page);
+    front.dropResponses = { route: 'POST /api/exchange/orders', count: 2 };
+    await B.page.getByRole('button', { name: 'Buy · get exact quote' }).click();
+    await B.page.waitForURL('**/orders/*', { timeout: 60000 });
+    assert.equal(front.dropResponses.count, 0, 'both answers were dropped');
+    const orderB = orderIdFrom(B.page);
+    const rowsB = await ledgerOrders((await apiOrder(B.context, orderB)).buyerId);
+    assert.equal(rowsB.length, 1, 'committed twice-lost answers, three submissions, exactly one order');
+    await B.page.getByText('Review your quote').waitFor({ timeout: 60000 });
+    await B.page.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await B.page.locator('h1.big-state', { hasText: 'Cancelled' }).waitFor({ timeout: 15000 });
+    pass('buy committed upstream with the answer lost twice between exchange and site: same key, exactly one order (then cancelled)');
+
     // 5. Judge C: an outage on every buy attempt; the unresolved intent survives reload; resume reuses the key.
     const C = await judge(browser, 23);
     await launch(C);
@@ -396,18 +451,32 @@ async function main() {
       const forwarded = front.exchangeRequests.slice(before).includes('POST /api/demo/session');
       return { status: r.status(), error: (await r.json()).error, forwarded };
     };
+    const which = (error) => /from this connection/.test(error) ? 'ledger: 3 wallets per client address per hour'
+      : /were started/.test(error) ? 'exchange web burst limit per client address: 3, then 1 a minute' : 'unclassified';
+    const shared = 'Every judge reaches the exchange from the site\'s address, so these caps are shared by all judges using the site.';
     const first = await attempt();
     if (first.status === 200) finding('a 4th judge was admitted; the exchange per-client caps did not apply');
     else {
       assert.equal(first.forwarded, true, 'the refusal must come from the exchange, not the site\'s own per-judge bucket');
-      finding(`4th judge, refused by the exchange: ${first.status} "${first.error}" (web burst limit per client address)`);
-      await sleep(65000);
-      const second = await attempt();
-      assert.equal(second.forwarded, true);
-      finding(`4th judge after 65 s, refused by the exchange: ${second.status} "${second.error}" (ledger: 3 wallets per client address per hour). ` +
-        'Every judge reaches the exchange from the site\'s address, so these caps are shared by all judges using the site.');
+      finding(`4th judge, refused by the exchange: ${first.status} "${first.error}" (${which(first.error)}). ${shared}`);
+      if (which(first.error) !== 'ledger: 3 wallets per client address per hour') {
+        await sleep(65000);
+        const second = await attempt();
+        assert.equal(second.forwarded, true);
+        finding(`4th judge after 65 s, refused by the exchange: ${second.status} "${second.error}" (${which(second.error)})`);
+      }
     }
-    await Promise.all([A, B, C, D].map((j) => j.context.close()));
+    // 9. The site's own per-judge limit (3, then 1 a minute) refuses a burst before anything is forwarded.
+    const E = await judge(browser, 25);
+    const burst = [];
+    for (let i = 0; i < 4; i++) {
+      const before = front.exchangeRequests.length;
+      const r = await E.context.request.post(`${site}/api/demo/session`, { headers: { origin: site, 'content-type': 'application/json' }, data: {} });
+      burst.push([r.status(), front.exchangeRequests.slice(before).includes('POST /api/demo/session')]);
+    }
+    assert.deepEqual(burst.at(-1), [429, false], `the 4th start is refused by the site itself: ${JSON.stringify(burst)}`);
+    pass('the site\'s own per-judge burst limit answers 429 without forwarding', JSON.stringify(burst));
+    await Promise.all([A, B, C, D, E].map((j) => j.context.close()));
   } finally {
     await browser.close();
   }
