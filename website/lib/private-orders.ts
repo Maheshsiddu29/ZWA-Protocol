@@ -61,7 +61,9 @@ export type WalletStatus = {
   limits?: { maxOrders?: number; maxUnitsPerOrder: number; maxPaymentZatPerOrder: number; maxSponsoredOrdersPerHour?: number };
   signerOnline?: boolean; policy?: "ACTIVE" | "PAUSED"; sponsoredLastHour?: number;
 };
-export type BridgeResult<T> = { ok: true; data: T } | { ok: false; error: string };
+/** `unknown`: the exchange may or may not have applied the request (no answer, or its generic internal
+ *  error after a possible commit). It is never a refusal; callers resolve it by reading state again. */
+export type BridgeResult<T> = { ok: true; data: T } | { ok: false; error: string; unknown?: true };
 
 async function participant(): Promise<Session | null> {
   const session = await currentSession();
@@ -113,12 +115,19 @@ function runPortal(request: object): Promise<BridgeResult<unknown> | null> {
 
 const rootConfigured = () => !!process.env.ZWA_PORTAL_URL || rootPattern.test(process.env.ZWA_PRIVATE_EXCHANGE_ROOT ?? "");
 
-/** Call one fixed exchange action as the authenticated participant. */
+// The portal's answer to an unexpected server error, which can follow a committed change.
+const portalInternalError = "request could not be completed";
+const unknownOutcome = { ok: false, unknown: true,
+  error: "The exchange did not confirm the result. It may or may not have been applied." } as const;
+
+/** Call one fixed exchange action as the authenticated participant (null: no exchange access). */
 export async function exchangeAction<T>(action: string, payload: Record<string, unknown> = {}): Promise<BridgeResult<T> | null> {
   const session = await participant();
   if (!session || !rootConfigured()) return null;
-  return await runPortal({ action, actor: session.id, role: session.role,
+  const result = await runPortal({ action, actor: session.id, role: session.role,
     sessionHash: sessionHash(session), payload }) as BridgeResult<T> | null;
+  if (!result || (!result.ok && result.error === portalInternalError)) return unknownOutcome;
+  return result;
 }
 
 /** Admit a new judge session for this sid (anonymous; caps enforced in the ledger). */

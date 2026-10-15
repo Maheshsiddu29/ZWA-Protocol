@@ -6,6 +6,8 @@ const noStore = { "Cache-Control": "no-store" };
 
 export function respond<T>(result: BridgeResult<T> | null, success = 200) {
   if (!result) return NextResponse.json({ error: "Exchange access unavailable" }, { status: 403, headers: noStore });
+  // 503 + outcome "unknown": not a refusal. A client must re-read state (or resend the same idempotency key).
+  if (!result.ok && result.unknown) return NextResponse.json({ error: result.error, outcome: "unknown" }, { status: 503, headers: noStore });
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 409, headers: noStore });
   return NextResponse.json(result.data, { status: success, headers: noStore });
 }
