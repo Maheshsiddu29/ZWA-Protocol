@@ -39,6 +39,8 @@ export function remoteConfig(env: Record<string, string | undefined>): RemoteCon
   if (site.origin === exchange.origin) return { state: "invalid", reason: "the exchange and this site must be different origins" };
   const present = FORBIDDEN_IN_REMOTE.filter(name => env[name] !== undefined && env[name] !== "");
   if (present.length) return { state: "invalid", reason: `remove ${present.join(", ")}` };
+  // The exchange's certificate must be verified: the session cookie and CSRF token travel over this link.
+  if (env.NODE_TLS_REJECT_UNAUTHORIZED === "0") return { state: "invalid", reason: "remove NODE_TLS_REJECT_UNAUTHORIZED" };
   return { state: "on", exchange: exchange.origin, site: site.origin, siteHost: site.host };
 }
 

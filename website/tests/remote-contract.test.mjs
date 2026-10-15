@@ -30,6 +30,8 @@ test("remote mode refuses to run next to any backend secret", () => {
     assert.match(config.reason, new RegExp(name));
   }
   assert.equal(remoteConfig({ ZWA_EXCHANGE_ORIGIN: EXCHANGE, ZWA_PUBLIC_ORIGIN: SITE, ZWA_SESSION_SECRET: "" }).state, "on");
+  assert.equal(remoteConfig({ ZWA_EXCHANGE_ORIGIN: EXCHANGE, ZWA_PUBLIC_ORIGIN: SITE, NODE_TLS_REJECT_UNAUTHORIZED: "0" }).state, "invalid",
+    "the exchange certificate must be verified");
 });
 
 // A page whose RSC payload is split across two inline chunks, as Next.js may stream it.
@@ -59,6 +61,16 @@ test("anything but exactly one demo buyer and one token is treated as signed out
     "two viewers": `1:${viewer()}\n1b:${viewer()}\n2:${wallet()}\n`,
   };
   for (const [name, flight] of Object.entries(cases)) assert.equal(demoSessionFromWalletPage(walletPage(flight)), null, name);
+  // A changed page contract on the exchange (another web image) must sign the visitor out, never guess.
+  const changed = {
+    "viewer keys reordered": `1:{"viewer":{"role":"buyer","kind":"demo","id":"${ID}"}}\n2:${wallet()}\n`,
+    "viewer renamed": `1:{"account":{"kind":"demo","role":"buyer","id":"${ID}"}}\n2:${wallet()}\n`,
+    "token renamed": `1:${viewer()}\n2:["$","$L14",null,{"csrfToken":"${CSRF}"}]\n`,
+    "token longer": `1:${viewer()}\n2:${wallet(CSRF + "00")}\n`,
+  };
+  for (const [name, flight] of Object.entries(changed)) assert.equal(demoSessionFromWalletPage(walletPage(flight)), null, name);
+  const otherFormat = `<script id="__NEXT_DATA__">${JSON.stringify({ viewer: { kind: "demo", role: "buyer", id: ID }, csrf: CSRF })}</script>`;
+  assert.equal(demoSessionFromWalletPage(otherFormat), null, "a different inline payload format");
   assert.equal(demoSessionFromWalletPage("<html>no payload</html>"), null);
   assert.equal(demoSessionFromWalletPage('<script>self.__next_f.push([1,"\\x"])</script>'), null, "undecodable chunk");
 });
