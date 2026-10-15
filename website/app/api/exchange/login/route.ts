@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authCookie, authenticate, cookieOptions, sessionValue } from "@/lib/exchange-auth";
 import { allow } from "@/lib/rate-limit";
+import { notServedHere, remoteEnabled } from "@/lib/remote-exchange";
 import { clientAddress, requestOrigin } from "@/lib/request-origin";
 
 export async function POST(request: NextRequest) {
+  if (remoteEnabled()) return notServedHere();
   const origin = requestOrigin(request);
   if (!origin) return NextResponse.json({ error: "Origin rejected" }, { status: 403 });
   if (Number(request.headers.get("content-length") || 0) > 4096) return NextResponse.json({ error: "Request too large" }, { status: 413 });

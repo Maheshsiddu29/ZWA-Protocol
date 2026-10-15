@@ -1,6 +1,7 @@
 import "server-only";
 import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
+import { remote, remoteSession } from "@/lib/remote-exchange";
 
 export type Role = "buyer" | "seller";
 export const roles: Role[] = ["buyer", "seller"];
@@ -12,7 +13,8 @@ const cookieName = "zwa_session";
 const accountLifetimeMs = 4 * 60 * 60 * 1000;
 export const demoAccount = /^judge-[0-9a-f]{20}$/;
 
-export const demoMode = () => process.env.ZWA_DEMO_MODE === "1";
+/** Remote mode (ZWA_EXCHANGE_ORIGIN) serves only the judge demo, from the hosted exchange. */
+export const demoMode = () => process.env.ZWA_DEMO_MODE === "1" || remote().state === "on";
 
 function configuration(): { accounts: Account[]; secret: Buffer } | null {
   try {
@@ -55,9 +57,12 @@ export function sessionValue(account: { id: string; role: Role }, kind: SessionK
   return `${payload}.${mac(payload, config.secret)}`;
 }
 
-export type Session = { id: string; role: Role; sid: string; kind: SessionKind; exp: number };
+/** `csrf` is set only in remote mode, where the hosted exchange issued the token. */
+export type Session = { id: string; role: Role; sid: string; kind: SessionKind; exp: number; csrf?: string };
 
 export async function currentSession(): Promise<Session | null> {
+  // Remote mode: the hosted exchange verifies the cookie; this deployment holds no secret.
+  if (remote().state !== "off") return remoteSession();
   const value = (await cookies()).get(cookieName)?.value;
   const config = configuration();
   if (!value || value.length > 2048 || !config) return null;
@@ -85,6 +90,7 @@ export function sessionHash(session: { sid: string }): string {
 }
 
 export function csrfToken(session: Session): string {
+  if (remote().state !== "off") return session.csrf ?? "";
   const config = configuration();
   if (!config) throw new Error("Session signing is not provisioned");
   return mac(`csrf|${session.id}|${session.role}|${session.sid}`, config.secret);

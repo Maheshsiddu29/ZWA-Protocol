@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authCookie, clientHash, cookieOptions, currentSession, demoMode, newSid, sessionValue } from "@/lib/exchange-auth";
 import { startDemo } from "@/lib/private-orders";
+import { forward, remoteEnabled } from "@/lib/remote-exchange";
 import { allow } from "@/lib/rate-limit";
 import { clientAddress, requestOrigin } from "@/lib/request-origin";
 
 const noStore = { "Cache-Control": "no-store" };
+export const maxDuration = 30;
 
 /** Start a judge session: the backend admits it and provisions its own wallet. */
 export async function POST(request: NextRequest) {
+  if (remoteEnabled()) return forward(request, "/api/demo/session", "start-demo");
   if (!demoMode()) return NextResponse.json({ error: "The hosted demo is not enabled." }, { status: 404, headers: noStore });
   if (!requestOrigin(request)) return NextResponse.json({ error: "Request rejected" }, { status: 403, headers: noStore });
   const existing = await currentSession();

@@ -6,6 +6,7 @@ import path from "node:path";
 import type { NextRequest } from "next/server";
 import { csrfValid, currentSession, demoMode, sessionHash, type Session } from "@/lib/exchange-auth";
 import { allow } from "@/lib/rate-limit";
+import { remoteEnabled, remotePublicMarket, remoteRead } from "@/lib/remote-exchange";
 import { requestOrigin } from "@/lib/request-origin";
 
 const accountId = /^[a-zA-Z0-9_-]{1,80}$/;
@@ -122,6 +123,8 @@ const unknownOutcome = { ok: false, unknown: true,
 
 /** Call one fixed exchange action as the authenticated participant (null: no exchange access). */
 export async function exchangeAction<T>(action: string, payload: Record<string, unknown> = {}): Promise<BridgeResult<T> | null> {
+  // Remote mode: pages read through the hosted exchange's API; its routes are proxied (lib/remote-exchange.ts).
+  if (remoteEnabled()) return await currentSession() ? remoteRead<T>(action, payload) : null;
   const session = await participant();
   if (!session || !rootConfigured()) return null;
   const result = await runPortal({ action, actor: session.id, role: session.role,
@@ -132,7 +135,7 @@ export async function exchangeAction<T>(action: string, payload: Record<string, 
 
 /** Admit a new judge session for this sid (anonymous; caps enforced in the ledger). */
 export async function startDemo(sid: string, clientHash: string): Promise<BridgeResult<{ accountId: string; expiresAt: number }> | null> {
-  if (!demoMode() || !rootConfigured()) return null;
+  if (remoteEnabled() || !demoMode() || !rootConfigured()) return null;
   return await runPortal({ action: "demo-start", actor: "anonymous", role: "anonymous",
     sessionHash: sessionHash({ sid }), payload: { clientHash } }) as BridgeResult<{ accountId: string; expiresAt: number }> | null;
 }
@@ -141,6 +144,7 @@ const anonymousHash = createHash("sha256").update("ZWA_ANONYMOUS_MARKET_V1").dig
 
 /** The dealer's public listings, readable without a session in demo mode. */
 export async function publicMarket(): Promise<Market | null> {
+  if (remoteEnabled()) return remotePublicMarket<Market>();
   if (!demoMode() || !rootConfigured()) return null;
   const result = await runPortal({ action: "public-market", actor: "anonymous", role: "anonymous",
     sessionHash: anonymousHash, payload: {} }) as BridgeResult<Market> | null;
@@ -181,7 +185,8 @@ export type TxCheck = { chainActive: boolean; found: boolean; included?: boolean
 
 /** Read-only inclusion check of one txid on the demo chain. */
 export async function verifyDemoTx(txid: string): Promise<TxCheck | null> {
-  if (!demoMode() || !rootConfigured() || !/^[0-9a-f]{64}$/.test(txid)) return null;
+  // Remote mode: the hosted exchange has no JSON API for this; /verify links to its page instead.
+  if (remoteEnabled() || !demoMode() || !rootConfigured() || !/^[0-9a-f]{64}$/.test(txid)) return null;
   const result = await runPortal({ action: "verify-tx", actor: "anonymous", role: "anonymous",
     sessionHash: anonymousHash, payload: { txid } }) as BridgeResult<TxCheck> | null;
   return result?.ok ? result.data : null;

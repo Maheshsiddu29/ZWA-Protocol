@@ -14,6 +14,8 @@ export const metadata: Metadata = {
   icons: { icon: "/brand/favicon.svg" },
   openGraph: { title: site.name, description: site.tagline, type: "website" },
 };
+// Remote mode renders pages from the hosted exchange's API; allow for its slowest read.
+export const maxDuration = 30;
 export const viewport: Viewport = { themeColor: "#000000", colorScheme: "light" };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {

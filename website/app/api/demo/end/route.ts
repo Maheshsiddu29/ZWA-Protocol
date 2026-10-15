@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authCookie } from "@/lib/exchange-auth";
 import { exchangeAction, mutationAllowed } from "@/lib/private-orders";
+import { forward, remoteEnabled } from "@/lib/remote-exchange";
+
+export const maxDuration = 30;
 
 /** End the judge session early; the disposable wallet is retired by the service. */
 export async function POST(request: NextRequest) {
+  if (remoteEnabled()) return forward(request, "/api/demo/end", "end-demo");
   if (!await mutationAllowed(request)) return NextResponse.json({ error: "Request rejected" }, { status: 403 });
   const result = await exchangeAction("demo-end");
   if (!result || (!result.ok && result.unknown)) return NextResponse.json({ error: "The demo service is unavailable." }, { status: 503 });
