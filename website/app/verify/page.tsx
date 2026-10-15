@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { demoMode } from "@/lib/exchange-auth";
 import { verifyDemoTx } from "@/lib/private-orders";
+import { remote } from "@/lib/remote-exchange";
 import { kindLabel, networkPins, publicReceipts } from "@/lib/public-testnet";
 
 export const metadata: Metadata = { title: "Verify" };
@@ -13,6 +14,9 @@ export default async function VerifyPage({ searchParams }: { searchParams: Promi
   const txid = typeof tx === "string" ? tx.trim().toLowerCase() : "";
   const valid = /^[0-9a-f]{64}$/.test(txid);
   const check = valid ? await verifyDemoTx(txid) : null;
+  // Remote mode: the chain lookup has no JSON API on the exchange, so it is offered on the exchange's own page.
+  const config = remote();
+  const exchange = config.state === "on" ? config.exchange : null;
   return <section className="page"><div className="shell">
     <header className="page-head"><div><p className="eyebrow">Verify</p><h1>Check a transaction</h1>
       <p className="lede">Look up whether a transaction is included in the exchange&apos;s demo chain. Only public chain facts are shown: no amounts, parties or order details.</p></div></header>
@@ -41,7 +45,12 @@ export default async function VerifyPage({ searchParams }: { searchParams: Promi
               <p className="small muted">Confirmations count blocks on a private test chain operated by this exchange. They are not finality on any public network.</p>
             </> : <p className="notice notice-warn">{check.found ? "This transaction is known to the node but is not in a block." : "This transaction is not in the demo chain."}</p>}
         </div>}
-        {valid && !check && demoMode() && <p className="notice notice-warn">The verification service is unavailable.</p>}
+        {valid && exchange && <div className="panel">
+          <p>This lookup is served by the exchange host, which runs the demo chain.</p>
+          <p style={{ marginTop: 12 }}><a className="link-button" href={`${exchange}/verify?tx=${txid}`} rel="noopener noreferrer">Check this transaction on the exchange host ↗</a></p>
+          <p className="small muted">Your order page already shows the receipt, re-checked against the live chain by the exchange.</p>
+        </div>}
+        {valid && !check && !exchange && demoMode() && <p className="notice notice-warn">The verification service is unavailable.</p>}
       </div>
       <aside className="panel panel-muted">
         <p className="label">Public testnet records</p>
