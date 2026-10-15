@@ -61,7 +61,7 @@ export default async function AssetPage({ params }: { params: Promise<{ assetId:
         </details>}
       </div>
       <aside className="buy-box">
-        <BuyPanel offer={offer} viewer={viewer} wallet={wallet} demo={demoMode()} limits={listing?.demo ?? null}
+        <BuyPanel offer={offer} viewer={viewer} account={session?.id ?? ""} wallet={wallet} demo={demoMode()} limits={listing?.demo ?? null}
                   csrf={session ? csrfToken(session) : ""} chainActive={listing?.chainActive ?? false} />
       </aside>
     </div>

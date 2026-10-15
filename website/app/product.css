@@ -131,6 +131,13 @@ label.field-label { display:block; font-size:12px; font-weight:700; color:#3a3a4
 .progress li.failed { color:var(--bad); }
 .progress li.failed::before { border-color:var(--bad); background:var(--bad); }
 @keyframes pulse { 50% { box-shadow:0 0 0 6px rgba(0,85,255,.15); } }
+.progress li small { display:block; margin-top:2px; font-size:12px; font-weight:500; color:var(--muted); }
+.progress li:not(.current):not(.failed) small { display:none; }
+.network-line { display:flex; align-items:center; gap:8px; margin:-8px 0 14px; }
+.verified-head { display:flex; align-items:center; gap:10px; }
+.stale { display:flex; align-items:center; gap:8px; }
+.wallet-strip { display:flex; align-items:center; gap:10px 22px; flex-wrap:wrap; padding:16px 20px; margin:0 0 18px; }
+.wallet-strip .link-button { margin-left:auto; }
 
 /* Holdings and lists */
 .list { border:1px solid var(--border); border-radius:4px; }
