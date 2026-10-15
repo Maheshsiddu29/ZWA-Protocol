@@ -24,6 +24,37 @@ npm run build
 
 With no environment variables set, this is exactly the public site.
 
+## Judge purchase journey
+
+With `ZWA_DEMO_MODE=1`, **Launch demo** creates (or returns) a session bound to one disposable custodial
+wallet on the Zcash regtest chain. The buyer picks an asset, buys once, confirms the exact quote, and the
+order page follows the ledger: order accepted → exact quote → buyer authorization → Groth16 proof →
+signing → both wallets signed → submitted → included → reconciled → receipt verified on chain → durable.
+
+- **One key per purchase.** The browser writes the purchase intent and its idempotency key to
+  `localStorage` before sending it. A lost answer is resent with the **same** key (the exchange returns the
+  existing order); an answer still unknown after three attempts is resolved only by reading the buyer's
+  orders. While an intent is unresolved, even after a reload, no new key is made.
+- **Unknown is not refused.** An unanswered portal call, or the portal's generic internal error (which can
+  follow a commit), reaches the browser as HTTP 503 with `outcome: "unknown"`, never as a refusal.
+- **"Settlement verified"** appears only when the order is `RECEIPT_AVAILABLE`, the portal has just
+  re-checked the saved receipt against the live block, reconciliation evidence exists, the durability mark
+  is written, and the settlement was not dropped (`lib/order-labels.ts`, `verdict`). An `UNCERTAIN` order
+  is shown as unresolved, with recovery guidance and no success claim.
+
+## Tests
+
+```sh
+npm test         # purchase-intent and settlement-verdict rules (node --test)
+# Browser journey and failure handling against TEST DOUBLES (no real chain, proof or transaction):
+npm run build && ZWA_PLAYWRIGHT_PACKAGE=/path/to/node_modules/playwright node ../tests/acceptance/web_purchase_e2e.cjs
+```
+
+The browser test uses installed Google Chrome and `tests/acceptance/web_test_double_exchange.py` (the real
+portal, ledger, order service and demo signer with fake tx-tool, verifier and chain). Its fault injection
+covers lost buy and confirm answers, a portal outage, a dealer refusal and an uncertain settlement. It is
+not settlement evidence.
+
 ## Environment
 
 No variable is needed for the public site. **Do not set the backend variables

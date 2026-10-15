@@ -166,8 +166,8 @@ python3 -m unittest benchmark.test_safety benchmark.test_metrics benchmark.test_
 # Lineage verifier (needs a prepared offline cargo cache)
 lineage/scripts/check.sh
 
-# Website
-cd website && npm ci && npm run lint && npm run build
+# Website (typecheck, unit tests, build; browser test against test doubles: website/README.md)
+cd website && npm ci && npm run lint && npm test && npm run build
 ```
 
 `checkout/authorization/test_*.js` and `tests/acceptance/` exercise a live
