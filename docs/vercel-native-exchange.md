@@ -81,6 +81,7 @@ exactly one CSRF field, and it is 64 hex characters. Anything else: signed out.
 | No-store for private responses | Every proxied response is `Cache-Control: no-store`; pages are dynamic (`private, no-store`). | e2e and read-only probe headers |
 | Sensitive headers and credentials | Upstream gets only `accept`, `cookie: zwa_session=…`, and for POST `origin`, `content-type`, `x-zwa-csrf`. Downstream gets only the JSON body, status and the re-issued cookie: no `Server`, `Set-Cookie` or other upstream headers. The site holds no secret; remote mode refuses to run next to one. | unit `remoteConfig`; e2e guard instance |
 | No signing secrets on Vercel or in browsers | Three non-secret variables only. No `NEXT_PUBLIC_*`. | |
+| Exchange TLS verified | Node's default certificate verification; no custom agent. Remote mode is invalid with `NODE_TLS_REJECT_UNAUTHORIZED=0`. | unit `remoteConfig`; e2e: untrusted certificate → no data (502/503) |
 | No internal Docker ports | The site talks only to the public HTTPS name, which Caddy serves; the portal stays internal. | |
 | Fail closed | Invalid configuration → 503 everywhere; session not provable → signed out (no CSRF, no mutation possible); unexpected upstream status, redirect or size → error, never success. | e2e step 0, forged and expired cookies |
 
@@ -116,15 +117,17 @@ exactly one CSRF field, and it is 64 hex characters. Anything else: signed out.
 
 | Check | Result |
 |---|---|
-| `npm run lint` (tsc), `npm run build`, `npm test` | pass; 22/22 unit tests (6 new) |
-| `tests/acceptance/vercel_remote_e2e.cjs` with `ZWA_EXCHANGE_WEB_DIR` = a `git archive` build of `80abbd8` (TEST DOUBLES: fake chain, proofs and tx-tool) | **13/13**, plus the two shared-cap findings above |
+| `npm run lint` (tsc), `npm run build`, `npm test` | pass; 22/22 unit tests |
+| `tests/acceptance/vercel_remote_e2e.cjs` with `ZWA_EXCHANGE_WEB_DIR` = a `git archive` build of `80abbd8` (TEST DOUBLES: fake chain, proofs and tx-tool) | **17/17**, plus the shared-cap finding above (re-run 2026-10-15 after the release-gate additions) |
 | `tests/acceptance/web_purchase_e2e.cjs` (local mode, regression) | 9/9 |
 | `tests/acceptance/vercel_remote_readonly.cjs` against `<exchange-host>` | **7/7**: live market through the site equals the exchange's (3 listings, chain height 669, dealer ACTIVE); 13 pages and 29 referenced assets load; forged cookie rejected by the real exchange; no session started, no state change sent |
 | Landing page vs current production (text diff) | Same content; the call to action becomes **Launch demo** and the market table shows live prices and inventory |
 
 ## 6. Deployment (owner)
 
-Prerequisite: decide on limitation 1.
+The Preview release gate, with exact settings and checks, is
+[vercel-preview-release-gate.md](vercel-preview-release-gate.md). Production additionally needs a
+decision on limitation 1.
 
 1. **Preview (owner):** push branch `integration/vercel-native-exchange`. In Vercel → Settings →
    Environment Variables, add for **Preview** (scoped to that branch):
