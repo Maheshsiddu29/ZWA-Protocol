@@ -237,8 +237,12 @@ durability.
 
 ## 9. What shielded transactions hide and what they do not
 
-A real demo swap was inspected as a public observer would see it:
-[public chain view](stage-c-shielded-public-view.md).
+A real demo swap was inspected as a public observer would see it: transaction
+`af9a6bdc99cc2d169160274d77fbb5cb72cf7ff914c9540d73416c745ecf1453` in block
+892 of the demo chain, observed on 2026-10-15. Its raw bytes were read from
+the demo chain's node and parsed field by field without any wallet keys. It
+has three Action Groups of two Actions each, one transparent input and no
+transparent outputs.
 
 **Hidden in the transaction itself:** buyer and seller shielded addresses,
 which asset was traded, how many units, and how much ZEC was paid. Notes are
