@@ -6,7 +6,36 @@ Zero-knowledge asset provenance, private eligibility checks, and experimental
 atomic shielded settlement of tokenized real-world assets on Zcash Shielded
 Assets (ZSA).
 
-**Website:** https://zwaprotocol.vercel.app/
+## Live demo
+
+**Try it: https://zwaprotocol.vercel.app** · buy a test asset on an
+experimental Zcash Shielded Assets (ZSA) test chain. No account and no wallet
+install are needed.
+
+**[Judge demo guide](docs/JUDGE_DEMO_GUIDE.md)**: what happens at each step,
+what the proofs and the receipt show, and what to do if something goes wrong.
+<!-- Demo video: put the "Watch Demo Video" link on this line once the recording is published. -->
+
+1. Click **Launch demo**.
+2. Wait for the funded demo wallet to show **Ready**.
+3. Click **Browse assets** and select an asset.
+4. Choose 1 unit and click **Buy · get exact quote**.
+5. Review the terms, tick **I confirm these exact terms**, and click
+   **Confirm purchase** before the quote expires.
+6. Wait for **Settlement verified**, then open **View portfolio** and
+   **Verify this transaction**.
+
+**Current demo limits.** A quote is valid for **90 seconds**. The exchange
+admits **3 new demo wallets per client per hour**, and visitors who arrive
+through the Vercel site can share one allowance, so a judge may be asked to
+try again later. One demo wallet lasts 2 hours and can make up to 5
+purchases, so keep using it rather than launching a new one. Settlement can
+take a few minutes, and purchases by different judges run one at a time. See
+[common problems](docs/JUDGE_DEMO_GUIDE.md#11-common-problems).
+
+The demo wallet is **custodial**: the exchange server holds its key and signs
+only the exact terms you confirm. All assets and ZEC are test values on a
+chain run by the project.
 
 > Everything here runs on **experimental** ZSA software (QEDIT and community
 > forks implementing ZIP-227/ZIP-228). It is not Zcash mainnet functionality,
@@ -194,10 +223,16 @@ unexplained divergences.
   consensus-enforced, so settlement uses one-shot approvals, not standing
   orders.
 - **Exchange status.** Phase 4E-C completed a browser-initiated purchase in
-  scripted test mode; a human-approved run on that path is not recorded.
+  scripted test mode; a human-approved run on that path is not recorded. The
+  live judge demo completes browser-initiated purchases with server-held
+  custodial demo wallets and an automated dealer policy, not human approval.
   Prices are operator-set test prices, not oracle-executable quotes.
-- **Public site.** The Vercel site serves public pages only. The exchange,
-  demo wallets and live verification need the separate backend.
+- **Public site.** https://zwaprotocol.vercel.app is connected to the hosted
+  exchange. It renders the exchange pages and forwards judge requests to the
+  exchange host, which runs the order service, the custodial demo wallets, the
+  restricted signers and the regtest node. The Vercel site holds no exchange
+  secrets or keys; if the exchange host is unavailable, the site says so and
+  trading pauses. Transaction lookups on `/verify` link to the exchange host.
 - **No public-testnet atomic swap** (see networks above).
 
 ## License and acknowledgments
